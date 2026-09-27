@@ -1,0 +1,13 @@
+{
+  "rule": "Each limit is the measured size plus 5%, rounded up to a whole kB, and never above the spec's target where one exists (/ initial 150 kB; lineage total 300 kB). Change a limit only with a new measurement recorded in BUDGETS.md.",
+  "unit": "kB of gzip (level 9, per file, summed; 1 kB = 1000 bytes)",
+  "routes": {
+    "/": { "initial": 146 },
+    "/matrix": { "initial": 146 },
+    "/trials/[cell]/[trial]": { "initial": 169 },
+    "/lineage/[trial]/[thread]": { "initial": 147, "total": 209 },
+    "/findings/[id]": { "initial": 146 },
+    "/compare/[scenario]": { "initial": 146 },
+    "/methodology": { "initial": 155 }
+  }
+}
