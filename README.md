@@ -43,6 +43,21 @@ trusted as evidence, and why not). `--canonical` marks a batch meant for publica
 refuses a dirty checkout and a sink clock more than one second from the host's. WSL2 and Docker
 Desktop share one kernel, so the offset there is near zero; under a separate VM it is not.
 
+## Evidence explorer (`site/`)
+
+A static site that renders the harness's artifacts and computes no verdicts. It needs Node 24
+(`site/.node-version`).
+
+```bash
+cd site
+npm ci
+npm run build                       # static export in site/out
+npm run test:unit
+npx playwright install chromium && npm run test:e2e
+```
+
+`site/DESIGN.md` describes the visual system and `site/BUDGETS.md` the JavaScript budgets.
+
 ## Related work and credits
 - langchain-ai/langgraph#8796: write-ownership conformance proposal and SIGSTOP fork repro (bharatnpti).
 - langchain-ai/langgraph#8039, #8234: sync-durability persistence ordering and post-crash recovery.
