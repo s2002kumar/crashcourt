@@ -132,6 +132,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "hypothesis" },
+    { name = "langgraph-checkpoint-conformance" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -154,6 +155,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "hypothesis", specifier = ">=6" },
+    { name = "langgraph-checkpoint-conformance", specifier = "==0.0.2" },
     { name = "pyright", specifier = ">=1.1.380" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.6" },
@@ -406,6 +408,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/dc/e1/089c4c9e0a2fec7f883f82ae8e6a727138d50074cfeb6644bc2d13b1019b/langgraph_checkpoint-4.2.0.tar.gz", hash = "sha256:51a593b6bee684b0818e5d6e58e28ab340c6db7794575056ce7bd1b746a84ed7", size = 180239, upload-time = "2026-08-07T20:05:03.756Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/05/71/3b475f09bd57d3a5649792c66353312b4432afd843f301739dfcebd157f0/langgraph_checkpoint-4.2.0-py3-none-any.whl", hash = "sha256:0547fd228935a0b758865de3a3d6d7a2537c308895d0f9ab092ce9151b5da942", size = 56833, upload-time = "2026-08-07T20:05:02.655Z" },
+]
+
+[[package]]
+name = "langgraph-checkpoint-conformance"
+version = "0.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langgraph-checkpoint" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/81/da/93e4e31f1f64eb12eb9b1a721161708ed7cdcacf9a105d6f6c203f903721/langgraph_checkpoint_conformance-0.0.2.tar.gz", hash = "sha256:6718e00937bf2f04cdfd2cdfabea23e1dabb79a534ff4c127f305f6b40dad4e0", size = 93726, upload-time = "2026-04-08T23:02:08.74Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ff/ed/27dc4ce19f9c848521e45cbf778b1a8d8d774fa468bab67f5a5fd51e9fe0/langgraph_checkpoint_conformance-0.0.2-py3-none-any.whl", hash = "sha256:c112ddc0416b097c90a145fd1908ba570db4cba209e1ae0330205e9f466ad4f9", size = 28425, upload-time = "2026-04-08T23:02:07.668Z" },
 ]
 
 [[package]]
