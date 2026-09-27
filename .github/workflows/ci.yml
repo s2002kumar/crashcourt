@@ -30,6 +30,7 @@ jobs:
       - run: uv run pyright
       - run: uv run pytest
       - run: uv run crashcourt clauses check  # control C6: the registry validates offline
+      - run: uv run crashcourt schema export --check  # schemas/v1 must match the models
   doctor:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

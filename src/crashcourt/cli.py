@@ -1,7 +1,7 @@
 """Crashcourt command line.
 
 `doctor` verifies the pinned environment and writes the manifest; `clauses` checks and lists the
-clause registry.
+clause registry; `schema export` writes the v1 JSON Schemas.
 """
 
 from __future__ import annotations
@@ -94,6 +94,22 @@ def _clauses_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _schema_export(args: argparse.Namespace) -> int:
+    from crashcourt.spec import export  # lazy: keeps `--help` fast
+
+    if args.check:
+        problems = export.differences(args.out)
+        if problems:
+            print(f"schemas in {args.out} are out of date; run `crashcourt schema export`")
+            print("\n".join(f"  {p}" for p in problems))
+            return 1
+        print(f"schemas in {args.out} match the models")
+        return 0
+    for path in export.export(args.out):
+        print(f"wrote {path}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="crashcourt", description=__doc__)
     parser.add_argument("--version", action="version", version=f"crashcourt {__version__}")
@@ -121,11 +137,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     listing.add_argument("--dir", type=Path, default=Path("clauses"))
     listing.add_argument("--markdown", action="store_true", help="print a Markdown table")
     listing.add_argument("--output", type=Path, help="write to this file instead of stdout")
+    schema = commands.add_parser("schema", help="JSON Schemas of the v1 models")
+    schema_commands = schema.add_subparsers(dest="schema_command", required=True)
+    export = schema_commands.add_parser("export", help="write schemas/v1/*.json")
+    export.add_argument("--out", type=Path, default=Path("schemas/v1"))
+    export.add_argument(
+        "--check", action="store_true", help="fail if the files differ from the models"
+    )
 
     args = parser.parse_args(argv)
     if args.command == "doctor":
         return _doctor(args)
     if args.command == "clauses":
         return _clauses_check(args) if args.clauses_command == "check" else _clauses_list(args)
+    if args.command == "schema":
+        return _schema_export(args)
     parser.error(f"unknown command {args.command}")
     return 2
