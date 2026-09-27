@@ -14,10 +14,12 @@ every failure will ship as a standalone repro.
 ```bash
 git clone <repo> && cd crashcourt
 uv sync --locked --group dev
-python scripts/pin_images.py        # first time only: pins compose images by digest
-docker compose up -d --wait
+docker compose up -d --wait         # Postgres on 127.0.0.1:55432, Toxiproxy API on 127.0.0.1:8474
 uv run crashcourt doctor            # checks the pinned environment, writes manifest.json
 ```
+
+Images are pinned by digest in compose.yaml. After changing an image tag, run
+`python scripts/pin_images.py` to re-pin.
 
 ## Related work and credits
 - langchain-ai/langgraph#8796: write-ownership conformance proposal and SIGSTOP fork repro (bharatnpti).
