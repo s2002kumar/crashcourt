@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 from crashcourt.doctor import DriverInfo
 from crashcourt.manifest import PINNED_DISTRIBUTIONS, POSTGRES_SETTINGS, Manifest
@@ -61,7 +61,7 @@ def make_manifest(**changes: object) -> Manifest:
         postgres=dict(GOOD_PG),
         toxiproxy_version="2.9.0",
     )
-    return replace(base, **changes)  # type: ignore[arg-type]
+    return base.model_copy(update=changes)
 
 
 @dataclass

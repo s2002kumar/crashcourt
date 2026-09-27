@@ -37,3 +37,9 @@ def test_reference_matches_the_lockfile_and_clause_registry_in_the_repository() 
     )
     assert manifest.lockfile_sha256 == sha256_file(REPO / "uv.lock"), rerecord
     assert manifest.clause_registry_sha256 == registry_sha256(REPO / "clauses"), rerecord
+
+
+def test_reference_manifest_round_trips_byte_for_byte() -> None:
+    """The model reads and writes the committed reference exactly as doctor wrote it."""
+    raw = compared_reference().read_bytes().decode("utf-8")
+    assert Manifest.from_json(raw).to_json() == raw
