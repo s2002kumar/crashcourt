@@ -9,6 +9,16 @@ LangGraph checkpointers on real Postgres), then judge each outcome against the r
 guarantees and an independent record of real-world effects. Every verdict will carry its evidence, and
 every failure will ship as a standalone repro.
 
+## Quickstart (environment only, T-01)
+
+```bash
+git clone <repo> && cd crashcourt
+uv sync --locked --group dev
+python scripts/pin_images.py        # first time only: pins compose images by digest
+docker compose up -d --wait
+uv run crashcourt doctor            # checks the pinned environment, writes manifest.json
+```
+
 ## Related work and credits
 - langchain-ai/langgraph#8796: write-ownership conformance proposal and SIGSTOP fork repro (bharatnpti).
 - langchain-ai/langgraph#8039, #8234: sync-durability persistence ordering and post-crash recovery.

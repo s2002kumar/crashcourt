@@ -1,0 +1,22 @@
+# Target environment for Crashcourt runs. Ports bind to 127.0.0.1 only (spec section 23).
+# Images are pinned by digest with `python scripts/pin_images.py`; `crashcourt doctor` refuses tags alone.
+name: crashcourt
+services:
+  postgres:
+    image: postgres:18  # current stable major; 19 was still in beta on 2026-09-26
+    command: ["postgres", "-c", "track_commit_timestamp=on"]
+    environment:
+      POSTGRES_USER: crashcourt
+      POSTGRES_PASSWORD: crashcourt
+      POSTGRES_DB: crashcourt
+    ports: ["127.0.0.1:5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crashcourt -d crashcourt"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0  # newest release confirmed 2026-09-26; re-check when pinning
+    ports:
+      - "127.0.0.1:8474:8474"    # control API
+      - "127.0.0.1:15432:15432"  # proxied Postgres; the harness creates the proxy (T-05)
