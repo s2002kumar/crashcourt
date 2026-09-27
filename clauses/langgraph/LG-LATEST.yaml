@@ -1,0 +1,30 @@
+id: LG-LATEST
+title: get_tuple returns the latest checkpoint without an id, and that exact one with an id
+polarity: describes
+paraphrase: >-
+  For checkpointer implementations, get_tuple without a checkpoint_id returns the latest checkpoint
+  for the thread and namespace, and with a checkpoint_id returns that exact checkpoint. Both paths
+  must work: by-id lookup is used for time travel and for delta channel reconstruction on every
+  invocation. In the recommended SQL design, larger checkpoint ids are newer, so "latest" is the
+  largest id.
+quotes:
+  - No checkpoint_id — return the latest checkpoint for the thread + namespace.
+  - A specific checkpoint_id — return that exact checkpoint.
+  - >-
+    Both paths must work correctly. The specific-id path is used for time travel and — critically —
+    for delta channel state reconstruction on every graph invocation (see Delta channel support). A
+    broken specific-id lookup silently corrupts delta channel state.
+  - Because checkpoint_id is a ULID, it sorts lexicographically — larger values are newer.
+source_url: https://docs.langchain.com/oss/python/langgraph/checkpointers#build-a-custom-checkpointer
+snapshot_url: https://docs.langchain.com/oss/python/langgraph/checkpointers.md
+retrieved: 2026-09-27
+snapshot_sha256: "4a73f776970a6e5294d9e4c6ab4956164a78e807a352abacf2a70b2e7fd212c4"
+version_scope:
+  package: langgraph-checkpoint
+  specifier: ">=4.2,<4.3"
+applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
+notes: >-
+  Written as guidance for authors of custom checkpointers, not as a guarantee about the official
+  savers. The page calls checkpoint ids ULIDs; the official savers' id generation is audited in
+  T-03. The page does not say which checkpoint is "latest" when two writers create sibling
+  checkpoints of one parent.

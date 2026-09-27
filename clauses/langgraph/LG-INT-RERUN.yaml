@@ -1,0 +1,28 @@
+id: LG-INT-RERUN
+title: The node that called interrupt() restarts from its beginning on resume
+polarity: permits
+paraphrase: >-
+  When execution resumes after an interrupt, the runtime restarts the whole node that called
+  interrupt() from its beginning, not from the interrupt call, so code before the interrupt runs
+  again; side effects before interrupt() should (ideally) be idempotent.
+quotes:
+  - >-
+    When execution resumes (after you provide the requested input), the runtime restarts the entire
+    node from the beginning—it does not resume from the exact line where interrupt was called. This
+    means any code that ran before the interrupt will execute again.
+  - >-
+    Because interrupts work by re-running the nodes they were called from, side effects called
+    before interrupt should (ideally) be idempotent.
+source_url: https://docs.langchain.com/oss/python/langgraph/interrupts#rules-of-interrupts
+snapshot_url: https://docs.langchain.com/oss/python/langgraph/interrupts.md
+retrieved: 2026-09-27
+snapshot_sha256: "df80f2e6ec5b1788a4dfc92d592f69560c1ec4b1f11ac5a73ade85bc51bb39cd"
+version_scope:
+  package: langgraph
+  specifier: ">=1.2,<1.3"
+applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
+notes: >-
+  The first quote is the exact text of the rule (Rules of interrupts); code formatting is dropped.
+  It makes the W1 misuse variant (effect before interrupt()) EXPECTED to duplicate its effect on
+  resume. The page says nothing about two resumes of the same interrupt, or resumes with
+  different values; those cases (F07, F08) have no clause and are GAP.

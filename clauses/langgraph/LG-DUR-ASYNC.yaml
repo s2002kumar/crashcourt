@@ -1,0 +1,24 @@
+id: LG-DUR-ASYNC
+title: Async durability may lose checkpoints if the process crashes
+polarity: permits
+paraphrase: >-
+  With durability="async", LangGraph persists changes asynchronously while the next step runs,
+  and there is a small risk that checkpoints are not written if the process crashes during
+  execution.
+quotes:
+  - >-
+    "async": LangGraph persists changes asynchronously while the next step executes. This provides
+    good performance and durability, but there is a small risk that LangGraph does not write
+    checkpoints if the process crashes during execution.
+source_url: https://docs.langchain.com/oss/python/langgraph/checkpointers#durability-modes
+snapshot_url: https://docs.langchain.com/oss/python/langgraph/checkpointers.md
+retrieved: 2026-09-27
+snapshot_sha256: "4a73f776970a6e5294d9e4c6ab4956164a78e807a352abacf2a70b2e7fd212c4"
+version_scope:
+  package: langgraph
+  specifier: ">=1.2,<1.3"
+applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
+notes: >-
+  Permits a missing checkpoint after a process crash. It says nothing about faults without a
+  crash (a lost acknowledgment, a connection reset, a database restart), so it cannot make those
+  outcomes EXPECTED on its own.
