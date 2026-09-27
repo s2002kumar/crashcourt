@@ -200,7 +200,7 @@ def run_doctor(probes: Probes) -> DoctorReport:
                 "manifest complete",
                 not problems,
                 "complete" if not problems else "; ".join(problems),
-                "Fix the listed fields (docs/spec/DIGEST.md).",
+                "Fix the listed fields; src/crashcourt/manifest.py defines the required set.",
             )
         )
         manifest = candidate if not problems else None
