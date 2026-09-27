@@ -5,15 +5,15 @@ description = "An open-source conformance and reliability lab for durable agent 
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12,<3.14"
-# System under test and its drivers: exact pins (spec section 16, T-01).
-# langgraph 1.2.12 verified on PyPI 2026-09-26. The others were observed in upstream issues
-# (Aug-Sep 2026); T-01 re-verifies them when resolving uv.lock.
+# System under test and its drivers: exact pins (spec section 16, T-01). Each is the newest
+# release on PyPI on 2026-09-27; see tasks/T-01.md for sources and the psycopg bump.
 dependencies = [
   "langgraph==1.2.12",
   "langgraph-checkpoint==4.2.0",
   "langgraph-checkpoint-postgres==3.1.2",
   "langgraph-checkpoint-sqlite==3.1.1",
-  "psycopg[binary,pool]==3.3.4",
+  "psycopg[binary]==3.3.6",
+  "psycopg-pool==3.3.3",
 ]
 
 [project.scripts]
