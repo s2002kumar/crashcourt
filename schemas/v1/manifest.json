@@ -1,0 +1,102 @@
+{
+  "$id": "urn:crashcourt:schema:v1:manifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Schema v1. The JSON form is sorted, two-space indented, and ends with a newline.",
+  "properties": {
+    "compose_version": {
+      "title": "Compose Version",
+      "type": "string"
+    },
+    "docker_version": {
+      "title": "Docker Version",
+      "type": "string"
+    },
+    "generated_at": {
+      "title": "Generated At",
+      "type": "string"
+    },
+    "git_dirty": {
+      "title": "Git Dirty",
+      "type": "boolean"
+    },
+    "git_sha": {
+      "title": "Git Sha",
+      "type": "string"
+    },
+    "images": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Images",
+      "type": "object"
+    },
+    "lockfile_sha256": {
+      "title": "Lockfile Sha256",
+      "type": "string"
+    },
+    "machine": {
+      "title": "Machine",
+      "type": "string"
+    },
+    "os_release": {
+      "title": "Os Release",
+      "type": "string"
+    },
+    "os_system": {
+      "title": "Os System",
+      "type": "string"
+    },
+    "packages": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Packages",
+      "type": "object"
+    },
+    "postgres": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Postgres",
+      "type": "object"
+    },
+    "python_implementation": {
+      "title": "Python Implementation",
+      "type": "string"
+    },
+    "python_version": {
+      "title": "Python Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "toxiproxy_version": {
+      "title": "Toxiproxy Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "generated_at",
+    "git_sha",
+    "git_dirty",
+    "python_version",
+    "python_implementation",
+    "os_system",
+    "os_release",
+    "machine",
+    "lockfile_sha256",
+    "packages",
+    "docker_version",
+    "compose_version",
+    "images",
+    "postgres",
+    "toxiproxy_version"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}
