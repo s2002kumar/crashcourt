@@ -48,7 +48,7 @@ packages = ["src/crashcourt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["integration: needs the docker compose services (postgres, toxiproxy)"]
+markers = ["integration: needs real OS processes, Docker, or the compose services (postgres, toxiproxy)"]
 addopts = "-m 'not integration'"
 
 [tool.ruff]
