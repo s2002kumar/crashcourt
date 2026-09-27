@@ -1,0 +1,73 @@
+{
+  "note": "Demonstration data (DEMO-), not a result.",
+  "attempts_returned": [
+    1,
+    2
+  ],
+  "sink_seqs_returned": [
+    1,
+    2,
+    3
+  ],
+  "rows": [
+    {
+      "sink_seq": 1,
+      "received_mono_ns": 124867268855101,
+      "received_wall_ns": 1790516656838226641,
+      "effect_key": "charge:order-17",
+      "logical_op": "approve:t3:i1",
+      "op_id": "op-1",
+      "attempt": 1,
+      "worker": "worker-1",
+      "pid": null,
+      "thread_id": "t3",
+      "node": "execute",
+      "checkpoint_id_seen": "C4",
+      "payload_hash": "342aca3c40785d3ee6db8a87c4ab9869c82b3724b16873ff519b6c02ae47438d",
+      "status": "applied",
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "row_hash": "fee6e4aad09b6f1a0bc73346f86517b5f5f7f00c15d47aa896255ccc8121469c"
+    },
+    {
+      "sink_seq": 2,
+      "received_mono_ns": 124867312989980,
+      "received_wall_ns": 1790516656881955670,
+      "effect_key": "charge:order-17",
+      "logical_op": "approve:t3:i1",
+      "op_id": "op-2",
+      "attempt": 2,
+      "worker": "worker-1",
+      "pid": null,
+      "thread_id": "t3",
+      "node": "execute",
+      "checkpoint_id_seen": "C4",
+      "payload_hash": "342aca3c40785d3ee6db8a87c4ab9869c82b3724b16873ff519b6c02ae47438d",
+      "status": "applied",
+      "prev_hash": "fee6e4aad09b6f1a0bc73346f86517b5f5f7f00c15d47aa896255ccc8121469c",
+      "row_hash": "ba8916399611b18d729eb2e10e952667a31518cd3524072216c7c2162155f76f"
+    },
+    {
+      "sink_seq": 3,
+      "received_mono_ns": 124867343042905,
+      "received_wall_ns": 1790516656912007474,
+      "effect_key": "refund:order-17",
+      "logical_op": "approve:t3:i1",
+      "op_id": "op-2",
+      "attempt": 2,
+      "worker": "worker-1",
+      "pid": null,
+      "thread_id": "t3",
+      "node": "execute",
+      "checkpoint_id_seen": "C4",
+      "payload_hash": "6a3fab34f6d610b5d5ba41106bafdc9da2cac05618d528da7e412b96c47647c7",
+      "status": "applied",
+      "prev_hash": "ba8916399611b18d729eb2e10e952667a31518cd3524072216c7c2162155f76f",
+      "row_hash": "621ab990cc7da37b66480fd19cab953f64a7df3d553f5af98b787bbfa62ec341"
+    }
+  ],
+  "verify": {
+    "ok": true,
+    "rows": 3,
+    "first_bad": null
+  }
+}
