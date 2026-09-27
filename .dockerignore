@@ -1,0 +1,7 @@
+# The image copies only pyproject.toml, uv.lock, README.md, and src/; nothing else needs to reach the daemon.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+**/__pycache__

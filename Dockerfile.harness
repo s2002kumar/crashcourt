@@ -1,0 +1,19 @@
+# The harness image: today it runs the effect sink; later cards run workers in it too.
+# The base is pinned by digest with `python scripts/pin_images.py`.
+FROM ghcr.io/astral-sh/uv:0.12.1-python3.12-trixie-slim@sha256:fce651fe385e83c691c15c33b2574486581fbc58e307f2db3a9c3987919f8b08
+
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PYTHONUNBUFFERED=1
+WORKDIR /app
+
+# Dependencies first, from the lockfile only, so code changes reuse this layer.
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --locked --no-dev --no-install-project
+COPY src ./src
+RUN uv sync --locked --no-dev --no-editable
+
+ENV CRASHCOURT_SINK_DATA=/data
+EXPOSE 8000
+CMD ["/opt/venv/bin/uvicorn", "--factory", "crashcourt.sink.app:from_env", "--host", "0.0.0.0", "--port", "8000"]

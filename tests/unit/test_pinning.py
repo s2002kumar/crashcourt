@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from crashcourt.pinning import main, normalize_repo, repo_of, rewrite_compose
+from crashcourt.pinning import main, normalize_repo, repo_of, rewrite_compose, rewrite_dockerfile
 
 DA = "sha256:" + "a" * 64
 DB = "sha256:" + "b" * 64
@@ -60,3 +60,25 @@ def test_repo_names() -> None:
     assert repo_of("localhost:5000/team/img:1.0") == "localhost:5000/team/img"
     assert repo_of("ghcr.io/shopify/toxiproxy") == "ghcr.io/shopify/toxiproxy"
     assert normalize_repo("docker.io/library/postgres") == "postgres"
+
+
+DOCKERFILE = """FROM ghcr.io/astral-sh/uv:0.12.1-python3.12-trixie-slim AS build
+RUN echo FROM nothing
+FROM python:3.12-slim  # runtime
+"""
+
+
+def test_dockerfile_base_images_are_pinned() -> None:
+    text, changes = rewrite_dockerfile(DOCKERFILE, lambda ref: DA)
+    assert f"FROM ghcr.io/astral-sh/uv:0.12.1-python3.12-trixie-slim@{DA} AS build\n" in text
+    assert "RUN echo FROM nothing\n" in text
+    assert f"FROM python:3.12-slim@{DA}  # runtime\n" in text
+    assert len(changes) == 2
+
+
+def test_main_pins_the_harness_dockerfile_next_to_compose(tmp_path: Path) -> None:
+    compose = tmp_path / "compose.yaml"
+    compose.write_bytes(COMPOSE.encode())
+    (tmp_path / "Dockerfile.harness").write_bytes(DOCKERFILE.encode())
+    assert main(compose, lambda ref: DB) == 0
+    assert f"@{DB} AS build" in (tmp_path / "Dockerfile.harness").read_text(encoding="utf-8")
