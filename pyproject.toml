@@ -14,13 +14,23 @@ dependencies = [
   "langgraph-checkpoint-sqlite==3.1.1",
   "psycopg[binary]==3.3.6",
   "psycopg-pool==3.3.3",
+  # Harness libraries: lower bounds here, exact versions in uv.lock.
+  "packaging>=26.3",
+  "pydantic>=2.13.5",
+  "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
 crashcourt = "crashcourt.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380"]
+dev = [
+    "pytest>=8",
+    "hypothesis>=6",
+    "ruff>=0.6",
+    "pyright>=1.1.380",
+    "types-pyyaml>=6.0.12.20260906",
+]
 
 [tool.uv]
 # The interpreter is part of the manifest: use uv's own build of the version in .python-version on
