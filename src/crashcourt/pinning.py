@@ -1,4 +1,7 @@
-"""Pin compose images by digest (used by scripts/pin_images.py). The rewrite logic is pure and tested."""
+"""Pin compose images by digest (used by scripts/pin_images.py).
+
+The rewrite logic is pure and unit-tested; only `docker_digest` touches Docker.
+"""
 
 from __future__ import annotations
 

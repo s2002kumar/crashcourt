@@ -1,4 +1,7 @@
-"""Runs against the real compose services: `docker compose up -d --wait && uv run pytest -m integration`."""
+"""Runs against the real compose services.
+
+Usage: docker compose up -d --wait && uv run pytest -m integration
+"""
 
 from __future__ import annotations
 

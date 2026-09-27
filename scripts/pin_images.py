@@ -5,6 +5,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from crashcourt.pinning import main  # noqa: E402
+from crashcourt.pinning import main
 
 raise SystemExit(main(Path(__file__).resolve().parents[1] / "compose.yaml"))

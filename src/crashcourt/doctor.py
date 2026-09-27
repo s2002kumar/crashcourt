@@ -219,6 +219,8 @@ def format_report(report: DoctorReport) -> str:
             lines.append(f"      {' ' * width}  -> {check.remedy}")
     lines.append("")
     lines.append(
-        "doctor: all checks passed" if report.ok else f"doctor: {len(report.failures)} check(s) failed"
+        "doctor: all checks passed"
+        if report.ok
+        else f"doctor: {len(report.failures)} check(s) failed"
     )
     return "\n".join(lines)

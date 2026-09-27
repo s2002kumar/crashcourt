@@ -8,7 +8,7 @@ import re
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 SCHEMA_VERSION = 1
 
@@ -22,7 +22,8 @@ PINNED_DISTRIBUTIONS: tuple[str, ...] = (
     "psycopg-pool",
 )
 
-#: Postgres settings recorded in every manifest. track_commit_timestamp must be "on" (spec section 8).
+#: Postgres settings recorded in every manifest.
+#: track_commit_timestamp must be "on" (spec section 8).
 POSTGRES_SETTINGS: tuple[str, ...] = (
     "server_version",
     "fsync",
@@ -146,8 +147,8 @@ def parse_uv_lock(text: str) -> dict[str, str]:
     for entry in packages:
         if not isinstance(entry, dict):
             continue
-        name: Any = entry.get("name")  # pyright: ignore[reportUnknownMemberType]
-        ver: Any = entry.get("version")  # pyright: ignore[reportUnknownMemberType]
+        fields = cast("dict[str, object]", entry)
+        name, ver = fields.get("name"), fields.get("version")
         if isinstance(name, str) and isinstance(ver, str):
             locked[normalize_dist(name)] = ver
     return locked

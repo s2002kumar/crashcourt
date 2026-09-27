@@ -1,4 +1,4 @@
-"""Command-line entry point. T-01 ships `doctor`; later cards add run, check, shrink, repro, report."""
+"""Crashcourt command line. `doctor` verifies the pinned environment and writes the manifest."""
 
 from __future__ import annotations
 
@@ -43,9 +43,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="crashcourt", description=__doc__)
     parser.add_argument("--version", action="version", version=f"crashcourt {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
-    doctor = commands.add_parser("doctor", help="verify the pinned environment; write manifest.json")
+    doctor = commands.add_parser(
+        "doctor", help="verify the pinned environment; write manifest.json"
+    )
     doctor.add_argument("--manifest", type=Path, default=Path("manifest.json"))
-    doctor.add_argument("--compare", type=Path, help="fail if pinned fields differ from this manifest")
+    doctor.add_argument(
+        "--compare", type=Path, help="fail if pinned fields differ from this manifest"
+    )
     doctor.add_argument("--json", action="store_true", help="print the report as JSON")
     args = parser.parse_args(argv)
     if args.command == "doctor":
