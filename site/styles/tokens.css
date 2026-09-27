@@ -1,0 +1,79 @@
+/*
+ * Design tokens. Every color is written once as light-dark(<light>, <dark>), so each token holds both
+ * themes on one line. tests/unit/tokens.test.ts parses this file and checks contrast and color-blind
+ * separation; see DESIGN.md for the rules behind the values.
+ *
+ * Theme: dark unless the reader's system prefers light; an explicit choice sets data-theme on <html>.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces, darkest to most raised (dark) and paper to white (light). */
+  --bg: light-dark(#f4f4f0, #0b0e12);
+  --panel: light-dark(#ffffff, #12161c);
+  --raised: light-dark(#fafaf7, #191e26);
+  --rule: light-dark(#dedfda, #252b34);
+  --rule-strong: light-dark(#c4c6c0, #353d49);
+
+  /* Text. All three meet 4.5:1 on every surface. */
+  --ink: light-dark(#121418, #e6eaf0);
+  --ink-muted: light-dark(#4c5360, #a0aab7);
+  --ink-faint: light-dark(#5f6671, #7f8997);
+
+  /* The one signal accent: crash-test yellow. It marks faults and keyboard focus, nothing else. */
+  --accent: #ffd60a;
+  --accent-ink: #121418;
+  --accent-text: light-dark(#7a5a00, #ffd60a);
+  --accent-edge: light-dark(#121418, #ffd60a);
+  --focus: light-dark(#121418, #ffd60a);
+
+  /*
+   * Verdicts. Always drawn with their glyph and label; color is the third cue, never the only one.
+   * The color marks the glyph, edge, and tint of a badge; badge labels are set in ink.
+   */
+  --verdict-tint: 8%;
+  --verdict-pass: light-dark(#027e5a, #80f1c8);
+  --verdict-expected: light-dark(#003b7a, #8fc1eb);
+  --verdict-gap: light-dark(#ac34a6, #c267e8);
+  --verdict-violation: light-dark(#c2390d, #f35d40);
+  --verdict-invalid: light-dark(#545557, #898c90);
+
+  /* Actor lanes. The same color for the same actor on every page. */
+  --actor-client: light-dark(#4b4d50, #7e8083);
+  --actor-worker-a: light-dark(#3655cd, #5577e5);
+  --actor-worker-b: light-dark(#da4786, #f18db5);
+  --actor-database: light-dark(#1d93a6, #8ceaef);
+  --actor-sink: light-dark(#a65003, #d6812e);
+
+  /* Layout. */
+  --page-max: 82.5rem;
+  --gutter: 1.5rem;
+  --radius: 3px;
+
+  /* Motion. Reduced motion collapses every duration to zero (see globals.css). */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+  }
+}
