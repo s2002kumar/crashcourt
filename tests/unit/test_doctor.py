@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
+
 from crashcourt.doctor import format_report, run_doctor
 
 from ._factories import (
@@ -9,6 +11,7 @@ from ._factories import (
     GOOD_IMAGE_IDS,
     GOOD_PG,
     GOOD_RUNNING,
+    GOOD_SINK,
     GOOD_VERSIONS,
     ID_PG,
     ID_TOXI,
@@ -228,3 +231,31 @@ def test_spec_provenance_is_recorded_and_checked_where_the_spec_is_present() -> 
     assert "does not match" in failed(FakeProbes(spec=(SPEC_SHA, False)))["spec provenance"]
     broken = failed(FakeProbes(spec=FileNotFoundError("spec-provenance.json")))
     assert broken["spec provenance"] == "FileNotFoundError: spec-provenance.json"
+
+
+def test_unreachable_sink_fails() -> None:
+    fails = failed(FakeProbes(sink=ConnectionError("refused")))
+    assert fails["effect sink"] == "ConnectionError: refused"
+
+
+@pytest.mark.parametrize(
+    ("health", "problem"),
+    [
+        ({**GOOD_SINK, "test_hooks": True}, "a test hook is armed"),
+        ({**GOOD_SINK, "ledger_version": 2}, "ledger version 2, expected 1"),
+        ({**GOOD_SINK, "status": "degraded"}, "status degraded"),
+    ],
+)
+def test_sink_health_problems_fail(health: dict[str, object], problem: str) -> None:
+    assert problem in failed(FakeProbes(sink=health))["effect sink"]
+
+
+def test_unhealthy_sink_container_fails() -> None:
+    states = {"postgres": "healthy", "toxiproxy": "running", "sink": "starting"}
+    assert "sink=starting" in failed(FakeProbes(states=states))["compose services up"]
+
+
+def test_unpinned_or_missing_harness_base_fails() -> None:
+    fails = failed(FakeProbes(bases=["ghcr.io/astral-sh/uv:0.12.1"]))
+    assert "Dockerfile.harness FROM ghcr.io/astral-sh/uv:0.12.1" in fails["images pinned by digest"]
+    assert "Dockerfile.harness" in failed(FakeProbes(bases=None))["images pinned by digest"]

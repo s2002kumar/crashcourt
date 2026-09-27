@@ -10,6 +10,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import re
 import subprocess
 import urllib.request
 from collections.abc import Iterable, Mapping, Sequence
@@ -25,6 +26,10 @@ DEFAULT_PG_DSN = "postgresql://crashcourt:crashcourt@127.0.0.1:55432/crashcourt"
 DEFAULT_TOXIPROXY_URL = "http://127.0.0.1:8474"
 #: The same database through Toxiproxy: the path workers use and faults act on.
 DEFAULT_PG_PROXY_DSN = "postgresql://crashcourt:crashcourt@127.0.0.1:15432/crashcourt"
+#: The effect sink, reached directly: it is never behind Toxiproxy (spec section 7).
+DEFAULT_SINK_URL = "http://127.0.0.1:8480"
+#: The full image reference, digest included, of a Dockerfile FROM line.
+_FROM_IMAGE = re.compile(r"^\s*FROM\s+(\S+)", re.IGNORECASE)
 
 
 def _compose_ps_items(raw: str) -> list[dict[str, object]]:
@@ -111,6 +116,7 @@ class SystemProbes:
         self.root = root
         self.pg_dsn = os.environ.get("CRASHCOURT_PG_DSN", DEFAULT_PG_DSN)
         self.toxiproxy_url = os.environ.get("CRASHCOURT_TOXIPROXY_URL", DEFAULT_TOXIPROXY_URL)
+        self.sink_url = os.environ.get("CRASHCOURT_SINK_URL", DEFAULT_SINK_URL)
 
     def _run(self, *args: str) -> str | None:
         try:
@@ -197,6 +203,21 @@ class SystemProbes:
         if isinstance(data, dict):
             return str(cast("dict[str, object]", data).get("version", body))
         return str(data)
+
+    def sink_health(self) -> Mapping[str, object]:
+        url = self.sink_url.rstrip("/") + "/health"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            data: Any = json.loads(response.read().decode())
+        if not isinstance(data, dict):
+            raise ValueError(f"unexpected /health body: {data!r}")
+        return cast("dict[str, object]", data)
+
+    def harness_base_images(self) -> Sequence[str] | None:
+        path = self.root / "Dockerfile.harness"
+        if not path.exists():
+            return None
+        lines = path.read_bytes().decode("utf-8").splitlines()
+        return [m.group(1) for m in (_FROM_IMAGE.match(line) for line in lines) if m]
 
     def installed_versions(self, dists: Iterable[str]) -> Mapping[str, str | None]:
         found: dict[str, str | None] = {}
