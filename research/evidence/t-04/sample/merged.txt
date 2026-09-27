@@ -1,0 +1,28 @@
+  #  proc         seq  kind                     detail
+  0  orchestrator   0  client.invoke            op=op-7 data={'resume': 'approve'}
+  1  orchestrator   1  dispatch.send            op=op-7 data={'to': 'worker-1'}
+  2  orchestrator   2  client.invoke            op=op-8 data={'resume': 'reject'}
+  3  orchestrator   3  dispatch.send            op=op-8 data={'to': 'worker-2'}
+  4  worker-1       0  saver.get_tuple.call     op=op-7
+  5  worker-1       1  saver.get_tuple.return   op=op-7 cp=C4
+  6  worker-1       2  fp.hit                   op=op-7
+  7  worker-2       0  saver.get_tuple.call     op=op-8
+  8  worker-2       1  saver.get_tuple.return   op=op-8 cp=C4
+  9  worker-2       2  fp.hit                   op=op-8
+ 10  orchestrator   4  fp.release               data={'proc': 'worker-1', 'hit_seq': 2}
+ 11  orchestrator   5  fp.release               data={'proc': 'worker-2', 'hit_seq': 2}
+ 12  worker-2       3  fp.action                op=op-8 data={'hit_seq': 2, 'action': 'pause'}
+ 13  worker-2       4  node.start               op=op-8
+ 14  worker-2       5  saver.put.call           op=op-8 cp=C5b parent=C4
+ 15  worker-2       6  saver.put.return         op=op-8 cp=C5b parent=C4
+ 16  worker-1       3  fp.action                op=op-7 data={'hit_seq': 2, 'action': 'pause'}
+ 17  worker-1       4  node.start               op=op-7
+ 18  worker-1       5  effect.request           op=op-7 cp=C4 effect=charge:order-17
+ 19  sink           0  sink.append              op=op-7 effect=charge:order-17 data={'worker': 'worker-1', 'sink_seq': 1}
+ 20  worker-1       6  effect.response          op=op-7 effect=charge:order-17
+ 21  worker-1       7  saver.put.call           op=op-7 cp=C5a parent=C4
+ 22  worker-1       8  saver.put.return         op=op-7 cp=C5a parent=C4
+ 23  orchestrator   6  client.ok                op=op-8 data={'worker': 'worker-2', 'worker_seq': 6}
+ 24  orchestrator   7  client.ok                op=op-7 data={'worker': 'worker-1', 'worker_seq': 8}
+ 25  orchestrator   8  worker.exit              data={'proc': 'worker-1', 'returncode': 0}
+ 26  orchestrator   9  worker.exit              data={'proc': 'worker-2', 'returncode': 0}
