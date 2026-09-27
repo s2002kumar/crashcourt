@@ -12,3 +12,5 @@
 - Recorded but not compared: OS, machine, runner (local or a hosted runner), Docker and Compose versions, the Docker
   engine's kernel, and the running image IDs (engine-specific; doctor checks them against the pinned refs on the
   machine that ran it).
+- A later task that changes a pinned field commits a new reference manifest in its own evidence folder and points
+  CI at it, so this file stays the record of the T-01 environment. T-02 did so when it changed uv.lock.
