@@ -23,6 +23,8 @@ from crashcourt.manifest import parse_uv_lock, sha256_file
 #: (the oracle path).
 DEFAULT_PG_DSN = "postgresql://crashcourt:crashcourt@127.0.0.1:55432/crashcourt"
 DEFAULT_TOXIPROXY_URL = "http://127.0.0.1:8474"
+#: The same database through Toxiproxy: the path workers use and faults act on.
+DEFAULT_PG_PROXY_DSN = "postgresql://crashcourt:crashcourt@127.0.0.1:15432/crashcourt"
 
 
 def _compose_ps_items(raw: str) -> list[dict[str, object]]:

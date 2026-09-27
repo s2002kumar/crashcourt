@@ -1,13 +1,15 @@
 """Crashcourt command line.
 
 `doctor` verifies the pinned environment and writes the manifest; `clauses` checks and lists the
-clause registry; `schema export` writes the v1 JSON Schemas.
+clause registry; `schema export` writes the v1 JSON Schemas; `faults selftest` checks every fault
+primitive against the compose services.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -110,6 +112,31 @@ def _schema_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _faults_selftest(args: argparse.Namespace) -> int:
+    from crashcourt.faults import selftest
+    from crashcourt.probes import DEFAULT_PG_DSN, DEFAULT_PG_PROXY_DSN, DEFAULT_TOXIPROXY_URL
+
+    def progress(trial: selftest.Trial) -> None:
+        marks = " ".join(f"{c.name}={c.status}" for c in trial.checks)
+        print(f"trial {trial.number:>2}: {'ok  ' if trial.ok else 'FAIL'}  {marks}", flush=True)
+
+    results = selftest.run_selftest(
+        trials=args.trials,
+        direct_dsn=os.environ.get("CRASHCOURT_PG_DSN", DEFAULT_PG_DSN),
+        proxied_dsn=os.environ.get("CRASHCOURT_PG_PROXY_DSN", DEFAULT_PG_PROXY_DSN),
+        toxiproxy_url=os.environ.get("CRASHCOURT_TOXIPROXY_URL", DEFAULT_TOXIPROXY_URL),
+        root=Path.cwd(),
+        history_dir=args.history,
+        restart=not args.no_restart,
+        progress=progress,
+    )
+    text = selftest.report(results)
+    print(text, end="")
+    if args.report is not None:
+        args.report.write_bytes(text.encode("utf-8"))
+    return 0 if all(t.ok for t in results) else 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="crashcourt", description=__doc__)
     parser.add_argument("--version", action="version", version=f"crashcourt {__version__}")
@@ -145,6 +172,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--check", action="store_true", help="fail if the files differ from the models"
     )
 
+    faults = commands.add_parser("faults", help="fault primitives")
+    fault_commands = faults.add_subparsers(dest="faults_command", required=True)
+    selftest = fault_commands.add_parser(
+        "selftest", help="check every fault primitive against the compose services"
+    )
+    selftest.add_argument("--trials", type=int, default=20)
+    selftest.add_argument(
+        "--no-restart", action="store_true", help="skip the database restart check"
+    )
+    selftest.add_argument("--report", type=Path, help="also write the Markdown report here")
+    selftest.add_argument("--history", type=Path, help="keep the fault histories in this directory")
+
     args = parser.parse_args(argv)
     if args.command == "doctor":
         return _doctor(args)
@@ -152,5 +191,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _clauses_check(args) if args.clauses_command == "check" else _clauses_list(args)
     if args.command == "schema":
         return _schema_export(args)
+    if args.command == "faults":
+        return _faults_selftest(args)
     parser.error(f"unknown command {args.command}")
     return 2
