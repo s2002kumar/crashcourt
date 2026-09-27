@@ -1,0 +1,2 @@
+# LF everywhere: uv.lock is hashed into every manifest, and CRLF checkouts would change that hash.
+* text=auto eol=lf
