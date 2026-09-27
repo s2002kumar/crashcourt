@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from crashcourt.pinning import normalize_repo, repo_of, rewrite_compose
+from crashcourt.pinning import main, normalize_repo, repo_of, rewrite_compose
 
 DA = "sha256:" + "a" * 64
 DB = "sha256:" + "b" * 64
@@ -31,6 +33,21 @@ def test_repinning_replaces_old_digest_and_is_idempotent() -> None:
     assert twice == once and changes == []
     moved, changes = rewrite_compose(once, lambda ref: DB)
     assert DA not in moved and len(changes) == 2
+
+
+def test_line_endings_are_preserved() -> None:
+    text, _ = rewrite_compose(COMPOSE.replace("\n", "\r\n"), lambda ref: DA)
+    assert f"    image: postgres:18@{DA}  # current stable major\r\n" in text
+    assert text.count("\r\n") == COMPOSE.count("\n")
+
+
+def test_main_rewrites_the_file_without_changing_line_endings(tmp_path: Path) -> None:
+    compose = tmp_path / "compose.yaml"
+    compose.write_bytes(COMPOSE.encode())
+    assert main(compose, lambda ref: DA) == 0
+    written = compose.read_bytes()
+    assert b"\r" not in written
+    assert written == rewrite_compose(COMPOSE, lambda ref: DA)[0].encode()
 
 
 def test_malformed_digest_is_rejected() -> None:

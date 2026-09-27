@@ -27,7 +27,8 @@ def _doctor(args: argparse.Namespace) -> int:
         print(format_report(report))
     if report.manifest is None:
         return 1
-    args.manifest.write_text(report.manifest.to_json(), encoding="utf-8")
+    # Bytes, not text mode: the manifest must be byte-identical on every platform.
+    args.manifest.write_bytes(report.manifest.to_json().encode("utf-8"))
     if args.compare is not None:
         other = Manifest.from_json(args.compare.read_text(encoding="utf-8"))
         diffs = diff_pinned(report.manifest, other)

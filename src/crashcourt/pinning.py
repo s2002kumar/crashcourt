@@ -69,11 +69,12 @@ def docker_digest(ref: str) -> str:
     raise RuntimeError(f"no registry digest for {ref} in {entries}")
 
 
-def main(compose_path: Path) -> int:
-    text = compose_path.read_text(encoding="utf-8")
-    new_text, changes = rewrite_compose(text, docker_digest)
+def main(compose_path: Path, resolve: Callable[[str], str] = docker_digest) -> int:
+    # Bytes in, bytes out: text mode would translate line endings on Windows.
+    text = compose_path.read_bytes().decode("utf-8")
+    new_text, changes = rewrite_compose(text, resolve)
     if new_text != text:
-        compose_path.write_text(new_text, encoding="utf-8")
+        compose_path.write_bytes(new_text.encode("utf-8"))
     for change in changes or ["already pinned; digests unchanged"]:
         print(change)
     return 0
