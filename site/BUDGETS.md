@@ -38,8 +38,8 @@ Release build (no source maps), measured 2026-09-27 on Windows 11 (x64), Node 24
 | `/compare/[scenario]` | 138.2 kB | 138.2 kB | 147.5 kB |
 | `/methodology` | 147.5 kB | 147.5 kB | 147.5 kB |
 
-CI measured the same build on Linux (ubuntu-24.04, Node 24.21.0) byte for byte: the same sizes to the byte
-on every route, and the same library table
+CI measured the same code on Linux (ubuntu-24.04, Node 24.21.0) with identical results: every route's size
+to the byte, and the same library table
 ([run 36350258591](https://github.com/s2002kumar/crashcourt/actions/runs/36350258591)).
 
 The 9.3 kB between total and loaded on most routes is the methodology page's tab code, fetched after load
