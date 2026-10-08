@@ -46,8 +46,8 @@ jobs:
       - run: >-
           uv run crashcourt doctor --manifest manifest-ci.json
           --compare research/evidence/t-01/manifest-local.json
-      - name: manifest names the tested commit
-        run: test "$(jq -r .git_sha manifest-ci.json)" = "$HEAD_SHA"
+      - name: manifest names the tested commit, checked out clean
+        run: jq -e --arg sha "$HEAD_SHA" '.git_sha == $sha and .git_dirty == false' manifest-ci.json
       - run: uv run pytest -m integration
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
