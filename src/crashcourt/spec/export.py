@@ -13,8 +13,14 @@ from pydantic import BaseModel
 
 from crashcourt.manifest import Manifest
 from crashcourt.spec.events import Event
+from crashcourt.spec.records import BatchRecord, ResultRecord
 
-SCHEMAS: dict[str, type[BaseModel]] = {"event.json": Event, "manifest.json": Manifest}
+SCHEMAS: dict[str, type[BaseModel]] = {
+    "batch.json": BatchRecord,
+    "event.json": Event,
+    "manifest.json": Manifest,
+    "result.json": ResultRecord,
+}
 
 
 def render(name: str) -> str:

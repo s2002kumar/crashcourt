@@ -1,0 +1,39 @@
+{
+  "$id": "urn:crashcourt:schema:v1:batch",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "batch.json: one batch, its provenance, and the manifest it ran under.",
+  "properties": {
+    "batch": {
+      "minLength": 1,
+      "title": "Batch",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "provenance": {
+      "enum": [
+        "run",
+        "fixture"
+      ],
+      "title": "Provenance",
+      "type": "string"
+    },
+    "v": {
+      "const": 1,
+      "title": "V",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "v",
+    "batch",
+    "provenance",
+    "manifest_sha256"
+  ],
+  "title": "BatchRecord",
+  "type": "object"
+}

@@ -1,0 +1,172 @@
+{
+  "$defs": {
+    "InvariantResult": {
+      "additionalProperties": false,
+      "description": "One invariant's outcome in one trial.",
+      "properties": {
+        "clause": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clause"
+        },
+        "evidence": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "invariant": {
+          "minLength": 1,
+          "title": "Invariant",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "PASS",
+            "VIOLATION",
+            "EXPECTED",
+            "GAP",
+            "INVALID",
+            "VIOLATION_CANDIDATE",
+            "NO_ANOMALY_UNSPECIFIED"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "repro": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repro"
+        },
+        "review": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Review"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "invariant",
+        "outcome"
+      ],
+      "title": "InvariantResult",
+      "type": "object"
+    },
+    "Review": {
+      "additionalProperties": false,
+      "description": "The human review a VIOLATION requires.",
+      "properties": {
+        "reviewed": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Reviewed",
+          "type": "string"
+        },
+        "reviewer": {
+          "minLength": 1,
+          "title": "Reviewer",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reviewer",
+        "reviewed"
+      ],
+      "title": "Review",
+      "type": "object"
+    }
+  },
+  "$id": "urn:crashcourt:schema:v1:result",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "result.json: the outcomes of one trial.",
+  "properties": {
+    "batch": {
+      "minLength": 1,
+      "title": "Batch",
+      "type": "string"
+    },
+    "cell": {
+      "minLength": 1,
+      "title": "Cell",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "provenance": {
+      "enum": [
+        "run",
+        "fixture"
+      ],
+      "title": "Provenance",
+      "type": "string"
+    },
+    "results": {
+      "items": {
+        "$ref": "#/$defs/InvariantResult"
+      },
+      "minItems": 1,
+      "title": "Results",
+      "type": "array"
+    },
+    "trial": {
+      "minimum": 0,
+      "title": "Trial",
+      "type": "integer"
+    },
+    "v": {
+      "const": 1,
+      "title": "V",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "v",
+    "batch",
+    "cell",
+    "trial",
+    "provenance",
+    "manifest_sha256",
+    "results"
+  ],
+  "title": "ResultRecord",
+  "type": "object"
+}
