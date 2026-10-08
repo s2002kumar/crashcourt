@@ -120,6 +120,7 @@ source = { editable = "." }
 dependencies = [
     { name = "langgraph" },
     { name = "langgraph-checkpoint" },
+    { name = "langgraph-checkpoint-conformance" },
     { name = "langgraph-checkpoint-postgres" },
     { name = "langgraph-checkpoint-sqlite" },
     { name = "packaging" },
@@ -132,7 +133,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "hypothesis" },
-    { name = "langgraph-checkpoint-conformance" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -143,6 +143,7 @@ dev = [
 requires-dist = [
     { name = "langgraph", specifier = "==1.2.12" },
     { name = "langgraph-checkpoint", specifier = "==4.2.0" },
+    { name = "langgraph-checkpoint-conformance", specifier = "==0.0.2" },
     { name = "langgraph-checkpoint-postgres", specifier = "==3.1.2" },
     { name = "langgraph-checkpoint-sqlite", specifier = "==3.1.1" },
     { name = "packaging", specifier = ">=26.3" },
@@ -155,7 +156,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "hypothesis", specifier = ">=6" },
-    { name = "langgraph-checkpoint-conformance", specifier = "==0.0.2" },
     { name = "pyright", specifier = ">=1.1.380" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.6" },
