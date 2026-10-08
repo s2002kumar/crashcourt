@@ -1,4 +1,4 @@
-"""The scripted chat model (spec section 11): no randomness, and every response names its attempt.
+"""The scripted chat model: no randomness, and every response names its attempt.
 
 A response is fixed by (thread_id, node, turn, attempt). The attempt comes from the effect sink's
 counter for (thread_id, node, turn), which lives outside the worker, so a killed worker's
