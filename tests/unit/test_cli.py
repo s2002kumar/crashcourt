@@ -83,3 +83,23 @@ def test_compare_prints_libpq_from_another_platform_wheel(
     out = capsys.readouterr().out
     assert "note: libpq 18.6" in out and "18.4" in out
     assert "pinned fields match" in out
+
+
+def test_compare_with_a_missing_file_fails_cleanly(
+    probes: FakeProbes, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing = tmp_path / "nowhere.json"
+    args = ["doctor", "--manifest", str(tmp_path / "m.json"), "--compare", str(missing)]
+    assert main(args) == 2
+    assert f"cannot compare with {missing}:" in capsys.readouterr().out
+
+
+def test_compare_refuses_a_reference_that_fails_validation(
+    probes: FakeProbes, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    other = tmp_path / "other.json"
+    other.write_text(make_manifest(psycopg_wheel="").to_json(), encoding="utf-8")
+    args = ["doctor", "--manifest", str(tmp_path / "m.json"), "--compare", str(other)]
+    assert main(args) == 2
+    out = capsys.readouterr().out
+    assert "it is not usable as evidence" in out and "psycopg_wheel is missing" in out

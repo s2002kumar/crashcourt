@@ -193,3 +193,14 @@ def test_missing_driver_points_to_uv_sync() -> None:
     report = run_doctor(FakeProbes(pg=ModuleNotFoundError("No module named 'psycopg'")))
     [check] = [c for c in report.failures if c.name == "postgres reachable"]
     assert "uv sync" in check.remedy
+
+
+def test_unreadable_lockfile_is_a_failed_check_not_a_crash() -> None:
+    fails = failed(FakeProbes(locked=ValueError("Invalid statement (at line 3, column 1)")))
+    assert fails["uv.lock readable"] == "ValueError: Invalid statement (at line 3, column 1)"
+    assert "uv.lock present" not in fails
+
+
+def test_unhashable_lockfile_blocks_the_manifest() -> None:
+    fails = failed(FakeProbes(lock_sha=PermissionError("denied")))
+    assert "lockfile_sha256 is missing" in fails["manifest complete"]

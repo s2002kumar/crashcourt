@@ -87,9 +87,21 @@ def runner_kind(env: Mapping[str, str]) -> str:
     """
     if env.get("GITHUB_ACTIONS") == "true":
         return env.get("RUNNER_ENVIRONMENT", "") or "unknown"
-    if env.get("CI", "").lower() in {"true", "1"}:
+    if env.get("CI", "").lower() in {"true", "1"} or any(env.get(k) for k in _OTHER_CI_VARIABLES):
         return "unknown"
     return "local"
+
+
+#: Variables other CI systems set even when they do not set CI=true (Azure Pipelines, Jenkins,
+#: TeamCity, and others).
+_OTHER_CI_VARIABLES: tuple[str, ...] = (
+    "TF_BUILD",
+    "JENKINS_URL",
+    "TEAMCITY_VERSION",
+    "BUILDKITE",
+    "GITLAB_CI",
+    "CIRCLECI",
+)
 
 
 class SystemProbes:
@@ -101,11 +113,17 @@ class SystemProbes:
     def _run(self, *args: str) -> str | None:
         try:
             done = subprocess.run(
-                args, cwd=self.root, check=True, capture_output=True, text=True, timeout=60
+                args,
+                cwd=self.root,
+                check=True,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",  # Docker prints UTF-8; never let an odd byte crash doctor
+                timeout=60,
             )
         except (OSError, subprocess.SubprocessError):
             return None
-        return done.stdout.strip()
+        return (done.stdout or "").strip()
 
     def docker_version(self) -> str | None:
         return self._run("docker", "version", "--format", "{{.Server.Version}}") or None
@@ -121,10 +139,17 @@ class SystemProbes:
         if not raw:
             return None
         try:
-            services: dict[str, Any] = json.loads(raw).get("services", {})
+            services: Any = json.loads(raw).get("services")
         except (json.JSONDecodeError, AttributeError):
             return None
-        return {name: str(svc.get("image", "")) for name, svc in services.items()}
+        if not isinstance(services, dict):
+            return None
+        return {
+            str(name): str(cast("dict[str, object]", svc).get("image", ""))
+            if isinstance(svc, dict)
+            else ""
+            for name, svc in cast("dict[object, object]", services).items()
+        }
 
     def service_states(self) -> Mapping[str, str]:
         return parse_compose_ps(
@@ -137,11 +162,14 @@ class SystemProbes:
         )
         found: dict[str, list[str]] = {}
         for service, ids in containers.items():
-            images = {
-                self._run("docker", "inspect", "--type", "container", "--format", "{{.Image}}", c)
-                for c in ids
-            }
-            found[service] = sorted(image for image in images if image)
+            images: set[str] = set()
+            for container in ids:
+                image = self._run(
+                    "docker", "inspect", "--type", "container", "--format", "{{.Image}}", container
+                )
+                # A container that cannot be inspected must not vanish from the comparison.
+                images.add(image or f"uninspectable container {container}")
+            found[service] = sorted(images)
         return found
 
     def image_id(self, ref: str) -> str | None:

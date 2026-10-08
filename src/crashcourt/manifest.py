@@ -124,17 +124,45 @@ class Manifest:
         if not isinstance(data, dict):
             raise ManifestFormatError("a manifest is a JSON object")
         record = cast("dict[str, Any]", data)
-        version = record.get("schema_version", SCHEMA_VERSION)
-        if version != SCHEMA_VERSION:
+        version = record.get("schema_version")
+        if type(version) is not int or version != SCHEMA_VERSION:
             raise ManifestFormatError(f"schema_version {version!r}, expected {SCHEMA_VERSION}")
         names = {field.name for field in fields(cls)}
-        missing = sorted(names - record.keys() - {"schema_version"})
+        missing = sorted(names - record.keys())
         unknown = sorted(record.keys() - names)
         if missing or unknown:
             raise ManifestFormatError(
                 f"not a schema {SCHEMA_VERSION} manifest: missing {missing}, unknown {unknown}"
             )
+        wrong = sorted(name for name in names if not _has_field_type(name, record[name]))
+        if wrong:
+            raise ManifestFormatError(f"fields with the wrong type: {wrong}")
         return cls(**record)
+
+
+#: JSON types of the fields that are not strings.
+_FIELD_TYPES: dict[str, str] = {
+    "git_dirty": "bool",
+    "schema_version": "int",
+    "packages": "map",
+    "images": "map",
+    "image_ids": "map",
+    "postgres": "map",
+}
+
+
+def _has_field_type(name: str, value: object) -> bool:
+    kind = _FIELD_TYPES.get(name, "str")
+    if kind == "bool":
+        return isinstance(value, bool)
+    if kind == "int":
+        return type(value) is int
+    if kind == "map":
+        if not isinstance(value, dict):
+            return False
+        items = cast("dict[object, object]", value).items()
+        return all(isinstance(k, str) and isinstance(v, str) for k, v in items)
+    return isinstance(value, str)
 
 
 def validate_manifest(m: Manifest) -> list[str]:
@@ -201,8 +229,9 @@ def pinned_view(m: Manifest) -> dict[str, Any]:
     """The fields the pins determine; `doctor --compare` fails when two manifests differ in them.
 
     Host details (OS, machine, runner, Docker and its kernel, image IDs) are recorded only. libpq is
-    compared here by major version; `diff_pinned` adds the full version whenever the two runs could
-    not have loaded different libpq builds (see `libpq_differs_by_wheel`).
+    compared here by major version, at runtime and at build time; `diff_pinned` adds the full
+    versions whenever the two runs could not have loaded different libpq builds (see
+    `libpq_differs_by_wheel`).
 
     This answers "do the pins reproduce the same environment on two machines", the T-01 use of C7.
     It is not the whole rule for aggregating batch results: spec section 20 also keeps runner types
@@ -216,6 +245,7 @@ def pinned_view(m: Manifest) -> dict[str, Any]:
         "packages": dict(sorted(m.packages.items())),
         "psycopg_impl": m.psycopg_impl,
         "libpq_major": libpq_major(m.libpq_version),
+        "libpq_build_major": libpq_major(m.libpq_build_version),
         "images": dict(sorted(m.images.items())),
         "postgres": dict(sorted(m.postgres.items())),
         "toxiproxy_version": m.toxiproxy_version,
@@ -229,7 +259,12 @@ def libpq_differs_by_wheel(a: Manifest, b: Manifest) -> bool:
     identical pins can load different libpq builds on different platforms. With the same wheel, or
     with a libpq from the system (the c and python implementations), the pins leave no such room.
     """
-    return a.psycopg_impl == b.psycopg_impl == "binary" and a.psycopg_wheel != b.psycopg_wheel
+    return (
+        a.psycopg_impl == b.psycopg_impl == "binary"
+        and bool(a.psycopg_wheel)
+        and bool(b.psycopg_wheel)
+        and a.psycopg_wheel != b.psycopg_wheel
+    )
 
 
 def diff_pinned(a: Manifest, b: Manifest) -> list[str]:
@@ -249,10 +284,15 @@ def platform_notes(a: Manifest, b: Manifest) -> list[str]:
         return []
     if (a.libpq_version, a.libpq_build_version) == (b.libpq_version, b.libpq_build_version):
         return []
+    same_majors = all(
+        libpq_major(getattr(a, name)) == libpq_major(getattr(b, name))
+        for name in ("libpq_version", "libpq_build_version")
+    )
     return [
         f"libpq {a.libpq_version} (built {a.libpq_build_version}, wheel {a.psycopg_wheel}) vs "
         f"{b.libpq_version} (built {b.libpq_build_version}, wheel {b.psycopg_wheel}): "
-        "each platform's psycopg-binary wheel bundles its own libpq; majors match"
+        "each platform's psycopg-binary wheel bundles its own libpq; "
+        + ("majors match" if same_majors else "majors differ")
     ]
 
 

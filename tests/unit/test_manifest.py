@@ -115,7 +115,10 @@ def test_other_platform_wheel_still_needs_the_same_libpq_major() -> None:
     windows = make_manifest(
         psycopg_wheel=WINDOWS_WHEEL, libpq_version="17.9", libpq_build_version="17.9"
     )
-    assert diff_pinned(make_manifest(), windows) == ["libpq_major: 18 != 17"]
+    assert diff_pinned(make_manifest(), windows) == [
+        "libpq_major: 18 != 17",
+        "libpq_build_major: 18 != 17",
+    ]
 
 
 def test_system_libpq_is_compared_in_full_whatever_the_wheel() -> None:
@@ -209,3 +212,51 @@ version = "3.3.4"
 """
     assert parse_uv_lock(text) == {"langgraph-checkpoint-postgres": "3.1.2", "psycopg": "3.3.4"}
     assert normalize_dist("Psycopg_Pool") == "psycopg-pool"
+
+
+def test_psycopg_impl_difference_fails() -> None:
+    diffs = diff_pinned(make_manifest(), make_manifest(psycopg_impl="c"))
+    assert "psycopg_impl: 'binary' != 'c'" in diffs
+
+
+def test_other_platform_wheel_needs_the_same_build_major() -> None:
+    # A Windows build linked against libpq 17 must not pass for a Linux build linked against 18.
+    windows = make_manifest(
+        psycopg_wheel=WINDOWS_WHEEL, libpq_version="18.4", libpq_build_version="17.2"
+    )
+    assert diff_pinned(make_manifest(), windows) == ["libpq_build_major: 18 != 17"]
+    [note] = platform_notes(make_manifest(), windows)
+    assert note.endswith("majors differ")
+
+
+def test_empty_wheel_never_excuses_a_libpq_difference() -> None:
+    # A reference without wheel tags must not switch on the cross-platform allowance.
+    other = make_manifest(psycopg_wheel="", libpq_version="18.4", libpq_build_version="18.4")
+    assert "libpq_version: '18.6' != '18.4'" in diff_pinned(make_manifest(), other)
+    assert platform_notes(make_manifest(), other) == []
+
+
+@pytest.mark.parametrize(
+    ("changes", "wrong"),
+    [
+        ({"libpq_version": 18.6}, "libpq_version"),
+        ({"packages": None}, "packages"),
+        ({"images": {"postgres": 1}}, "images"),
+        ({"git_dirty": "no"}, "git_dirty"),
+    ],
+)
+def test_wrong_field_types_are_format_errors(changes: dict[str, object], wrong: str) -> None:
+    data = {**json.loads(make_manifest().to_json()), **changes}
+    with pytest.raises(ManifestFormatError, match=rf"wrong type: \['{wrong}'\]"):
+        Manifest.from_json(json.dumps(data))
+
+
+@pytest.mark.parametrize("version", [None, True, "1"])
+def test_schema_version_must_be_the_integer_one(version: object) -> None:
+    data = json.loads(make_manifest().to_json())
+    if version is None:
+        del data["schema_version"]
+    else:
+        data["schema_version"] = version
+    with pytest.raises(ManifestFormatError, match="schema_version"):
+        Manifest.from_json(json.dumps(data))

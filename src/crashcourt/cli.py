@@ -9,7 +9,7 @@ from pathlib import Path
 
 from crashcourt import __version__
 from crashcourt.doctor import format_report, run_doctor
-from crashcourt.manifest import Manifest, diff_pinned, platform_notes
+from crashcourt.manifest import Manifest, diff_pinned, platform_notes, validate_manifest
 
 
 def _doctor(args: argparse.Namespace) -> int:
@@ -32,8 +32,13 @@ def _doctor(args: argparse.Namespace) -> int:
     if args.compare is not None:
         try:
             other = Manifest.from_json(args.compare.read_text(encoding="utf-8"))
-        except ValueError as exc:  # includes ManifestFormatError and malformed JSON
+        except (OSError, ValueError) as exc:  # ValueError covers ManifestFormatError and bad JSON
             print(f"cannot compare with {args.compare}: {exc}")
+            return 2
+        problems = validate_manifest(other)
+        if problems:
+            print(f"cannot compare with {args.compare}: it is not usable as evidence")
+            print("\n".join(f"  {p}" for p in problems))
             return 2
         for note in platform_notes(report.manifest, other):
             print("note:", note)

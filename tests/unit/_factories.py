@@ -80,8 +80,10 @@ class FakeProbes:
     pg: Mapping[str, str] | Exception = field(default_factory=lambda: dict(GOOD_PG))
     toxiproxy: str | Exception = "2.9.0"
     installed: Mapping[str, str | None] = field(default_factory=lambda: dict(GOOD_VERSIONS))
-    locked: Mapping[str, str] | None = field(default_factory=lambda: dict(GOOD_VERSIONS))
-    lock_sha: str | None = "f" * 64
+    locked: Mapping[str, str] | Exception | None = field(
+        default_factory=lambda: dict(GOOD_VERSIONS)
+    )
+    lock_sha: str | Exception | None = "f" * 64
     pin: str | Exception | None = "3.12.7"
     driver: DriverInfo | Exception = GOOD_DRIVER
     git: tuple[str | None, bool] = ("0" * 40, False)
@@ -132,9 +134,13 @@ class FakeProbes:
         return {d: self.installed.get(d) for d in dists}
 
     def locked_versions(self) -> Mapping[str, str] | None:
+        if isinstance(self.locked, Exception):
+            raise self.locked
         return self.locked
 
     def lockfile_sha256(self) -> str | None:
+        if isinstance(self.lock_sha, Exception):
+            raise self.lock_sha
         return self.lock_sha
 
     def python_pin(self) -> str | None:

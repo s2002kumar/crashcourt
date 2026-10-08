@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
+
+import pytest
 
 from crashcourt.probes import (
+    SystemProbes,
     parse_compose_containers,
     parse_compose_ps,
     parse_wheel_tags,
@@ -74,3 +79,38 @@ def test_runner_kind_reads_github_actions_variables() -> None:
     )
     assert runner_kind({"GITHUB_ACTIONS": "true"}) == "unknown"
     assert runner_kind({"CI": "true"}) == "unknown"  # another CI system is not a local run
+    assert runner_kind({"TF_BUILD": "True"}) == "unknown"  # Azure Pipelines does not set CI
+
+
+def test_run_survives_output_that_is_not_utf8(tmp_path: Path) -> None:
+    probes = SystemProbes(tmp_path)
+    out = probes._run(  # pyright: ignore[reportPrivateUsage]
+        sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'\\x81ok')"
+    )
+    assert out == "\ufffdok"
+
+
+def fake_run(monkeypatch: pytest.MonkeyPatch, answers: dict[str, str | None]) -> SystemProbes:
+    """SystemProbes whose commands answer by their first distinctive word."""
+    probes = SystemProbes(Path.cwd())
+
+    def run(*args: str) -> str | None:
+        key = "inspect" if "inspect" in args else " ".join(args[1:3])
+        return answers.get(key)
+
+    monkeypatch.setattr(probes, "_run", run)
+    return probes
+
+
+def test_compose_config_without_services_reads_as_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert fake_run(monkeypatch, {"compose config": '{"services": null}'}).compose_images() is None
+    odd = fake_run(monkeypatch, {"compose config": '{"services": {"postgres": "x"}}'})
+    assert odd.compose_images() == {"postgres": ""}
+
+
+def test_a_container_that_cannot_be_inspected_stays_in_the_comparison(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ps = json.dumps({"Service": "postgres", "ID": "a1b2", "State": "running"})
+    probes = fake_run(monkeypatch, {"compose ps": ps, "inspect": None})
+    assert probes.running_image_ids() == {"postgres": ["uninspectable container a1b2"]}

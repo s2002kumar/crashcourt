@@ -149,23 +149,34 @@ def run_doctor(probes: Probes) -> DoctorReport:
         checks.append(_check("toxiproxy api", True, f"version {toxiproxy}", ""))
 
     installed = dict(probes.installed_versions(PINNED_DISTRIBUTIONS))
-    locked = probes.locked_versions()
-    if locked is None:
-        checks.append(_check("uv.lock present", False, "uv.lock not found", "Run `uv lock`."))
-    else:
-        mismatches = [
-            f"{d}: installed {installed.get(d)} vs locked {locked.get(normalize_dist(d))}"
-            for d in PINNED_DISTRIBUTIONS
-            if installed.get(d) is None or installed.get(d) != locked.get(normalize_dist(d))
-        ]
+    try:
+        locked = probes.locked_versions()
+    except Exception as exc:  # noqa: BLE001 - an unreadable lock is a failed check, not a crash
         checks.append(
             _check(
-                "installed versions match uv.lock",
-                not mismatches,
-                "all match" if not mismatches else "; ".join(mismatches),
-                "Run `uv sync --locked --group dev`.",
+                "uv.lock readable",
+                False,
+                f"{type(exc).__name__}: {exc}",
+                "Restore uv.lock (`git checkout -- uv.lock`).",
             )
         )
+    else:
+        if locked is None:
+            checks.append(_check("uv.lock present", False, "uv.lock not found", "Run `uv lock`."))
+        else:
+            mismatches = [
+                f"{d}: installed {installed.get(d)} vs locked {locked.get(normalize_dist(d))}"
+                for d in PINNED_DISTRIBUTIONS
+                if installed.get(d) is None or installed.get(d) != locked.get(normalize_dist(d))
+            ]
+            checks.append(
+                _check(
+                    "installed versions match uv.lock",
+                    not mismatches,
+                    "all match" if not mismatches else "; ".join(mismatches),
+                    "Run `uv sync --locked --group dev`.",
+                )
+            )
 
     py_version, py_impl = probes.python_info()
     try:
@@ -236,7 +247,7 @@ def run_doctor(probes: Probes) -> DoctorReport:
             os_release=release,
             machine=machine,
             runner=probes.runner(),
-            lockfile_sha256=probes.lockfile_sha256() or "",
+            lockfile_sha256=_lockfile_sha256(probes),
             packages={d: installed.get(d) or "" for d in PINNED_DISTRIBUTIONS},
             psycopg_impl=driver.impl,
             psycopg_wheel=driver.wheel,
@@ -262,6 +273,14 @@ def run_doctor(probes: Probes) -> DoctorReport:
         manifest = candidate if not problems else None
 
     return DoctorReport(tuple(checks), manifest)
+
+
+def _lockfile_sha256(probes: Probes) -> str:
+    """Empty when the lock cannot be hashed; validation then refuses the manifest."""
+    try:
+        return probes.lockfile_sha256() or ""
+    except OSError:
+        return ""
 
 
 def _docker_checks(
