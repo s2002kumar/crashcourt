@@ -1,7 +1,7 @@
 """The effect ledger: one SQLite WAL file per trial, append-only and hash-chained.
 
-Rows follow spec section 9: sink_seq, received_mono_ns, effect_key, logical_op, op_id, attempt,
-worker, pid, thread_id, node, checkpoint_id_seen, payload_hash, status. Each row also stores the
+Each row records: sink_seq, received_mono_ns, effect_key, logical_op, op_id, attempt, worker, pid,
+thread_id, node, checkpoint_id_seen, payload_hash, status. Each row also stores the
 hash of the previous row and its own hash over its fields, so editing, deleting, or reordering
 any row breaks verification from that row on.
 
@@ -34,13 +34,13 @@ CREATE TABLE IF NOT EXISTS effects (
     received_mono_ns INTEGER NOT NULL,
     received_wall_ns INTEGER NOT NULL,
     effect_key TEXT NOT NULL,
-    logical_op TEXT,
+    logical_op TEXT NOT NULL,
     op_id TEXT NOT NULL,
     attempt INTEGER NOT NULL,
     worker TEXT NOT NULL,
-    pid INTEGER,
-    thread_id TEXT,
-    node TEXT,
+    pid INTEGER NOT NULL,
+    thread_id TEXT NOT NULL,
+    node TEXT NOT NULL,
     checkpoint_id_seen TEXT,
     payload_hash TEXT NOT NULL,
     status TEXT NOT NULL,
@@ -70,18 +70,18 @@ HASHED_FIELDS: tuple[str, ...] = (
 
 
 class EffectRequest(BaseModel):
-    """What a worker sends for one effect (spec section 8)."""
+    """What a worker sends for one effect. Only the checkpoint the worker saw may be unknown."""
 
     model_config = ConfigDict(extra="forbid")
 
     effect_key: str = Field(min_length=1)
-    logical_op: str | None = None
+    logical_op: str = Field(min_length=1)
     op_id: str = Field(min_length=1)
     attempt: int = Field(ge=1)
     worker: str = Field(min_length=1)
-    pid: int | None = None
-    thread_id: str | None = None
-    node: str | None = None
+    pid: int = Field(ge=1)
+    thread_id: str = Field(min_length=1)
+    node: str = Field(min_length=1)
     checkpoint_id_seen: str | None = None
     payload_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
@@ -120,19 +120,32 @@ class Ledger:
         self.trial = trial
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        # SQLite answers with the mode it is in; a file that cannot use WAL keeps another one.
+        mode = str(self._conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower()
+        if mode != "wal":
+            self._conn.close()
+            raise ValueError(f"{path}: journal_mode is {mode}, not wal")
         self._conn.execute("PRAGMA synchronous=FULL")
         self._conn.executescript(SCHEMA)
-        meta = dict(self._conn.execute("SELECT key, value FROM meta").fetchall())
         wanted = {
             "ledger_version": str(LEDGER_VERSION),
             **{k: str(v) for k, v in asdict(trial).items()},
         }
-        if meta and meta != wanted:
-            raise ValueError(f"{path} belongs to another trial: {meta}")
-        if not meta:
-            with self._conn:
+        # Read and write meta in one transaction, so a crash cannot leave it half written and
+        # two openers cannot both decide it is empty.
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            meta = dict(self._conn.execute("SELECT key, value FROM meta").fetchall())
+            if not meta:
                 self._conn.executemany("INSERT INTO meta VALUES (?, ?)", wanted.items())
+            self._conn.execute("COMMIT")
+        except BaseException:
+            self._conn.execute("ROLLBACK")
+            self._conn.close()
+            raise
+        if meta and meta != wanted:
+            self._conn.close()
+            raise ValueError(f"{path} belongs to another trial: {meta}")
 
     def close(self) -> None:
         with self._lock:

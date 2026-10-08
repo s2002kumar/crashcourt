@@ -128,8 +128,9 @@ def test_malformed_requests_are_rejected(bad: dict[str, Any]) -> None:
         effect(**bad)
 
 
+@pytest.mark.parametrize("sink_clock", ["before the request", "after the response"])
 def test_ledger_rows_become_sink_history_that_merges_causally(
-    ledger: Ledger, tmp_path: Path
+    ledger: Ledger, tmp_path: Path, sink_clock: str
 ) -> None:
     from crashcourt.history.merge import merge
     from crashcourt.history.writer import HistoryWriter, RunIdentity
@@ -138,11 +139,46 @@ def test_ledger_rows_become_sink_history_that_merges_causally(
     fields = {"op_id": "op-7", "effect_key": "charge:order-17", "attempt": 1}
     with HistoryWriter(tmp_path / "worker-1.jsonl", run=run, proc="worker-1") as worker:
         request = worker.emit("effect.request", **fields)
-        ledger.append(effect())
-        response = worker.emit("effect.response", **fields, status="ok")
-    sink_events = ledger_events(ledger.rows(), run, pid=99)
-    assert [(e.kind, e.seq, e.data["worker"]) for e in sink_events] == [
-        ("sink.append", 0, "worker-1")
+        row = ledger.append(effect())
+        response = worker.emit(
+            "effect.response", **fields, status="ok", data={"sink_seq": row["sink_seq"]}
+        )
+    # Put the sink's clock where only the causal edges can order it: before the request, or
+    # after the response. Without the request-to-append or append-to-response edge, the merge
+    # would follow mono_ns and misplace the append.
+    rows = ledger.rows()
+    shift = request.mono_ns - 1 if sink_clock == "before the request" else response.mono_ns + 1
+    rows[0]["received_mono_ns"] = shift
+    sink_events = ledger_events(rows, run, pid=99)
+    assert [(e.kind, e.seq, e.data["worker"], e.data["sink_seq"]) for e in sink_events] == [
+        ("sink.append", 0, "worker-1", 1)
     ]
     merged = merge([[request, response], sink_events])
     assert [e.kind for e in merged] == ["effect.request", "sink.append", "effect.response"]
+
+
+@pytest.mark.parametrize("field", ["logical_op", "pid", "thread_id", "node"])
+def test_effect_fields_the_ledger_needs_are_required(field: str) -> None:
+    with pytest.raises(ValueError):
+        effect(**{field: None})
+
+
+def test_meta_is_written_once_and_kept(tmp_path: Path) -> None:
+    path = TRIAL.path(tmp_path)
+    Ledger(path, TRIAL).close()
+    Ledger(path, TRIAL).close()  # reopening finds the meta and leaves it
+    with sqlite3.connect(path) as conn:
+        meta = dict(conn.execute("SELECT key, value FROM meta").fetchall())
+    assert meta == {
+        "ledger_version": "1",
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": "3",
+        "seed": "s",
+    }
+
+
+def test_a_ledger_that_cannot_use_wal_is_refused() -> None:
+    # SQLite keeps an in-memory database's journal in memory and answers "memory" to WAL.
+    with pytest.raises(ValueError, match="journal_mode is memory, not wal"):
+        Ledger(Path(":memory:"), TRIAL)
