@@ -142,20 +142,35 @@ def _stored(rig: Rig, method: str) -> bool:
     return any(task == "task-1" for task, _, _ in latest.pending_writes or ())
 
 
+def _count_inner_calls(rig: Rig, name: str) -> list[int]:
+    """Count calls the wrapper makes to the inner saver's `name`."""
+    calls = [0]
+    original = getattr(rig.inner, name)
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        calls[0] += 1
+        return original(*args, **kwargs)
+
+    setattr(rig.inner, name, counted)
+    return calls
+
+
 @pytest.mark.parametrize("flavor", ["sync", "async"])
 @pytest.mark.parametrize("point", POINTS)
 def test_pause_blocks_exactly_at_its_point(rig: Rig, point: str, flavor: str) -> None:
     base = rig.inner.put(config(), checkpoint(), {"source": "input", "step": -1}, {"n": "1"})
     method, position = point.split(".")
     call = (_sync_call if flavor == "sync" else _async_call)(rig.saver, method, base)
+    inner_calls = _count_inner_calls(rig, method if flavor == "sync" else f"a{method}")
     rig.registry.arm(Arm(point, "pause"))  # type: ignore[arg-type]
     thread = threading.Thread(target=call, daemon=True)
     thread.start()
     proc, hit_seq = rig.barrier.wait_for_hit()
     try:
+        # A .before pause precedes the inner call; an .after pause follows it.
+        assert inner_calls == [0 if position == "before" else 1]
         calls = [e.kind for e in rig.events() if e.kind.startswith("saver.")]
-        # Paused after the call event; a .before pause precedes the inner call, an .after one
-        # follows it and precedes the return event.
+        # Paused after the call event and before the return event.
         assert calls == [f"saver.{method}.call"]
         assert thread.is_alive()
         if method in {"put", "put_writes"}:
@@ -270,19 +285,32 @@ def test_arms_due_on_different_calls_both_fire(rig: Rig) -> None:
 
 def test_list_closes_the_inner_iterator_on_early_exit(rig: Rig) -> None:
     closed: list[str] = []
+    # Hold every inner iterator, so reference counting or asyncio's shutdown cannot close it;
+    # only the wrapper's own close can.
+    held: list[object] = []
 
-    def inner_list(*args: Any, **kwargs: Any) -> Generator[Any]:
+    def sync_items(*args: Any, **kwargs: Any) -> Generator[Any]:
         try:
             yield from InMemorySaver.list(rig.inner, *args, **kwargs)
         finally:
             closed.append("sync")
 
-    async def inner_alist(*args: Any, **kwargs: Any) -> AsyncGenerator[Any]:
+    async def async_items(*args: Any, **kwargs: Any) -> AsyncGenerator[Any]:
         try:
-            async for item in InMemorySaver.alist(rig.inner, *args, **kwargs):
+            for item in InMemorySaver.list(rig.inner, *args, **kwargs):
                 yield item
         finally:
             closed.append("async")
+
+    def inner_list(*args: Any, **kwargs: Any) -> Generator[Any]:
+        items = sync_items(*args, **kwargs)
+        held.append(items)
+        return items
+
+    def inner_alist(*args: Any, **kwargs: Any) -> AsyncGenerator[Any]:
+        items = async_items(*args, **kwargs)
+        held.append(items)
+        return items
 
     for step in range(3):
         rig.inner.put(config(), checkpoint(), {"source": "loop", "step": step}, {"n": "1"})
@@ -297,9 +325,10 @@ def test_list_closes_the_inner_iterator_on_early_exit(rig: Rig) -> None:
         items = cast(AsyncGenerator[Any], rig.saver.alist(config()))
         await anext(items)
         await items.aclose()
+        assert closed == ["sync", "async"]  # before asyncio.run could close anything itself
 
     asyncio.run(first_then_close())
-    assert "async" in closed  # InMemorySaver.alist reads through list, which closes too
+    assert len(held) == 2
 
 
 def test_with_allowlist_keeps_the_wrapper_when_nothing_changes(rig: Rig) -> None:
