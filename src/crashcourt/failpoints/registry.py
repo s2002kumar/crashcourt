@@ -2,7 +2,9 @@
 
 An arm names a point and an action, and optionally narrows which hit it fires on: the worker,
 the client operation, the thread, and the occurrence (the nth matching call, counting from 1).
-Each arm fires at most once. Arming an unknown point, action, or signal is a spec error, and so
+Each arm fires at most once. Occurrences are counted at the failpoint, under the registry's lock;
+with concurrent calls, the nth matching call to reach the failpoint need not be the nth
+`saver.<op>.call` in the history. Arming an unknown point, action, or signal is a spec error, and so
 is a call on which two arms reach their occurrence: only one action can run there, so the other
 arm would never fire and the trial would run a different schedule from the one declared.
 """
@@ -28,8 +30,11 @@ POINTS: tuple[str, ...] = get_args(Point)
 Action = Literal["none", "pause", "exit", "signal"]
 ACTIONS: tuple[str, ...] = get_args(Action)
 
-#: Signals a worker may send itself at a failpoint (POSIX names; workers run on Linux).
-Signal = Literal["SIGKILL", "SIGTERM", "SIGSTOP", "SIGINT", "SIGQUIT", "SIGABRT", "SIGSEGV"]
+#: Signals a worker may send itself at a failpoint (POSIX names; workers run on Linux). Only
+#: signals that act at once: SIGKILL and SIGSTOP cannot be caught, and the others end the process
+#: by default. A signal Python handles (SIGINT, or SIGTERM once a worker installs a handler)
+#: would run its handler later, on the main thread, so the action would not happen at the point.
+Signal = Literal["SIGKILL", "SIGSTOP", "SIGQUIT", "SIGABRT", "SIGSEGV"]
 SIGNALS: tuple[str, ...] = get_args(Signal)
 
 
@@ -47,8 +52,8 @@ class Arm:
     occurrence: int = 1
     #: For action "signal": the signal the worker sends itself, e.g. "SIGKILL" or "SIGSTOP".
     signal: Signal | None = None
-    #: For action "exit": the status passed to os._exit.
-    exit_code: int = 1
+    #: For action "exit": the status passed to os._exit (1 if not given).
+    exit_code: int | None = None
 
     def __post_init__(self) -> None:
         if self.point not in POINTS:
@@ -61,7 +66,9 @@ class Arm:
             raise ValueError("a signal name is required for action 'signal', and only for it")
         if self.signal is not None and self.signal not in SIGNALS:
             raise ValueError(f"unknown signal {self.signal!r}; known: {', '.join(SIGNALS)}")
-        if not 0 <= self.exit_code <= 255:
+        if self.exit_code is not None and self.action != "exit":
+            raise ValueError("an exit status is for action 'exit' only")
+        if self.exit_code is not None and not 0 <= self.exit_code <= 255:
             raise ValueError("an exit status is between 0 and 255")
 
     def matches(self, point: str, worker: str, op_id: str | None, thread_id: str | None) -> bool:
@@ -88,6 +95,7 @@ class FailpointRegistry:
         self._arms: list[Arm] = []
         self._counts: dict[int, int] = {}
         self._fired: set[int] = set()
+        self._collided: set[int] = set()
 
     def arm(self, arm: Arm) -> None:
         with self._lock:
@@ -99,11 +107,19 @@ class FailpointRegistry:
             self._arms.clear()
             self._counts.clear()
             self._fired.clear()
+            self._collided.clear()
 
     @property
     def armed(self) -> bool:
+        """Whether some arm has not fired yet (or been retired by a collision)."""
         with self._lock:
             return len(self._fired) < len(self._arms)
+
+    @property
+    def collided(self) -> tuple[Arm, ...]:
+        """Arms retired because another arm was due on the same call; they never acted."""
+        with self._lock:
+            return tuple(self._arms[i] for i in sorted(self._collided))
 
     def check(self, point: str, op_id: str | None, thread_id: str | None) -> Firing | None:
         """Count this call against every matching arm; return the one that fires now, if any.
@@ -120,6 +136,7 @@ class FailpointRegistry:
                     due.append(index)
             self._fired.update(due)
             if len(due) > 1:
+                self._collided.update(due)
                 arms = "; ".join(repr(self._arms[i]) for i in due)
                 raise FailpointError(f"{len(due)} arms fire on one {point} call: {arms}")
             if not due:

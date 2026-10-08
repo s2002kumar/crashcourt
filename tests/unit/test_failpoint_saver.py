@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import signal
 import threading
 from collections.abc import AsyncGenerator, Callable, Coroutine, Generator
 from pathlib import Path
@@ -240,7 +241,8 @@ def test_pause_without_a_barrier_is_a_spec_error(tmp_path: Path) -> None:
         saver = wrap(InMemorySaver(), history=history, registry=registry)
         with pytest.raises(FailpointError, match="no barrier"):
             saver.get_tuple(config())
-    hit = read_history(tmp_path / "w.jsonl").events[-1]
+    *_, hit, raised = read_history(tmp_path / "w.jsonl").events
+    assert raised.kind == "saver.get_tuple.raise" and raised.status == "fail"
     assert (hit.kind, hit.fp, hit.status) == ("fp.hit", "get_tuple.before", "fail")
     assert hit.error is not None and "no barrier" in hit.error
 
@@ -250,9 +252,11 @@ def test_two_arms_due_on_one_call_are_a_spec_error(rig: Rig) -> None:
     rig.registry.arm(Arm("get_tuple.before", "none", op_id="op-1"))
     with operation("op-1"), pytest.raises(FailpointError, match="2 arms fire on one"):
         rig.saver.get_tuple(config())
-    hit = rig.events()[-1]
+    *_, hit, raised = rig.events()
     assert (hit.kind, hit.status) == ("fp.hit", "fail")
+    assert raised.kind == "saver.get_tuple.raise"
     assert not rig.registry.armed  # neither arm is left waiting for a call that will not come
+    assert len(rig.registry.collided) == 2
 
 
 def test_arms_due_on_different_calls_both_fire(rig: Rig) -> None:
@@ -316,9 +320,33 @@ def test_failpoints_need_a_history_writer() -> None:
         {"point": "put.before", "action": "none", "signal": "SIGKILL"},
         {"point": "put.before", "action": "none", "occurrence": 0},
         {"point": "put.before", "action": "signal", "signal": "SIGFOO"},
+        {"point": "put.before", "action": "signal", "signal": "SIGTERM"},  # Python may handle it
+        {"point": "put.before", "action": "signal", "signal": "SIGINT"},
         {"point": "put.before", "action": "exit", "exit_code": 256},
+        {"point": "put.before", "action": "none", "exit_code": 3},
     ],
 )
 def test_invalid_arms_are_rejected(kwargs: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
         Arm(**kwargs)
+
+
+def test_a_signal_the_host_lacks_fails_the_hit(rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr(signal, "SIGQUIT", raising=False)  # Windows has no SIGQUIT anyway
+    rig.registry.arm(Arm("get_tuple.before", "signal", signal="SIGQUIT"))
+    with pytest.raises(FailpointError, match="not available"):
+        rig.saver.get_tuple(config())
+    assert [(e.kind, e.status) for e in rig.events()][-2:] == [
+        ("fp.hit", "fail"),
+        ("saver.get_tuple.raise", "fail"),
+    ]
+    assert "fp.action" not in rig.kinds()
+
+
+def test_a_failpoint_error_after_the_inner_call_is_recorded_as_a_raise(rig: Rig) -> None:
+    rig.registry.arm(Arm("put.after", "none"))
+    rig.registry.arm(Arm("put.after", "none", op_id="op-1"))
+    with operation("op-1"), pytest.raises(FailpointError):
+        rig.saver.put(config(), checkpoint(), {"source": "loop", "step": 0}, {"n": "1"})
+    assert rig.kinds()[-2:] == ["fp.hit", "saver.put.raise"]
+    assert rig.inner.get_tuple(config()) is not None  # the write itself went through

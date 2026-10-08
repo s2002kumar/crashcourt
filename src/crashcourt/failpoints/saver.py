@@ -2,11 +2,12 @@
 
 Each of `put`, `put_writes`, `get_tuple`, and `list` (and their async forms, under the same
 names) runs as: `saver.<op>.call`, the `<op>.before` failpoint, the inner call, the
-`<op>.after` failpoint, then `saver.<op>.return`, or `saver.<op>.raise` if the inner call raised
-(no `after` failpoint then). A failpoint that fires writes `fp.hit`, then `fp.action` just
-before it acts: for a pause, after the release; for an exit or a signal, before the process
-ends. A failpoint that cannot be honored (two arms due on one call, a pause with no barrier)
-writes `fp.hit` with status fail and raises FailpointError.
+`<op>.after` failpoint, then `saver.<op>.return`; or `saver.<op>.raise` if the inner call or a
+failpoint raised (no `after` failpoint once the inner call has raised). A failpoint that fires
+writes `fp.hit`, then `fp.action` just before it acts: for a pause, after the release; for an
+exit or a signal, before the process ends. A failpoint that cannot be honored (two arms due on
+one call, a pause with no barrier, a signal this host lacks) writes `fp.hit` with status fail
+and raises FailpointError.
 
 The wrapper never changes what the inner saver does or returns. Everything else is forwarded:
 `serde`, `config_specs`, `get_next_version`, delta-channel history, `delete_thread`, and exactly
@@ -107,6 +108,9 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
             firing = self.registry.check(point, current_op(), fields.get("thread_id"))
             if firing is not None and firing.arm.action == "pause" and self.barrier is None:
                 raise FailpointError(f"{point} is armed to pause but the saver has no barrier")
+            wanted = firing.arm.signal if firing is not None else None
+            if wanted is not None and not hasattr(signal, wanted):
+                raise FailpointError(f"{wanted} is not available on this host")
         except FailpointError as exc:
             self._emit("fp.hit", hit_fields, fp=point, status="fail", error=str(exc))
             raise
@@ -124,7 +128,7 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
             data["signal"] = arm.signal
         self._emit("fp.action", {"thread_id": hit.thread_id}, fp=hit.fp, data=data)
         if arm.action == "exit":
-            os._exit(arm.exit_code)
+            os._exit(1 if arm.exit_code is None else arm.exit_code)
         if arm.action == "signal":
             os.kill(os.getpid(), int(getattr(signal, str(arm.signal))))
 
@@ -181,13 +185,13 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
     ) -> RunnableConfig:
         fields = self._put_fields(config, checkpoint, metadata, new_versions)
         self._emit("saver.put.call", fields)
-        self._fire("put.before", fields)
         try:
+            self._fire("put.before", fields)
             result = self.inner.put(config, checkpoint, metadata, new_versions)
+            self._fire("put.after", fields)
         except BaseException as exc:
             self._raise("put", fields, exc)
             raise
-        self._fire("put.after", fields)
         self._emit("saver.put.return", {**fields, "data": {}}, status="ok")
         return result
 
@@ -200,13 +204,13 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
     ) -> RunnableConfig:
         fields = self._put_fields(config, checkpoint, metadata, new_versions)
         self._emit("saver.put.call", fields)
-        await self._afire("put.before", fields)
         try:
+            await self._afire("put.before", fields)
             result = await self.inner.aput(config, checkpoint, metadata, new_versions)
+            await self._afire("put.after", fields)
         except BaseException as exc:
             self._raise("put", fields, exc)
             raise
-        await self._afire("put.after", fields)
         self._emit("saver.put.return", {**fields, "data": {}}, status="ok")
         return result
 
@@ -229,13 +233,13 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
     ) -> None:
         fields = self._writes_fields(config, writes, task_id, task_path)
         self._emit("saver.put_writes.call", fields)
-        self._fire("put_writes.before", fields)
         try:
+            self._fire("put_writes.before", fields)
             self.inner.put_writes(config, writes, task_id, task_path)
+            self._fire("put_writes.after", fields)
         except BaseException as exc:
             self._raise("put_writes", fields, exc)
             raise
-        self._fire("put_writes.after", fields)
         self._emit("saver.put_writes.return", {**fields, "data": {}}, status="ok")
 
     async def aput_writes(
@@ -247,38 +251,38 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
     ) -> None:
         fields = self._writes_fields(config, writes, task_id, task_path)
         self._emit("saver.put_writes.call", fields)
-        await self._afire("put_writes.before", fields)
         try:
+            await self._afire("put_writes.before", fields)
             await self.inner.aput_writes(config, writes, task_id, task_path)
+            await self._afire("put_writes.after", fields)
         except BaseException as exc:
             self._raise("put_writes", fields, exc)
             raise
-        await self._afire("put_writes.after", fields)
         self._emit("saver.put_writes.return", {**fields, "data": {}}, status="ok")
 
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         fields = _config_fields(config)
         self._emit("saver.get_tuple.call", fields)
-        self._fire("get_tuple.before", fields)
         try:
+            self._fire("get_tuple.before", fields)
             result = self.inner.get_tuple(config)
+            self._fire("get_tuple.after", fields)
         except BaseException as exc:
             self._raise("get_tuple", fields, exc)
             raise
-        self._fire("get_tuple.after", fields)
         self._emit("saver.get_tuple.return", _tuple_fields(result, fields), status="ok")
         return result
 
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         fields = _config_fields(config)
         self._emit("saver.get_tuple.call", fields)
-        await self._afire("get_tuple.before", fields)
         try:
+            await self._afire("get_tuple.before", fields)
             result = await self.inner.aget_tuple(config)
+            await self._afire("get_tuple.after", fields)
         except BaseException as exc:
             self._raise("get_tuple", fields, exc)
             raise
-        await self._afire("get_tuple.after", fields)
         self._emit("saver.get_tuple.return", _tuple_fields(result, fields), status="ok")
         return result
 
@@ -306,13 +310,15 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
     ) -> Iterator[CheckpointTuple]:
         fields = self._list_fields(config, before, limit, filter)
         self._emit("saver.list.call", fields)
-        self._fire("list.before", fields)
         count = 0
-        items = self.inner.list(config, filter=filter, before=before, limit=limit)
+        items: Iterator[CheckpointTuple] | None = None
         try:
+            self._fire("list.before", fields)
+            items = self.inner.list(config, filter=filter, before=before, limit=limit)
             for item in items:
                 count += 1
                 yield item
+            self._fire("list.after", fields)
         except GeneratorExit:
             # Close the inner iterator too, so a saver holding a cursor releases it now.
             close = getattr(items, "close", None)
@@ -323,7 +329,6 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
         except BaseException as exc:
             self._raise("list", fields, exc)
             raise
-        self._fire("list.after", fields)
         data = {"items": count, "complete": True}
         self._emit("saver.list.return", {**fields, "data": data}, status="ok")
 
@@ -337,13 +342,15 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
     ) -> AsyncIterator[CheckpointTuple]:
         fields = self._list_fields(config, before, limit, filter)
         self._emit("saver.list.call", fields)
-        await self._afire("list.before", fields)
         count = 0
-        items = self.inner.alist(config, filter=filter, before=before, limit=limit)
+        items: AsyncIterator[CheckpointTuple] | None = None
         try:
+            await self._afire("list.before", fields)
+            items = self.inner.alist(config, filter=filter, before=before, limit=limit)
             async for item in items:
                 count += 1
                 yield item
+            await self._afire("list.after", fields)
         except GeneratorExit:
             aclose = getattr(items, "aclose", None)
             if aclose is not None:
@@ -353,7 +360,6 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
         except BaseException as exc:
             self._raise("list", fields, exc)
             raise
-        await self._afire("list.after", fields)
         data = {"items": count, "complete": True}
         self._emit("saver.list.return", {**fields, "data": data}, status="ok")
 
