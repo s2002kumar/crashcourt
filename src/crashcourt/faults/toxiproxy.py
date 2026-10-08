@@ -7,6 +7,8 @@ Semantics measured against Toxiproxy 2.12.0 and Postgres 18.6 (research/fault-se
   it makes a lost acknowledgment: the server commits, and the client gets a closed connection.
 - `latency` holds data, and removing it forwards what it held. A very long downstream latency is
   therefore a deterministic delayed acknowledgment.
+- So a schedule chooses between a delayed and a lost acknowledgment when it adds the toxic, not
+  when it heals it: what removal does depends on which toxic is there.
 - Adding a toxic to the held stream interrupts a held `latency` toxic, which releases its data;
   a toxic on the other stream does not. The fault functions refuse to add any toxic while a hold
   is active, and `hold_responses` refuses to share a proxy with other toxics.
@@ -195,8 +197,8 @@ def toxic_fault(
 def hold_responses(
     history: HistoryWriter, client: ToxiproxyClient, fault_id: str, proxy: str = POSTGRES_PROXY
 ) -> ActiveFault:
-    """Delayed acknowledgment (F12): the server executes and commits, responses wait. Healing
-    delivers them. Only valid on a proxy with no other toxics."""
+    """Delayed acknowledgment: the server executes and commits, responses wait. Healing delivers
+    them. Only valid on a proxy with no other toxics."""
     current = client.proxy(proxy)
     if current is not None and current.toxics:
         names = ", ".join(t.name for t in current.toxics)
@@ -208,8 +210,8 @@ def hold_responses(
 def drop_responses(
     history: HistoryWriter, client: ToxiproxyClient, fault_id: str, proxy: str = POSTGRES_PROXY
 ) -> ActiveFault:
-    """Lost acknowledgment (F11): the server commits, responses are discarded, and healing
-    closes the client's connection."""
+    """Lost acknowledgment: the server commits, responses are discarded, and healing closes the
+    client's connection."""
     toxic = Toxic(f"{fault_id}_drop", "timeout", "downstream", {"timeout": 0})
     return toxic_fault(history, client, fault_id, "drop_responses", toxic, proxy)
 
@@ -221,8 +223,8 @@ def reset_connections(
     stream: Stream = "downstream",
     proxy: str = POSTGRES_PROXY,
 ) -> ActiveFault:
-    """Connection reset (F10): the first data on the stream closes the connection. Downstream,
-    the request has already been executed; upstream, it never reaches the server."""
+    """Connection reset: the first data on the stream closes the connection. Downstream, the
+    request has already been executed; upstream, it never reaches the server."""
     toxic = Toxic(f"{fault_id}_reset", "reset_peer", stream, {"timeout": 0})
     return toxic_fault(history, client, fault_id, "reset_connections", toxic, proxy)
 
@@ -236,7 +238,7 @@ def add_latency(
     stream: Stream = "downstream",
     proxy: str = POSTGRES_PROXY,
 ) -> ActiveFault:
-    """Slow network (randomized F12 cells)."""
+    """Slow network: data on the stream arrives `latency_ms` (plus or minus `jitter_ms`) late."""
     toxic = Toxic(
         f"{fault_id}_latency", "latency", stream, {"latency": latency_ms, "jitter": jitter_ms}
     )

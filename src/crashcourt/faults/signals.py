@@ -1,7 +1,7 @@
-"""Signal faults on worker processes (F01, F03, F15): SIGKILL, SIGSTOP and SIGCONT, SIGTERM.
+"""Signal faults on worker processes: SIGKILL, SIGSTOP and SIGCONT, SIGTERM.
 
-POSIX only: Windows has no SIGSTOP or SIGCONT, and the spec runs workers on Linux (on other
-hosts, inside a Linux container). The target is always a child the orchestrator spawned.
+POSIX only: Windows has no SIGSTOP or SIGCONT, and workers run on Linux (on other hosts, inside
+a Linux container). The target is always a child the orchestrator spawned.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def _returncode(observed: Data) -> int:
 
 
 def kill(history: HistoryWriter, process: Process, fault_id: str, timeout: float = 10) -> int:
-    """SIGKILL (F01). Returns the exit status once the process has been reaped (-9)."""
+    """SIGKILL. Returns the exit status once the process has been reaped (-9)."""
     _signal("SIGKILL")
 
     def apply() -> Data:
@@ -49,7 +49,7 @@ def kill(history: HistoryWriter, process: Process, fault_id: str, timeout: float
 
 
 def terminate(history: HistoryWriter, process: Process, fault_id: str, grace: float = 10) -> int:
-    """SIGTERM, then SIGKILL if the process outlives the grace period (F15)."""
+    """SIGTERM, then SIGKILL if the process outlives the grace period."""
     _signal("SIGTERM")
 
     def apply() -> Data:
@@ -65,7 +65,7 @@ def terminate(history: HistoryWriter, process: Process, fault_id: str, grace: fl
 
 
 def stop(history: HistoryWriter, process: Process, fault_id: str) -> ActiveFault:
-    """SIGSTOP (F03); healing sends SIGCONT."""
+    """SIGSTOP; healing sends SIGCONT."""
     _signal("SIGSTOP")
 
     def apply() -> Data:

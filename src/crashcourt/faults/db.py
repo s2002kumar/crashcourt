@@ -1,7 +1,7 @@
 """Database faults: backend termination and a fast restart of the target container.
 
 Both act through the direct admin connection or the Docker CLI, never through Toxiproxy, and
-only against the compose project Crashcourt created (spec section 23).
+only against the compose project Crashcourt created.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ TARGET_SERVICE = "postgres"
 def terminate_backends(
     history: HistoryWriter, admin_dsn: str, fault_id: str, *, application_name: str
 ) -> int:
-    """`pg_terminate_backend` every backend with this application_name (F10). Returns the count.
+    """`pg_terminate_backend` every backend with this application_name. Returns the count.
 
     The client's next statement fails with AdminShutdown (SQLSTATE 57P01).
     """
@@ -81,8 +81,8 @@ def _check_target_container(root: Path) -> str:
 def restart_database(
     history: HistoryWriter, admin_dsn: str, fault_id: str, *, root: Path, ready_timeout: float = 60
 ) -> Data:
-    """Fast shutdown and restart of the target container (F13); returns when it accepts
-    connections again. The postgres image stops with SIGINT, Postgres's fast shutdown mode."""
+    """Fast shutdown and restart of the target container; returns when it accepts connections
+    again. The postgres image stops with SIGINT, Postgres's fast shutdown mode."""
 
     def apply() -> Data:
         container = _check_target_container(root)
