@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 import yaml
 
-from crashcourt.clauses import ClauseRegistry, Polarity, RegistryError
+from crashcourt.clauses import ClauseRegistry, Polarity, RegistryError, registry_sha256
 
 HASH = "a" * 64
 
@@ -166,3 +166,24 @@ def test_fetch_url_defaults_to_source_without_fragment(tmp_path: Path) -> None:
     registry = ClauseRegistry.load(tmp_path)
     assert registry.get("LG-TEST").fetch_url == "https://docs.example.com/page"
     assert registry.get("LG-MD").fetch_url == "https://docs.example.com/page.md"
+
+
+def test_yml_files_are_reported_not_skipped(tmp_path: Path) -> None:
+    write(tmp_path, clause_data())
+    write(tmp_path, clause_data(id="LG-OTHER"))
+    (tmp_path / "lg" / "LG-OTHER.yaml").rename(tmp_path / "lg" / "LG-OTHER.yml")
+    assert "lg/LG-OTHER.yml: clause files must end in .yaml" in problems(tmp_path)
+
+
+def test_registry_digest_ignores_line_endings_and_tracks_every_change(tmp_path: Path) -> None:
+    path = write(tmp_path, clause_data())
+    lf = path.read_bytes().replace(b"\r\n", b"\n")  # write() uses the platform's line endings
+    path.write_bytes(lf)
+    first = registry_sha256(tmp_path)
+    path.write_bytes(lf.replace(b"\n", b"\r\n"))
+    assert registry_sha256(tmp_path) == first
+    path.write_text(path.read_text(encoding="utf-8") + "# edited\n", encoding="utf-8")
+    edited = registry_sha256(tmp_path)
+    assert edited != first
+    path.rename(path.with_name("LG-RENAMED.yaml"))
+    assert registry_sha256(tmp_path) not in {first, edited}

@@ -147,6 +147,8 @@ def test_every_langgraph_and_psycopg_distribution_in_the_lock_is_recorded() -> N
 @pytest.mark.parametrize(
     ("changes", "problem"),
     [
+        ({"clause_registry_sha256": "abc"}, "clause_registry_sha256 is not a sha256 digest"),
+        ({"clause_registry_sha256": ""}, "clause_registry_sha256 is not a sha256 digest: missing"),
         ({"runner": "laptop"}, "runner must be one of"),
         ({"runner": "unknown"}, "runner must be one of"),
         ({"docker_kernel": "11"}, "docker_kernel does not start with a version: 11"),
@@ -260,3 +262,8 @@ def test_schema_version_must_be_the_integer_one(version: object) -> None:
         data["schema_version"] = version
     with pytest.raises(ManifestFormatError, match="schema_version"):
         Manifest.from_json(json.dumps(data))
+
+
+def test_a_different_clause_registry_fails_the_comparison() -> None:
+    diffs = diff_pinned(make_manifest(), make_manifest(clause_registry_sha256="1" * 64))
+    assert [d.split(":")[0] for d in diffs] == ["clause_registry_sha256"]

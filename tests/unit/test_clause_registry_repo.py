@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crashcourt.clauses import ClauseRegistry, Polarity
+from crashcourt.clauses import ClauseRegistry, Polarity, registry_sha256
 from crashcourt.clauses.report import listing_markdown
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -39,3 +39,20 @@ def test_published_listing_is_current() -> None:
         "regenerate: uv run crashcourt clauses list --markdown "
         "--output research/evidence/t-02/registry.md"
     )
+
+
+#: The savers this lab tests. A proposal is not adopted, so it must never judge them.
+OFFICIAL_SAVERS = {"AsyncPostgresSaver", "PostgresSaver", "AsyncSqliteSaver", "SqliteSaver"}
+
+
+def test_no_proposed_clause_applies_to_an_official_saver() -> None:
+    registry = ClauseRegistry.load(ROOT / "clauses")
+    proposed = registry.by_polarity(Polarity.PROPOSED)
+    assert proposed, "expected at least one proposed clause (LG-OWN-8796)"
+    for clause in proposed:
+        assert not OFFICIAL_SAVERS & set(clause.applies_to), clause.id
+
+
+def test_registry_has_a_version() -> None:
+    digest = registry_sha256(ROOT / "clauses")
+    assert len(digest) == 64 and digest == registry_sha256(ROOT / "clauses")

@@ -1,24 +1,28 @@
-"""Committed reference manifests are what CI compares against (C7); each must stay current."""
+"""The reference manifest CI compares against (C7) must stay current.
+
+Each task that changes a pinned field commits its own reference under research/evidence/<task>/ and
+points CI at it; older references stay as the record of their task's environment and schema.
+"""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
-
-import pytest
 
 from crashcourt.manifest import Manifest, validate_manifest
 
-EVIDENCE = Path(__file__).resolve().parents[2] / "research/evidence"
-REFERENCES = sorted(EVIDENCE.glob("*/manifest-local.json"))
+REPO = Path(__file__).resolve().parents[2]
 
 
-def test_there_is_a_reference_manifest() -> None:
-    assert REFERENCES, f"no manifest-local.json under {EVIDENCE}"
+def compared_reference() -> Path:
+    workflow = (REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    paths = re.findall(r"--compare\s+(\S+)", workflow)
+    assert len(paths) == 1, f"expected one --compare in ci.yml, found {paths}"
+    return REPO / paths[0]
 
 
-@pytest.mark.parametrize("path", REFERENCES, ids=lambda p: p.parent.name)
-def test_reference_manifest_is_complete_and_from_a_clean_local_checkout(path: Path) -> None:
-    manifest = Manifest.from_json(path.read_text(encoding="utf-8"))
+def test_reference_ci_compares_against_is_complete_and_from_a_clean_local_checkout() -> None:
+    manifest = Manifest.from_json(compared_reference().read_text(encoding="utf-8"))
     assert validate_manifest(manifest) == []
     assert manifest.git_dirty is False
     assert manifest.runner == "local"

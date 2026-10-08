@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
@@ -45,9 +46,13 @@ class ClauseRegistry:
     @classmethod
     def load(cls, root: Path) -> ClauseRegistry:
         paths = sorted(root.rglob("*.yaml"))
+        # A clause saved as .yml would otherwise be skipped without a word.
+        problems: list[str] = [
+            f"{p.relative_to(root).as_posix()}: clause files must end in .yaml"
+            for p in sorted(root.rglob("*.yml"))
+        ]
         if not paths:
-            raise RegistryError([f"{root}: no clause files (*.yaml) found"])
-        problems: list[str] = []
+            raise RegistryError([*problems, f"{root}: no clause files (*.yaml) found"])
         clauses: list[Clause] = []
         seen: dict[str, Path] = {}
         for path in paths:
@@ -94,3 +99,16 @@ class ClauseRegistry:
 
     def __len__(self) -> int:
         return len(self._by_id)
+
+
+def registry_sha256(root: Path) -> str:
+    """The registry's version: sha256 over each clause file's path and LF-normalized bytes.
+
+    Two checkouts with the same clause files give the same digest on every platform; any edit,
+    addition, removal, or rename changes it.
+    """
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*.yaml")):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8") + b"\0")
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n") + b"\0")
+    return digest.hexdigest()

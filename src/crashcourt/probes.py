@@ -213,6 +213,12 @@ class SystemProbes:
         path = self.root / "uv.lock"
         return sha256_file(path) if path.exists() else None
 
+    def clause_registry(self) -> tuple[int, str]:
+        from crashcourt.clauses import ClauseRegistry, registry_sha256
+
+        root = self.root / "clauses"
+        return len(ClauseRegistry.load(root)), registry_sha256(root)
+
     def python_pin(self) -> str | None:
         path = self.root / ".python-version"
         return read_python_pin(path.read_text(encoding="utf-8")) if path.exists() else None

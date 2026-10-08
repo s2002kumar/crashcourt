@@ -53,6 +53,7 @@ REQUIRED_SERVICES: tuple[str, ...] = ("postgres", "toxiproxy")
 
 DIGEST_MARKER = "@sha256:"
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
+SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 KERNEL_RELEASE = re.compile(r"\d+\.\d+")
 LIBPQ_VERSION = re.compile(r"(\d+)\.(\d+)")
 
@@ -90,6 +91,8 @@ class Manifest:
     machine: str
     runner: str
     lockfile_sha256: str
+    #: The clause registry's version (crashcourt.clauses.registry_sha256); verdicts cite its files.
+    clause_registry_sha256: str
     packages: dict[str, str]
     psycopg_impl: str
     #: The wheel tags of the installed psycopg-binary; the binary implementation's libpq comes
@@ -172,6 +175,9 @@ def validate_manifest(m: Manifest) -> list[str]:
         problems.append("git_sha is missing")
     if not m.lockfile_sha256:
         problems.append("lockfile_sha256 is missing")
+    if not SHA256_HEX.fullmatch(m.clause_registry_sha256):
+        digest = m.clause_registry_sha256 or "missing"
+        problems.append(f"clause_registry_sha256 is not a sha256 digest: {digest}")
     for name in _TEXT_FIELDS:
         if not getattr(m, name):
             problems.append(f"{name} is missing")
@@ -242,6 +248,7 @@ def pinned_view(m: Manifest) -> dict[str, Any]:
         "python_version": m.python_version,
         "python_implementation": m.python_implementation,
         "lockfile_sha256": m.lockfile_sha256,
+        "clause_registry_sha256": m.clause_registry_sha256,
         "packages": dict(sorted(m.packages.items())),
         "psycopg_impl": m.psycopg_impl,
         "libpq_major": libpq_major(m.libpq_version),

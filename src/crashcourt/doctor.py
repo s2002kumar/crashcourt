@@ -76,6 +76,7 @@ class Probes(Protocol):
     def installed_versions(self, dists: Iterable[str]) -> Mapping[str, str | None]: ...
     def locked_versions(self) -> Mapping[str, str] | None: ...
     def lockfile_sha256(self) -> str | None: ...
+    def clause_registry(self) -> tuple[int, str]: ...
     def python_pin(self) -> str | None: ...
     def driver_info(self) -> DriverInfo: ...
     def git_state(self) -> tuple[str | None, bool]: ...
@@ -178,6 +179,28 @@ def run_doctor(probes: Probes) -> DoctorReport:
                 )
             )
 
+    registry_digest = ""
+    try:
+        clause_count, registry_digest = probes.clause_registry()
+    except Exception as exc:  # noqa: BLE001 - an invalid registry is a failed check, not a crash
+        checks.append(
+            _check(
+                "clause registry valid",
+                False,
+                f"{type(exc).__name__}: {str(exc).replace(chr(10), '; ')}",
+                "Run `uv run crashcourt clauses check` and fix the listed clauses.",
+            )
+        )
+    else:
+        checks.append(
+            _check(
+                "clause registry valid",
+                True,
+                f"{clause_count} clauses, sha256 {registry_digest[:12]}",
+                "",
+            )
+        )
+
     py_version, py_impl = probes.python_info()
     try:
         pin = probes.python_pin()
@@ -248,6 +271,7 @@ def run_doctor(probes: Probes) -> DoctorReport:
             machine=machine,
             runner=probes.runner(),
             lockfile_sha256=_lockfile_sha256(probes),
+            clause_registry_sha256=registry_digest,
             packages={d: installed.get(d) or "" for d in PINNED_DISTRIBUTIONS},
             psycopg_impl=driver.impl,
             psycopg_wheel=driver.wheel,
