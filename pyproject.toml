@@ -24,8 +24,10 @@ dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380"]
 
 [tool.uv]
 # The interpreter is part of the manifest: use uv's own build of the version in .python-version on
-# every machine, never whatever Python the host or the CI runner happens to have.
+# every machine, never whatever Python the host or the CI runner happens to have. Which build of
+# 3.12.13 uv installs depends on the uv release, so uv itself is pinned too (CI uses the same).
 python-preference = "only-managed"
+required-version = "==0.12.1"
 
 [build-system]
 requires = ["hatchling"]
