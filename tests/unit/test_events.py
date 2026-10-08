@@ -90,6 +90,8 @@ def test_kinds_are_exactly_the_v1_set() -> None:
     ("field", "value"),
     [
         ("v", 2),
+        ("v", True),
+        ("v", 1.0),
         ("kind", "saver.delete_thread.call"),
         ("kind", "client.retry"),
         ("seq", -1),

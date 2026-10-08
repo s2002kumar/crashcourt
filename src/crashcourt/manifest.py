@@ -11,6 +11,8 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict
 
+from crashcourt.spec.events import Version
+
 SCHEMA_VERSION: Literal[1] = 1
 
 #: Distributions under test or on the persistence path; their versions are part of every result.
@@ -116,7 +118,7 @@ class Manifest(BaseModel):
     image_ids: dict[str, str]
     postgres: dict[str, str]
     toxiproxy_version: str
-    schema_version: Literal[1] = SCHEMA_VERSION
+    schema_version: Version = SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()

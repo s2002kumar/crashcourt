@@ -27,7 +27,15 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StringConstraints,
+    model_validator,
+)
 
 SCHEMA_VERSION: Literal[1] = 1
 
@@ -67,6 +75,16 @@ EVENT_KINDS: tuple[str, ...] = get_args(EventKind)
 
 Status = Literal["ok", "fail", "info"]
 
+
+def _the_integer(value: object) -> object:
+    # true and 1.0 compare equal to 1, so Literal[1] alone would accept them.
+    if type(value) is not int:
+        raise ValueError("the schema version is the integer 1")
+    return value
+
+
+Version = Annotated[Literal[1], BeforeValidator(_the_integer)]
+
 Name = Annotated[str, StringConstraints(min_length=1)]
 Count = Annotated[int, Field(ge=0, strict=True)]
 Nanoseconds = Annotated[int, Field(strict=True)]
@@ -93,7 +111,7 @@ class Event(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    v: Literal[1]
+    v: Version
     batch: Name
     cell: Name
     trial: Count

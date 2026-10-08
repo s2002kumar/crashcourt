@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from crashcourt.manifest import (
     PINNED_DISTRIBUTIONS,
@@ -262,6 +263,13 @@ def test_schema_version_must_be_the_integer_one(version: object) -> None:
         data["schema_version"] = version
     with pytest.raises(ManifestFormatError, match="schema_version"):
         Manifest.from_json(json.dumps(data))
+
+
+@pytest.mark.parametrize("version", [True, 1.0])
+def test_the_model_rejects_a_version_that_only_compares_equal_to_one(version: object) -> None:
+    data = {**json.loads(make_manifest().to_json()), "schema_version": version}
+    with pytest.raises(ValidationError):
+        Manifest.model_validate(data)
 
 
 def test_a_different_clause_registry_fails_the_comparison() -> None:
