@@ -20,6 +20,8 @@ SCHEMA_VERSION: Literal[1] = 1
 PINNED_DISTRIBUTIONS: tuple[str, ...] = (
     "langgraph",
     "langgraph-checkpoint",
+    # The official conformance suite: control C4 compares its results through the wrapper.
+    "langgraph-checkpoint-conformance",
     "langgraph-checkpoint-postgres",
     "langgraph-checkpoint-sqlite",
     "langgraph-prebuilt",
