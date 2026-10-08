@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -41,3 +42,18 @@ def test_kill_that_did_not_end_the_process_is_a_fault_error(
     heal = read_history(path).events[-1]
     assert (heal.kind, heal.status) == ("fault.heal", "fail")
     assert heal.error is not None and "exited with 0" in heal.error
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="signal faults need a POSIX host")
+def test_healing_a_stop_after_the_process_was_killed_records_its_exit(tmp_path: Path) -> None:
+    run = RunIdentity(batch="DEMO-faults", cell="DEMO-cell", trial=0, seed="s")
+    path = tmp_path / "orchestrator.jsonl"
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    with (
+        HistoryWriter(path, run=run, proc="orchestrator") as history,
+        signals.stop(history, child, "stop-1"),
+    ):
+        assert signals.kill(history, child, "kill-1") == -9
+    stop_heal = read_history(path).events[-1]
+    assert (stop_heal.kind, stop_heal.fault_id, stop_heal.status) == ("fault.heal", "stop-1", "ok")
+    assert stop_heal.data == {"exited": -9}

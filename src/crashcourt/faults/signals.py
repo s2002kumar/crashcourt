@@ -47,6 +47,8 @@ def kill(history: HistoryWriter, process: Process, fault_id: str, timeout: float
     def apply() -> Data:
         _send(process, "SIGKILL")
         returncode = process.wait(timeout)
+        # -9 also results if something else SIGKILLed the child first (the OOM killer, say)
+        # and our signal reached the zombie; the status cannot tell the two apart.
         if returncode != -number:
             raise FaultError(f"pid {process.pid} exited with {returncode}, not from SIGKILL")
         return {"returncode": returncode}
@@ -64,6 +66,8 @@ def terminate(history: HistoryWriter, process: Process, fault_id: str, grace: fl
         try:
             return {"returncode": process.wait(grace), "escalated": False}
         except subprocess.TimeoutExpired:
+            if process.poll() is not None:  # it exited just as the grace period ended
+                return {"returncode": process.returncode, "escalated": False}
             _send(process, "SIGKILL")
             return {"returncode": process.wait(grace), "escalated": True}
 
@@ -72,7 +76,8 @@ def terminate(history: HistoryWriter, process: Process, fault_id: str, grace: fl
 
 
 def stop(history: HistoryWriter, process: Process, fault_id: str) -> ActiveFault:
-    """SIGSTOP; healing sends SIGCONT."""
+    """SIGSTOP; healing sends SIGCONT, or records the exit status if the process has died in the
+    meantime (a stopped process can still be killed, and a pause-then-kill schedule heals both)."""
     _signal("SIGSTOP")
 
     def apply() -> Data:
@@ -80,6 +85,8 @@ def stop(history: HistoryWriter, process: Process, fault_id: str) -> ActiveFault
         return {}
 
     def heal() -> Data:
+        if process.poll() is not None:
+            return {"exited": process.returncode}
         _send(process, "SIGCONT")
         return {"signal": "SIGCONT"}
 
