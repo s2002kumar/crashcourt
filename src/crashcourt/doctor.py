@@ -5,7 +5,7 @@ Every check is independent: one failure never hides another, and no probe error 
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -37,6 +37,19 @@ class Check:
 
 
 @dataclass(frozen=True)
+class DriverInfo:
+    """What psycopg loaded. libpq versions use libpq's encoding: 180004 is 18.4."""
+
+    impl: str
+    libpq: int
+    libpq_build: int
+    #: `psycopg.capabilities.has_cancel_safe()`: the bounded cancel the 3.3.6 pin is for.
+    cancel_safe: bool
+    #: The installed psycopg-binary wheel's tags, comma-separated.
+    wheel: str
+
+
+@dataclass(frozen=True)
 class DoctorReport:
     checks: tuple[Check, ...]
     manifest: Manifest | None
@@ -56,7 +69,7 @@ class Probes(Protocol):
     def compose_version(self) -> str | None: ...
     def compose_images(self) -> Mapping[str, str] | None: ...
     def service_states(self) -> Mapping[str, str]: ...
-    def running_image_ids(self) -> Mapping[str, str]: ...
+    def running_image_ids(self) -> Mapping[str, Sequence[str]]: ...
     def image_id(self, ref: str) -> str | None: ...
     def postgres_settings(self, names: Iterable[str]) -> Mapping[str, str]: ...
     def toxiproxy_version(self) -> str: ...
@@ -64,7 +77,7 @@ class Probes(Protocol):
     def locked_versions(self) -> Mapping[str, str] | None: ...
     def lockfile_sha256(self) -> str | None: ...
     def python_pin(self) -> str | None: ...
-    def psycopg_info(self) -> tuple[str, int]: ...
+    def driver_info(self) -> DriverInfo: ...
     def git_state(self) -> tuple[str | None, bool]: ...
     def python_info(self) -> tuple[str, str]: ...
     def platform_info(self) -> tuple[str, str, str]: ...
@@ -88,57 +101,16 @@ def run_doctor(probes: Probes) -> DoctorReport:
         _check("docker compose", compose is not None, compose or "not found", "Install Compose v2.")
     )
 
-    images = dict(probes.compose_images() or {})
-    unpinned = [s for s in REQUIRED_SERVICES if DIGEST_MARKER not in images.get(s, "")]
-    checks.append(
-        _check(
-            "images pinned by digest",
-            not unpinned,
-            "all pinned"
-            if not unpinned
-            else "unpinned: " + ", ".join(f"{s}={images.get(s) or 'missing'}" for s in unpinned),
-            "Run `python scripts/pin_images.py`, then commit compose.yaml.",
-        )
-    )
-
-    states = dict(probes.service_states())
-    bad = [
-        f"{s}={states.get(s) or 'missing'}"
-        for s in REQUIRED_SERVICES
-        if states.get(s) not in ACCEPTED_STATES[s]
-    ]
-    checks.append(
-        _check(
-            "compose services up",
-            not bad,
-            "postgres healthy, toxiproxy running" if not bad else "; ".join(bad),
-            "Run `docker compose up -d --wait`.",
-        )
-    )
-
-    # compose.yaml says what should run; the containers say what does. Compare image IDs.
-    running = dict(probes.running_image_ids())
-    stale: list[str] = []
-    for service in REQUIRED_SERVICES:
-        ref = images.get(service, "")
-        want = probes.image_id(ref) if ref else None
-        have = running.get(service)
-        if have is None:
-            stale.append(f"{service}: no container")
-        elif not ref:
-            stale.append(f"{service}: no image in compose.yaml")
-        elif want is None:
-            stale.append(f"{service}: pinned image {ref} is not present locally")
-        elif have != want:
-            stale.append(f"{service}: container runs {have}, pinned ref is {want}")
-    checks.append(
-        _check(
-            "running images match pins",
-            not stale,
-            "all match" if not stale else "; ".join(stale),
-            "Run `docker compose up -d --wait` to recreate containers from the pinned images.",
-        )
-    )
+    images: dict[str, str] = {}
+    running: dict[str, tuple[str, ...]] = {}
+    if docker is None:
+        # Every probe below would wait out its own timeout on a daemon that does not answer.
+        skipped = "skipped: docker daemon not reachable"
+        for name in ("images pinned by digest", "compose services up", "running images match pins"):
+            checks.append(_check(name, False, skipped, "Start Docker."))
+    else:
+        images = dict(probes.compose_images() or {})
+        running = _docker_checks(probes, images, checks)
 
     pg: dict[str, str] = {}
     try:
@@ -196,37 +168,48 @@ def run_doctor(probes: Probes) -> DoctorReport:
         )
 
     py_version, py_impl = probes.python_info()
-    pin = probes.python_pin()
-    checks.append(
-        _check(
-            "python matches .python-version",
-            pin is not None and py_version == pin,
-            f"running {py_version}, pinned {pin}" if pin else ".python-version not found",
-            "Run `uv sync --locked --group dev`; uv installs the pinned interpreter.",
-        )
-    )
-
-    psycopg_impl, libpq = "", ""
     try:
-        psycopg_impl, libpq_number = probes.psycopg_info()
-    except Exception as exc:  # noqa: BLE001 - a broken driver is a failed check, not a crash
+        pin = probes.python_pin()
+    except Exception as exc:  # noqa: BLE001 - an unreadable pin file is a failed check
         checks.append(
             _check(
-                "psycopg libpq",
+                "python matches .python-version",
                 False,
                 f"{type(exc).__name__}: {exc}",
-                "Run `uv sync --locked --group dev`.",
+                "Make .python-version readable; it names the interpreter to use.",
             )
         )
     else:
-        libpq = format_libpq_version(libpq_number)
         checks.append(
             _check(
-                "psycopg libpq",
-                libpq_number // 10000 >= MIN_LIBPQ_MAJOR,
-                f"{psycopg_impl} implementation, libpq {libpq}",
-                f"psycopg needs libpq {MIN_LIBPQ_MAJOR} or newer to bound the wait after an "
-                "interrupt; run `uv sync --locked --group dev` to get the pinned psycopg-binary.",
+                "python matches .python-version",
+                pin is not None and py_version == pin,
+                f"running {py_version}, pinned {pin}" if pin else ".python-version not found",
+                "Run `uv sync --locked --group dev`; uv installs the pinned interpreter.",
+            )
+        )
+
+    driver: DriverInfo | None = None
+    driver_remedy = (
+        f"psycopg bounds the wait after an interrupt only with libpq {MIN_LIBPQ_MAJOR} or newer, "
+        "at runtime and at build time; run `uv sync --locked --group dev` for the pinned "
+        "psycopg-binary."
+    )
+    try:
+        driver = probes.driver_info()
+    except Exception as exc:  # noqa: BLE001 - a broken driver is a failed check, not a crash
+        checks.append(
+            _check("psycopg cancel_safe", False, f"{type(exc).__name__}: {exc}", driver_remedy)
+        )
+    else:
+        checks.append(
+            _check(
+                "psycopg cancel_safe",
+                driver.cancel_safe,
+                f"{driver.impl} implementation, libpq {format_libpq_version(driver.libpq)}, "
+                f"built against {format_libpq_version(driver.libpq_build)}"
+                + ("" if driver.cancel_safe else "; cancel_safe() unavailable"),
+                driver_remedy,
             )
         )
 
@@ -241,7 +224,7 @@ def run_doctor(probes: Probes) -> DoctorReport:
     )
 
     manifest: Manifest | None = None
-    if all(check.ok for check in checks):
+    if driver is not None and all(check.ok for check in checks):
         system, release, machine = probes.platform_info()
         candidate = Manifest(
             generated_at=probes.now_utc(),
@@ -255,13 +238,15 @@ def run_doctor(probes: Probes) -> DoctorReport:
             runner=probes.runner(),
             lockfile_sha256=probes.lockfile_sha256() or "",
             packages={d: installed.get(d) or "" for d in PINNED_DISTRIBUTIONS},
-            psycopg_impl=psycopg_impl,
-            libpq_version=libpq,
+            psycopg_impl=driver.impl,
+            psycopg_wheel=driver.wheel,
+            libpq_version=format_libpq_version(driver.libpq),
+            libpq_build_version=format_libpq_version(driver.libpq_build),
             docker_version=docker or "",
             docker_kernel=probes.docker_kernel() or "",
             compose_version=compose or "",
             images={s: images[s] for s in REQUIRED_SERVICES},
-            image_ids={s: running[s] for s in REQUIRED_SERVICES},
+            image_ids={s: running[s][0] for s in REQUIRED_SERVICES},
             postgres=pg,
             toxiproxy_version=toxiproxy or "",
         )
@@ -277,6 +262,70 @@ def run_doctor(probes: Probes) -> DoctorReport:
         manifest = candidate if not problems else None
 
     return DoctorReport(tuple(checks), manifest)
+
+
+def _docker_checks(
+    probes: Probes, images: Mapping[str, str], checks: list[Check]
+) -> dict[str, tuple[str, ...]]:
+    """Pinned refs, service health, and running images; returns each service's image IDs."""
+    unpinned = [s for s in REQUIRED_SERVICES if DIGEST_MARKER not in images.get(s, "")]
+    checks.append(
+        _check(
+            "images pinned by digest",
+            not unpinned,
+            "all pinned"
+            if not unpinned
+            else "unpinned: " + ", ".join(f"{s}={images.get(s) or 'missing'}" for s in unpinned),
+            "Run `python scripts/pin_images.py`, then commit compose.yaml.",
+        )
+    )
+
+    states = dict(probes.service_states())
+    bad = [
+        f"{s}={states.get(s) or 'missing'}"
+        for s in REQUIRED_SERVICES
+        if states.get(s) not in ACCEPTED_STATES[s]
+    ]
+    checks.append(
+        _check(
+            "compose services up",
+            not bad,
+            "postgres healthy, toxiproxy running" if not bad else "; ".join(bad),
+            "Run `docker compose up -d --wait`.",
+        )
+    )
+
+    # compose.yaml says what should run; the containers say what does. Compare image IDs.
+    remedy = "Run `docker compose up -d --wait` to recreate containers from the pinned images."
+    try:
+        running = {s: tuple(ids) for s, ids in probes.running_image_ids().items()}
+    except Exception as exc:  # noqa: BLE001 - a probe failure is a failed check, not a crash
+        checks.append(
+            _check("running images match pins", False, f"{type(exc).__name__}: {exc}", remedy)
+        )
+        return {}
+    stale: list[str] = []
+    for service in REQUIRED_SERVICES:
+        ref = images.get(service, "")
+        want = probes.image_id(ref) if ref else None
+        have = running.get(service, ())
+        if not have:
+            stale.append(f"{service}: no container")
+        elif not ref:
+            stale.append(f"{service}: no image in compose.yaml")
+        elif want is None:
+            stale.append(f"{service}: pinned image {ref} is not present locally")
+        elif set(have) != {want}:
+            stale.append(f"{service}: containers run {', '.join(have)}, pinned ref is {want}")
+    checks.append(
+        _check(
+            "running images match pins",
+            not stale,
+            "all match" if not stale else "; ".join(stale),
+            remedy,
+        )
+    )
+    return running
 
 
 def format_report(report: DoctorReport) -> str:

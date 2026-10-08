@@ -9,7 +9,7 @@ from pathlib import Path
 
 from crashcourt import __version__
 from crashcourt.doctor import format_report, run_doctor
-from crashcourt.manifest import Manifest, diff_pinned
+from crashcourt.manifest import Manifest, diff_pinned, platform_notes
 
 
 def _doctor(args: argparse.Namespace) -> int:
@@ -30,7 +30,13 @@ def _doctor(args: argparse.Namespace) -> int:
     # Bytes, not text mode: the manifest must be byte-identical on every platform.
     args.manifest.write_bytes(report.manifest.to_json().encode("utf-8"))
     if args.compare is not None:
-        other = Manifest.from_json(args.compare.read_text(encoding="utf-8"))
+        try:
+            other = Manifest.from_json(args.compare.read_text(encoding="utf-8"))
+        except ValueError as exc:  # includes ManifestFormatError and malformed JSON
+            print(f"cannot compare with {args.compare}: {exc}")
+            return 2
+        for note in platform_notes(report.manifest, other):
+            print("note:", note)
         diffs = diff_pinned(report.manifest, other)
         if diffs:
             print("pinned fields differ from", args.compare)

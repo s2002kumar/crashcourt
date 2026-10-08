@@ -5,6 +5,7 @@ import json
 from crashcourt.probes import (
     parse_compose_containers,
     parse_compose_ps,
+    parse_wheel_tags,
     read_python_pin,
     runner_kind,
 )
@@ -34,10 +35,28 @@ def test_parses_container_ids_per_service() -> None:
     raw = "\n".join(
         [
             json.dumps({"Service": "postgres", "ID": "a1b2", "State": "running"}),
+            json.dumps({"Service": "postgres", "ID": "c3d4", "State": "running"}),
             json.dumps({"Service": "toxiproxy", "ID": "", "State": "created"}),
         ]
     )
-    assert parse_compose_containers(raw) == {"postgres": "a1b2"}
+    assert parse_compose_containers(raw) == {"postgres": ["a1b2", "c3d4"]}
+
+
+def test_unreadable_compose_output_means_no_services() -> None:
+    assert parse_compose_ps("Error response from daemon: 500") == {}
+    assert parse_compose_containers("{not json") == {}
+
+
+def test_wheel_tags_come_from_the_tag_lines() -> None:
+    wheel = (
+        "Wheel-Version: 1.0\nGenerator: setuptools (83.0.0)\nRoot-Is-Purelib: false\n"
+        "Tag: cp312-cp312-manylinux2014_x86_64\nTag: cp312-cp312-manylinux_2_17_x86_64\n\n"
+    )
+    assert parse_wheel_tags(wheel) == [
+        "cp312-cp312-manylinux2014_x86_64",
+        "cp312-cp312-manylinux_2_17_x86_64",
+    ]
+    assert parse_wheel_tags("") == []
 
 
 def test_python_pin_skips_comments_and_blank_lines() -> None:
@@ -54,3 +73,4 @@ def test_runner_kind_reads_github_actions_variables() -> None:
         "self-hosted"
     )
     assert runner_kind({"GITHUB_ACTIONS": "true"}) == "unknown"
+    assert runner_kind({"CI": "true"}) == "unknown"  # another CI system is not a local run

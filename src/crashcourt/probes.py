@@ -12,10 +12,11 @@ import os
 import platform
 import subprocess
 import urllib.request
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
 
+from crashcourt.doctor import DriverInfo
 from crashcourt.manifest import parse_uv_lock, sha256_file
 
 #: Direct connection to the target database: the oracle path, never through Toxiproxy
@@ -29,11 +30,14 @@ def _compose_ps_items(raw: str) -> list[dict[str, object]]:
     raw = raw.strip()
     if not raw:
         return []
-    items: list[Any] = (
-        json.loads(raw)
-        if raw.startswith("[")
-        else [json.loads(line) for line in raw.splitlines() if line.strip()]
-    )
+    try:
+        items: list[Any] = (
+            json.loads(raw)
+            if raw.startswith("[")
+            else [json.loads(line) for line in raw.splitlines() if line.strip()]
+        )
+    except json.JSONDecodeError:
+        return []  # unreadable output reads as no services; doctor reports them missing
     return [cast("dict[str, object]", item) for item in items if isinstance(item, dict)]
 
 
@@ -49,15 +53,22 @@ def parse_compose_ps(raw: str) -> dict[str, str]:
     return states
 
 
-def parse_compose_containers(raw: str) -> dict[str, str]:
-    """Map service -> container ID."""
-    containers: dict[str, str] = {}
+def parse_compose_containers(raw: str) -> dict[str, list[str]]:
+    """Map service -> its container IDs (more than one when the service is scaled)."""
+    containers: dict[str, list[str]] = {}
     for fields in _compose_ps_items(raw):
         service = str(fields.get("Service") or "")
         container = str(fields.get("ID") or "")
         if service and container:
-            containers[service] = container
+            containers.setdefault(service, []).append(container)
     return containers
+
+
+def parse_wheel_tags(text: str) -> list[str]:
+    """The `Tag:` lines of a wheel's WHEEL metadata file, sorted."""
+    return sorted(
+        line.partition(":")[2].strip() for line in text.splitlines() if line.startswith("Tag:")
+    )
 
 
 def read_python_pin(text: str) -> str | None:
@@ -70,9 +81,14 @@ def read_python_pin(text: str) -> str | None:
 
 
 def runner_kind(env: Mapping[str, str]) -> str:
-    """`local`, or the RUNNER_ENVIRONMENT GitHub Actions sets (`github-hosted`, `self-hosted`)."""
+    """`local`, or the RUNNER_ENVIRONMENT GitHub Actions sets (`github-hosted`, `self-hosted`).
+
+    Any other CI system is `unknown`, which the manifest rejects rather than calling it local.
+    """
     if env.get("GITHUB_ACTIONS") == "true":
         return env.get("RUNNER_ENVIRONMENT", "") or "unknown"
+    if env.get("CI", "").lower() in {"true", "1"}:
+        return "unknown"
     return "local"
 
 
@@ -104,7 +120,10 @@ class SystemProbes:
         raw = self._run("docker", "compose", "config", "--format", "json")
         if not raw:
             return None
-        services: dict[str, Any] = json.loads(raw).get("services", {})
+        try:
+            services: dict[str, Any] = json.loads(raw).get("services", {})
+        except (json.JSONDecodeError, AttributeError):
+            return None
         return {name: str(svc.get("image", "")) for name, svc in services.items()}
 
     def service_states(self) -> Mapping[str, str]:
@@ -112,15 +131,17 @@ class SystemProbes:
             self._run("docker", "compose", "ps", "--all", "--format", "json") or ""
         )
 
-    def running_image_ids(self) -> Mapping[str, str]:
+    def running_image_ids(self) -> Mapping[str, Sequence[str]]:
         containers = parse_compose_containers(
             self._run("docker", "compose", "ps", "--format", "json") or ""
         )
-        found: dict[str, str] = {}
-        for service, container in containers.items():
-            image = self._run("docker", "inspect", "--format", "{{.Image}}", container)
-            if image:
-                found[service] = image
+        found: dict[str, list[str]] = {}
+        for service, ids in containers.items():
+            images = {
+                self._run("docker", "inspect", "--type", "container", "--format", "{{.Image}}", c)
+                for c in ids
+            }
+            found[service] = sorted(image for image in images if image)
         return found
 
     def image_id(self, ref: str) -> str | None:
@@ -168,10 +189,20 @@ class SystemProbes:
         path = self.root / ".python-version"
         return read_python_pin(path.read_text(encoding="utf-8")) if path.exists() else None
 
-    def psycopg_info(self) -> tuple[str, int]:
-        from psycopg import pq  # lazy: unit tests never need a database driver
+    def driver_info(self) -> DriverInfo:
+        from psycopg import capabilities, pq  # lazy: unit tests never need a database driver
 
-        return pq.__impl__, pq.version()
+        try:
+            wheel = importlib.metadata.distribution("psycopg-binary").read_text("WHEEL") or ""
+        except importlib.metadata.PackageNotFoundError:
+            wheel = ""
+        return DriverInfo(
+            impl=pq.__impl__,
+            libpq=pq.version(),
+            libpq_build=pq.__build_version__,
+            cancel_safe=capabilities.has_cancel_safe(),
+            wheel=",".join(parse_wheel_tags(wheel)),
+        )
 
     def git_state(self) -> tuple[str | None, bool]:
         sha = self._run("git", "rev-parse", "HEAD")

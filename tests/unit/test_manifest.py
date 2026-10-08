@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -7,16 +8,18 @@ import pytest
 from crashcourt.manifest import (
     PINNED_DISTRIBUTIONS,
     Manifest,
+    ManifestFormatError,
     diff_pinned,
     format_libpq_version,
     libpq_major,
     normalize_dist,
     parse_uv_lock,
     pinned_view,
+    platform_notes,
     validate_manifest,
 )
 
-from ._factories import D1, GOOD_PG, make_manifest
+from ._factories import D1, GOOD_PG, WINDOWS_WHEEL, make_manifest
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -66,11 +69,11 @@ def test_pinned_view_ignores_host_details() -> None:
         docker_version="28.0.0",
         docker_kernel="6.6.87.2-microsoft-standard-WSL2",
         image_ids={"postgres": "sha256:" + "1" * 64, "toxiproxy": "sha256:" + "2" * 64},
-        libpq_version="18.6",
         git_dirty=True,
     )
     assert pinned_view(a) == pinned_view(b)
     assert diff_pinned(a, b) == []
+    assert platform_notes(a, b) == []
 
 
 def test_pinned_view_detects_what_matters() -> None:
@@ -88,11 +91,47 @@ def test_pinned_view_compares_the_full_python_version() -> None:
     assert diff_pinned(local, runner) == ["python_version: '3.12.13' != '3.12.3'"]
 
 
-def test_pinned_view_compares_psycopg_impl_and_libpq_major() -> None:
+def test_same_wheel_requires_the_same_libpq() -> None:
     a = make_manifest()
-    diffs = diff_pinned(a, make_manifest(psycopg_impl="python", libpq_version="17.6"))
-    assert any(d.startswith("psycopg_impl:") for d in diffs)
-    assert "libpq_major: 18 != 17" in diffs
+    b = make_manifest(libpq_version="18.4", libpq_build_version="18.5")
+    assert diff_pinned(a, b) == [
+        "libpq_version: '18.6' != '18.4'",
+        "libpq_build_version: '18.6' != '18.5'",
+    ]
+
+
+def test_other_platform_wheel_reports_its_libpq_without_failing() -> None:
+    # psycopg-binary 3.3.6 bundles libpq 18.6 on Linux and 18.4 on Windows.
+    linux = make_manifest()
+    windows = make_manifest(
+        psycopg_wheel=WINDOWS_WHEEL, libpq_version="18.4", libpq_build_version="18.4"
+    )
+    assert diff_pinned(linux, windows) == []
+    [note] = platform_notes(linux, windows)
+    assert "18.6" in note and "18.4" in note and WINDOWS_WHEEL in note
+
+
+def test_other_platform_wheel_still_needs_the_same_libpq_major() -> None:
+    windows = make_manifest(
+        psycopg_wheel=WINDOWS_WHEEL, libpq_version="17.9", libpq_build_version="17.9"
+    )
+    assert diff_pinned(make_manifest(), windows) == ["libpq_major: 18 != 17"]
+
+
+def test_system_libpq_is_compared_in_full_whatever_the_wheel() -> None:
+    # The python implementation loads the system's libpq; the wheel does not explain a difference.
+    a = make_manifest(psycopg_impl="python", libpq_version="17.2", libpq_build_version="17.2")
+    b = make_manifest(
+        psycopg_impl="python",
+        psycopg_wheel=WINDOWS_WHEEL,
+        libpq_version="17.9",
+        libpq_build_version="17.9",
+    )
+    assert diff_pinned(a, b) == [
+        "libpq_version: '17.2' != '17.9'",
+        "libpq_build_version: '17.2' != '17.9'",
+    ]
+    assert platform_notes(a, b) == []
 
 
 def test_every_langgraph_and_psycopg_distribution_in_the_lock_is_recorded() -> None:
@@ -107,10 +146,12 @@ def test_every_langgraph_and_psycopg_distribution_in_the_lock_is_recorded() -> N
     [
         ({"runner": "laptop"}, "runner must be one of"),
         ({"runner": "unknown"}, "runner must be one of"),
-        ({"docker_kernel": "11"}, "docker_kernel is not a kernel release: 11"),
+        ({"docker_kernel": "11"}, "docker_kernel does not start with a version: 11"),
         ({"docker_kernel": ""}, "docker_kernel is missing"),
         ({"psycopg_impl": "pure"}, "psycopg_impl must be one of"),
-        ({"libpq_version": "16.4"}, "libpq 16.4 is older than 17"),
+        ({"psycopg_wheel": ""}, "psycopg_wheel is missing"),
+        ({"libpq_version": "16.4"}, "libpq_version 16.4 is older than 17"),
+        ({"libpq_build_version": "16.9"}, "libpq_build_version 16.9 is older than 17"),
         ({"libpq_version": "180004"}, "libpq_version is not major.minor: 180004"),
         ({"image_ids": {"toxiproxy": "sha256:" + "d" * 64}}, "running image ID missing: postgres"),
         ({"image_ids": {"postgres": "abc", "toxiproxy": "sha256:" + "d" * 64}}, "postgres (abc)"),
@@ -128,6 +169,32 @@ def test_libpq_version_formatting() -> None:
     assert format_libpq_version(170010) == "17.10"
     assert libpq_major("18.4") == 18
     assert libpq_major("18") is None
+
+
+def test_manifest_without_the_new_fields_is_a_format_error() -> None:
+    old = json.loads(make_manifest().to_json())
+    for name in ("runner", "psycopg_wheel", "image_ids"):
+        del old[name]
+    with pytest.raises(ManifestFormatError, match=r"missing \['image_ids', 'psycopg_wheel'"):
+        Manifest.from_json(json.dumps(old))
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("[]", "a manifest is a JSON object"),
+        ('{"schema_version": 2}', "schema_version 2, expected 1"),
+    ],
+)
+def test_non_manifests_are_format_errors(text: str, message: str) -> None:
+    with pytest.raises(ManifestFormatError, match=message):
+        Manifest.from_json(text)
+
+
+def test_unknown_field_is_a_format_error() -> None:
+    extra = {**json.loads(make_manifest().to_json()), "kernel": "6.8"}
+    with pytest.raises(ManifestFormatError, match=r"unknown \['kernel'\]"):
+        Manifest.from_json(json.dumps(extra))
 
 
 def test_parse_uv_lock_normalizes_names() -> None:

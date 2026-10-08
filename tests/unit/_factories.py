@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
+from crashcourt.doctor import DriverInfo
 from crashcourt.manifest import PINNED_DISTRIBUTIONS, POSTGRES_SETTINGS, Manifest
 
 D1 = "sha256:" + "a" * 64
@@ -26,6 +27,11 @@ ID_PG = "sha256:" + "c" * 64
 ID_TOXI = "sha256:" + "d" * 64
 GOOD_IMAGE_IDS = {GOOD_IMAGES["postgres"]: ID_PG, GOOD_IMAGES["toxiproxy"]: ID_TOXI}
 GOOD_RUNNING = {"postgres": ID_PG, "toxiproxy": ID_TOXI}
+LINUX_WHEEL = "cp312-cp312-manylinux2014_x86_64,cp312-cp312-manylinux_2_17_x86_64"
+WINDOWS_WHEEL = "cp312-cp312-win_amd64"
+GOOD_DRIVER = DriverInfo(
+    impl="binary", libpq=180006, libpq_build=180006, cancel_safe=True, wheel=LINUX_WHEEL
+)
 
 
 def make_manifest(**changes: object) -> Manifest:
@@ -42,7 +48,9 @@ def make_manifest(**changes: object) -> Manifest:
         lockfile_sha256="f" * 64,
         packages=dict(GOOD_VERSIONS),
         psycopg_impl="binary",
-        libpq_version="18.4",
+        psycopg_wheel=LINUX_WHEEL,
+        libpq_version="18.6",
+        libpq_build_version="18.6",
         docker_version="27.3.1",
         docker_kernel="6.8.0-45-generic",
         compose_version="2.29.7",
@@ -65,17 +73,21 @@ class FakeProbes:
     states: Mapping[str, str] = field(
         default_factory=lambda: {"postgres": "healthy", "toxiproxy": "running"}
     )
-    running: Mapping[str, str] = field(default_factory=lambda: dict(GOOD_RUNNING))
+    running: Mapping[str, Sequence[str]] | Exception = field(
+        default_factory=lambda: {s: [i] for s, i in GOOD_RUNNING.items()}
+    )
     local_ids: Mapping[str, str] = field(default_factory=lambda: dict(GOOD_IMAGE_IDS))
     pg: Mapping[str, str] | Exception = field(default_factory=lambda: dict(GOOD_PG))
     toxiproxy: str | Exception = "2.9.0"
     installed: Mapping[str, str | None] = field(default_factory=lambda: dict(GOOD_VERSIONS))
     locked: Mapping[str, str] | None = field(default_factory=lambda: dict(GOOD_VERSIONS))
     lock_sha: str | None = "f" * 64
-    pin: str | None = "3.12.7"
-    psycopg: tuple[str, int] | Exception = ("binary", 180004)
+    pin: str | Exception | None = "3.12.7"
+    driver: DriverInfo | Exception = GOOD_DRIVER
     git: tuple[str | None, bool] = ("0" * 40, False)
     runner_env: str = "local"
+    #: Names of probes that were called, so tests can check what doctor skipped.
+    calls: list[str] = field(default_factory=lambda: list[str]())
 
     def docker_version(self) -> str | None:
         return self.docker
@@ -87,15 +99,21 @@ class FakeProbes:
         return self.compose
 
     def compose_images(self) -> Mapping[str, str] | None:
+        self.calls.append("compose_images")
         return self.images
 
     def service_states(self) -> Mapping[str, str]:
+        self.calls.append("service_states")
         return self.states
 
-    def running_image_ids(self) -> Mapping[str, str]:
+    def running_image_ids(self) -> Mapping[str, Sequence[str]]:
+        self.calls.append("running_image_ids")
+        if isinstance(self.running, Exception):
+            raise self.running
         return self.running
 
     def image_id(self, ref: str) -> str | None:
+        self.calls.append("image_id")
         return self.local_ids.get(ref)
 
     def postgres_settings(self, names: Iterable[str]) -> Mapping[str, str]:
@@ -120,12 +138,14 @@ class FakeProbes:
         return self.lock_sha
 
     def python_pin(self) -> str | None:
+        if isinstance(self.pin, Exception):
+            raise self.pin
         return self.pin
 
-    def psycopg_info(self) -> tuple[str, int]:
-        if isinstance(self.psycopg, Exception):
-            raise self.psycopg
-        return self.psycopg
+    def driver_info(self) -> DriverInfo:
+        if isinstance(self.driver, Exception):
+            raise self.driver
+        return self.driver
 
     def git_state(self) -> tuple[str | None, bool]:
         return self.git

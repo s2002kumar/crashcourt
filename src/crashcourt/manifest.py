@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 import tomllib
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any, cast
 
@@ -26,8 +26,9 @@ PINNED_DISTRIBUTIONS: tuple[str, ...] = (
     "psycopg-pool",
 )
 
-#: psycopg 3.3.6 bounds the wait after interrupting a query only with libpq 17 or newer
-#: (psycopg#1371); that fix is the reason for the 3.3.6 pin.
+#: psycopg 3.3.6 bounds the wait after interrupting a query (psycopg#1371), the reason for that
+#: pin, only through `cancel_safe()`, which needs libpq 17 or newer both at runtime and at build
+#: time (`psycopg.capabilities.has_cancel_safe`).
 MIN_LIBPQ_MAJOR = 17
 
 #: psycopg's implementations, as reported by `psycopg.pq.__impl__`.
@@ -66,9 +67,15 @@ _TEXT_FIELDS: tuple[str, ...] = (
     "docker_kernel",
     "compose_version",
     "psycopg_impl",
+    "psycopg_wheel",
     "libpq_version",
+    "libpq_build_version",
     "toxiproxy_version",
 )
+
+
+class ManifestFormatError(ValueError):
+    """The text is not a manifest of this schema."""
 
 
 @dataclass(frozen=True)
@@ -85,7 +92,12 @@ class Manifest:
     lockfile_sha256: str
     packages: dict[str, str]
     psycopg_impl: str
+    #: The wheel tags of the installed psycopg-binary; the binary implementation's libpq comes
+    #: from that wheel, and each platform's wheel bundles its own libpq build.
+    psycopg_wheel: str
+    #: The libpq psycopg loaded, and the libpq its wrapper was built against.
     libpq_version: str
+    libpq_build_version: str
     docker_version: str
     #: The Docker engine's kernel: the kernel Postgres and Toxiproxy run on. On Windows and macOS
     #: it is the Linux VM's kernel, not the host's (os_release).
@@ -107,8 +119,22 @@ class Manifest:
 
     @classmethod
     def from_json(cls, text: str) -> Manifest:
-        data: dict[str, Any] = json.loads(text)
-        return cls(**data)
+        """Parse a manifest; ManifestFormatError unless it has exactly this schema's fields."""
+        data: Any = json.loads(text)
+        if not isinstance(data, dict):
+            raise ManifestFormatError("a manifest is a JSON object")
+        record = cast("dict[str, Any]", data)
+        version = record.get("schema_version", SCHEMA_VERSION)
+        if version != SCHEMA_VERSION:
+            raise ManifestFormatError(f"schema_version {version!r}, expected {SCHEMA_VERSION}")
+        names = {field.name for field in fields(cls)}
+        missing = sorted(names - record.keys() - {"schema_version"})
+        unknown = sorted(record.keys() - names)
+        if missing or unknown:
+            raise ManifestFormatError(
+                f"not a schema {SCHEMA_VERSION} manifest: missing {missing}, unknown {unknown}"
+            )
+        return cls(**record)
 
 
 def validate_manifest(m: Manifest) -> list[str]:
@@ -127,18 +153,21 @@ def validate_manifest(m: Manifest) -> list[str]:
     if m.runner and m.runner not in RUNNERS:
         problems.append(f"runner must be one of {sorted(RUNNERS)}, got {m.runner}")
     if m.docker_kernel and not KERNEL_RELEASE.match(m.docker_kernel):
-        problems.append(f"docker_kernel is not a kernel release: {m.docker_kernel}")
+        problems.append(f"docker_kernel does not start with a version: {m.docker_kernel}")
     if m.psycopg_impl and m.psycopg_impl not in PSYCOPG_IMPLS:
         problems.append(
             f"psycopg_impl must be one of {sorted(PSYCOPG_IMPLS)}, got {m.psycopg_impl}"
         )
-    if m.libpq_version:
-        major = libpq_major(m.libpq_version)
+    for name in ("libpq_version", "libpq_build_version"):
+        value: str = getattr(m, name)
+        if not value:
+            continue
+        major = libpq_major(value)
         if major is None:
-            problems.append(f"libpq_version is not major.minor: {m.libpq_version}")
+            problems.append(f"{name} is not major.minor: {value}")
         elif major < MIN_LIBPQ_MAJOR:
             problems.append(
-                f"libpq {m.libpq_version} is older than {MIN_LIBPQ_MAJOR}; "
+                f"{name} {value} is older than {MIN_LIBPQ_MAJOR}; "
                 "psycopg's bounded wait after an interrupt needs it"
             )
     for service in REQUIRED_SERVICES:
@@ -169,11 +198,15 @@ def format_libpq_version(number: int) -> str:
 
 
 def pinned_view(m: Manifest) -> dict[str, Any]:
-    """Fields that must match for two runs to be aggregated (C7).
+    """The fields the pins determine; `doctor --compare` fails when two manifests differ in them.
 
     Host details (OS, machine, runner, Docker and its kernel, image IDs) are recorded only. libpq is
-    compared by major version: psycopg-binary bundles a different libpq minor in its Windows and
-    Linux wheels, so the full version cannot match between a Windows host and a Linux runner.
+    compared here by major version; `diff_pinned` adds the full version whenever the two runs could
+    not have loaded different libpq builds (see `libpq_differs_by_wheel`).
+
+    This answers "do the pins reproduce the same environment on two machines", the T-01 use of C7.
+    It is not the whole rule for aggregating batch results: spec section 20 also keeps runner types
+    apart, and batches from different platforms ran different libpq builds.
     """
     return {
         "schema_version": m.schema_version,
@@ -189,10 +222,38 @@ def pinned_view(m: Manifest) -> dict[str, Any]:
     }
 
 
+def libpq_differs_by_wheel(a: Manifest, b: Manifest) -> bool:
+    """True when both runs used psycopg-binary's bundled libpq from different platform wheels.
+
+    psycopg-binary 3.3.6 bundles libpq 18.4 in its Windows wheel and 18.6 in its Linux wheel, so
+    identical pins can load different libpq builds on different platforms. With the same wheel, or
+    with a libpq from the system (the c and python implementations), the pins leave no such room.
+    """
+    return a.psycopg_impl == b.psycopg_impl == "binary" and a.psycopg_wheel != b.psycopg_wheel
+
+
 def diff_pinned(a: Manifest, b: Manifest) -> list[str]:
-    """Human-readable differences between the pinned views of two manifests."""
+    """Human-readable differences that fail a comparison of two manifests."""
     va, vb = pinned_view(a), pinned_view(b)
-    return [f"{key}: {va[key]!r} != {vb[key]!r}" for key in va if va[key] != vb[key]]
+    diffs = [f"{key}: {va[key]!r} != {vb[key]!r}" for key in va if va[key] != vb[key]]
+    if not libpq_differs_by_wheel(a, b):
+        for name in ("libpq_version", "libpq_build_version"):
+            if getattr(a, name) != getattr(b, name):
+                diffs.append(f"{name}: {getattr(a, name)!r} != {getattr(b, name)!r}")
+    return diffs
+
+
+def platform_notes(a: Manifest, b: Manifest) -> list[str]:
+    """Differences the pins allow across platforms: reported with every comparison, never hidden."""
+    if not libpq_differs_by_wheel(a, b):
+        return []
+    if (a.libpq_version, a.libpq_build_version) == (b.libpq_version, b.libpq_build_version):
+        return []
+    return [
+        f"libpq {a.libpq_version} (built {a.libpq_build_version}, wheel {a.psycopg_wheel}) vs "
+        f"{b.libpq_version} (built {b.libpq_build_version}, wheel {b.psycopg_wheel}): "
+        "each platform's psycopg-binary wheel bundles its own libpq; majors match"
+    ]
 
 
 def sha256_file(path: Path) -> str:
@@ -216,8 +277,8 @@ def parse_uv_lock(text: str) -> dict[str, str]:
     for entry in packages:
         if not isinstance(entry, dict):
             continue
-        fields = cast("dict[str, object]", entry)
-        name, ver = fields.get("name"), fields.get("version")
+        item = cast("dict[str, object]", entry)
+        name, ver = item.get("name"), item.get("version")
         if isinstance(name, str) and isinstance(ver, str):
             locked[normalize_dist(name)] = ver
     return locked
