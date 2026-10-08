@@ -9,7 +9,8 @@ from crashcourt.cli import main
 
 from .test_clauses import clause_data, write
 
-PAGE = b"# Page\n\nSomething the docs say, exactly.\n"
+# The clauses cite https://docs.example.com/page#section, so the page defines that id.
+PAGE = b'# Page\n\n<a id="section" />\n\nSomething the docs say, exactly.\n'
 
 
 @pytest.fixture

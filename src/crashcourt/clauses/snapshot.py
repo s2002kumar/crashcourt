@@ -21,7 +21,9 @@ Fetcher = Callable[[str], bytes]
 
 _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _SPACE = re.compile(r"\s+")
-_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
+#: Element ids in a rendered docs page: HTML attributes, and the ids its compiled MDX assigns
+#: (headings, and explicit anchors such as <a id="pending-writes" />).
+_ELEMENT_ID = re.compile(rb'\bid="([^"]+)"|\bid:`([^`]+)`')
 
 
 def normalize(raw: bytes) -> bytes:
@@ -45,20 +47,12 @@ def quotes_missing(clause: Clause, raw: bytes) -> list[str]:
     return [q for q in clause.quotes if plain_text(q) not in text]
 
 
-def heading_slug(heading: str) -> str:
-    """The anchor a docs site derives from a heading: lowercase words joined by hyphens."""
-    text = plain_text(heading).replace("\\", "").lower()
-    text = re.sub(r"[^\w\s-]", "", text)
-    return re.sub(r"\s+", "-", text.strip())
+def element_ids(page: bytes) -> set[str]:
+    """The ids a rendered page defines, which are the fragments a link to it can target.
 
-
-def anchor_missing(clause: Clause, raw: bytes) -> str | None:
-    """The source_url fragment, when no heading on the fetched page produces it."""
-    _, _, fragment = clause.source_url.partition("#")
-    if not fragment or clause.snapshot_url is None:
-        return None  # no fragment, or the page itself is not what was fetched
-    slugs = {heading_slug(h) for h in _HEADING.findall(normalize(raw).decode("utf-8"))}
-    return None if fragment in slugs else fragment
+    Checking the page the site serves avoids guessing how the site turns headings into ids.
+    """
+    return {(a or b).decode("utf-8", "replace") for a, b in _ELEMENT_ID.findall(page)}
 
 
 def fetch(url: str) -> bytes:
@@ -103,9 +97,8 @@ def refetch(
     """
     cache_dir.mkdir(parents=True, exist_ok=True)
     fetched: dict[str, bytes | str] = {}
-    reports: list[DriftReport] = []
-    for clause in registry:
-        url = clause.fetch_url
+
+    def get(url: str) -> bytes | str:
         if url not in fetched:
             try:
                 body = fetcher(url)
@@ -114,10 +107,25 @@ def refetch(
             else:
                 fetched[url] = body
                 (cache_dir / cache_name(url)).write_bytes(body)
-        result = fetched[url]
+        return fetched[url]
+
+    reports: list[DriftReport] = []
+    for clause in registry:
+        url = clause.fetch_url
+        result = get(url)
         if isinstance(result, str):
             reports.append(DriftReport(clause.id, url, clause.snapshot_sha256, error=result))
             continue
+        page_url, _, fragment = clause.source_url.partition("#")
+        missing_anchor: str | None = None
+        if fragment:
+            page = get(page_url)  # the page the link targets, which may not be the hashed document
+            if isinstance(page, str):
+                reports.append(
+                    DriftReport(clause.id, url, clause.snapshot_sha256, error=f"{page_url}: {page}")
+                )
+                continue
+            missing_anchor = None if fragment in element_ids(page) else fragment
         try:
             report = DriftReport(
                 clause.id,
@@ -125,7 +133,7 @@ def refetch(
                 clause.snapshot_sha256,
                 actual_sha256=snapshot_sha256(result),
                 missing_quotes=tuple(quotes_missing(clause, result)),
-                missing_anchor=anchor_missing(clause, result),
+                missing_anchor=missing_anchor,
             )
         except UnicodeDecodeError as exc:  # a source that is not UTF-8 is reported, not raised
             report = DriftReport(

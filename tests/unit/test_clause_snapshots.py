@@ -7,7 +7,7 @@ from pathlib import Path
 from crashcourt.clauses import Clause, ClauseRegistry, Polarity, VersionScope
 from crashcourt.clauses.report import drift_text
 from crashcourt.clauses.snapshot import (
-    anchor_missing,
+    element_ids,
     plain_text,
     quotes_missing,
     refetch,
@@ -30,7 +30,7 @@ def make_clause(clause_id: str, url: str, digest: str, quotes: tuple[str, ...] =
         polarity=Polarity.PERMITS,
         paraphrase="p",
         quotes=quotes,
-        source_url=url + "#anchor",
+        source_url=url,
         retrieved=date(2026, 9, 27),
         snapshot_sha256=digest,
         version_scope=VersionScope(package="langgraph", specifier=">=1.2,<1.3"),
@@ -91,8 +91,14 @@ def test_a_source_that_is_not_utf8_is_reported_not_raised(tmp_path: Path) -> Non
     assert not report.ok
 
 
+HTML = (
+    b'<h1 id="page-title">Checkpointers</h1><h2 class="x" id="durability-modes">Durability</h2>'
+    b"_jsx(`a`,{id:`pending-writes`}),_jsx(Heading,{level:`4`,id:`put_writes-/-aput_writes`})"
+)
+
+
 def anchored(fragment: str) -> Clause:
-    return make_clause("LG-A", "https://docs.example.com/a", "0" * 64).model_copy(
+    return make_clause("LG-A", "https://docs.example.com/a", snapshot_sha256(PAGE)).model_copy(
         update={
             "source_url": f"https://docs.example.com/a#{fragment}",
             "snapshot_url": "https://docs.example.com/a.md",
@@ -100,18 +106,35 @@ def anchored(fragment: str) -> Clause:
     )
 
 
-def test_anchor_must_match_a_heading_on_the_page() -> None:
-    page = b"# Interrupts\n\n## Rules of interrupts\n\ntext\n\n#### put\\_writes / aput\\_writes\n"
-    assert anchor_missing(anchored("rules-of-interrupts"), page) is None
-    assert anchor_missing(anchored("put_writes-aput_writes"), page) is None
-    assert anchor_missing(anchored("pending-writes"), page) == "pending-writes"
+def test_element_ids_cover_headings_and_explicit_anchors() -> None:
+    ids = element_ids(HTML)
+    assert {"durability-modes", "pending-writes", "put_writes-/-aput_writes"} <= ids
+    assert "put_writes-aput_writes" not in ids  # a guessed slug the site does not produce
 
 
-def test_a_missing_anchor_is_reported_as_drift(tmp_path: Path) -> None:
-    page = b"# Checkpointers\n\n## Why use checkpointers\n"
-    clause = anchored("pending-writes").model_copy(
-        update={"snapshot_sha256": snapshot_sha256(page)}
+def test_fragments_are_checked_against_the_rendered_page(tmp_path: Path) -> None:
+    pages = {"https://docs.example.com/a.md": PAGE, "https://docs.example.com/a": HTML}
+    fetched: list[str] = []
+
+    def fetch(url: str) -> bytes:
+        fetched.append(url)
+        return pages[url]
+
+    registry = ClauseRegistry(
+        [anchored("pending-writes"), anchored("nope").model_copy(update={"id": "LG-B"})]
     )
-    [report] = refetch(ClauseRegistry([clause]), tmp_path, lambda url: page)
-    assert report.missing_anchor == "pending-writes" and not report.ok
-    assert "ANCHOR LG-A  #pending-writes matches no heading on the page" in drift_text([report])
+    reports = {r.clause_id: r for r in refetch(registry, tmp_path, fetch)}
+    assert reports["LG-A"].ok
+    assert reports["LG-B"].missing_anchor == "nope" and not reports["LG-B"].ok
+    assert fetched == ["https://docs.example.com/a.md", "https://docs.example.com/a"]
+    assert "ANCHOR LG-B  #nope is not an element id on the page" in drift_text([reports["LG-B"]])
+
+
+def test_an_unreachable_anchor_page_is_reported(tmp_path: Path) -> None:
+    def fetch(url: str) -> bytes:
+        if not url.endswith(".md"):
+            raise OSError("503")
+        return PAGE
+
+    [report] = refetch(ClauseRegistry([anchored("pending-writes")]), tmp_path, fetch)
+    assert report.error == "https://docs.example.com/a: OSError: 503" and not report.ok
