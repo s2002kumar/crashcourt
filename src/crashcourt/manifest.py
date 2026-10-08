@@ -1,4 +1,4 @@
-"""The environment manifest every result is stamped with (spec sections 9 and 13, control C7)."""
+"""The environment manifest every result is stamped with (control C7)."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ PSYCOPG_IMPLS: frozenset[str] = frozenset({"c", "binary", "python"})
 RUNNERS: frozenset[str] = frozenset({"local", "github-hosted", "self-hosted"})
 
 #: Postgres settings recorded in every manifest.
-#: track_commit_timestamp must be "on" (spec section 8).
+#: track_commit_timestamp must be "on": commit timestamps order concurrent writes.
 POSTGRES_SETTINGS: tuple[str, ...] = (
     "server_version",
     "fsync",
@@ -239,9 +239,9 @@ def pinned_view(m: Manifest) -> dict[str, Any]:
     versions whenever the two runs could not have loaded different libpq builds (see
     `libpq_differs_by_wheel`).
 
-    This answers "do the pins reproduce the same environment on two machines", the T-01 use of C7.
-    It is not the whole rule for aggregating batch results: spec section 20 also keeps runner types
-    apart, and batches from different platforms ran different libpq builds.
+    This answers "do the pins and the clause registry reproduce the same environment on two
+    machines", the T-01 use of C7. It is not the whole rule for aggregating batch results: runner
+    types are kept apart too, and batches from different platforms ran different libpq builds.
     """
     return {
         "schema_version": m.schema_version,

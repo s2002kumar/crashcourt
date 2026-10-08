@@ -1,4 +1,4 @@
-# Target environment for Crashcourt runs. Ports bind to 127.0.0.1 only (spec section 23).
+# Target environment for Crashcourt runs. Ports bind to 127.0.0.1 only, never to other hosts.
 # Images are pinned by digest with `python scripts/pin_images.py`; `crashcourt doctor` refuses tags alone.
 name: crashcourt
 services:

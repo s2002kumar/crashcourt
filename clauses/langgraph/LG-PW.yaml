@@ -15,7 +15,7 @@ quotes:
     checkpoint_writes table as task entries linked to the in-progress checkpoint. These per-task
     writes are what enable pending writes recovery: if another node in the same super-step fails,
     the successful nodes' writes are already durable and don't need to be re-run on resume.
-source_url: https://docs.langchain.com/oss/python/langgraph/checkpointers#why-use-checkpointers
+source_url: https://docs.langchain.com/oss/python/langgraph/checkpointers#pending-writes
 snapshot_url: https://docs.langchain.com/oss/python/langgraph/checkpointers.md
 retrieved: 2026-10-08
 snapshot_sha256: "3881beeb186af756c6f5495c89effa821fd654957c63584341b91861e6677b6a"
@@ -31,5 +31,4 @@ notes: >-
   per-task writes go to the saver only when durability is not "exit" (pregel/_loop.py:466), and
   exit mode writes them when the run ends. Until that is settled, a crash-time re-run of a
   sibling whose writes committed is a VIOLATION candidate only with that caveat attached. The
-  first quote is under "Why use checkpointers" and the second under "Super-steps"; the page's
-  own links to a #pending-writes anchor match no heading.
+  first quote follows the page's explicit pending-writes anchor; the second is under "Super-steps".

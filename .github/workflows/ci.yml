@@ -1,4 +1,4 @@
-# Tier 1 and a tier-2 smoke of `doctor` (spec section 20).
+# Static checks and unit tests, then a smoke run of `doctor` against the compose services.
 # Every action is pinned to a full commit SHA (supply-chain rule); the release tag is in the comment.
 name: ci
 on:

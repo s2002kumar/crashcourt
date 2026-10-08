@@ -5,7 +5,7 @@ description = "An open-source conformance and reliability lab for durable agent 
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12,<3.14"
-# System under test and its drivers: exact pins (spec section 16, T-01). Each is the newest
+# System under test and its drivers: exact pins (T-01). Each is the newest
 # release on PyPI on 2026-09-27; see tasks/T-01.md for sources and the psycopg bump.
 dependencies = [
   "langgraph==1.2.12",
