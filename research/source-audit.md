@@ -1,8 +1,8 @@
-# Source audit of the pinned savers (T-03, gate G0) · 2026-09-27
+# Source audit of the pinned savers (T-03, gate G0) · 2026-09-27, revised 2026-10-08
 
 Question for G0: where exactly do the pinned savers and the Pregel write path commit state, and which code points
-leave committed-but-unacknowledged state behind? Network and database fault cells (F10, F11, F13) may only target
-windows that exist in this code.
+leave committed-but-unacknowledged state behind? The network and database fault cells (a lost acknowledgment, a
+connection reset, a database restart) may only target windows that exist in this code.
 
 ## Scope and method
 
@@ -13,17 +13,21 @@ windows that exist in this code.
 | langgraph-checkpoint-postgres | 3.1.2 | `checkpointpostgres==3.1.2` | [`fde3068`](https://github.com/langchain-ai/langgraph/tree/fde3068970679184b68d3d068a92c83c966a4888) (2026-08-07) |
 | langgraph-checkpoint-sqlite | 3.1.1 | `checkpointsqlite==3.1.1` | [`b2926a0`](https://github.com/langchain-ai/langgraph/tree/b2926a0ff9589c28c7e01fe7cdbb337b86d5a4b4) (2026-07-30) |
 
-- **The audited code is the code that runs.** All 19 files cited below are byte-identical at their tags and in the
-  wheels uv.lock installs.
-- **Main has not moved.** At `main` ([`7daa3ab`](https://github.com/langchain-ai/langgraph/tree/7daa3ab49d678a5da75edb08baa87db4a2be52c3),
-  2026-09-23), the Postgres saver, the Pregel package, and the conformance suite are identical to the tags. The SQLite
-  saver and the checkpoint base differ only in lint comments and one typing cast.
-- **Three kinds of evidence:**
+- **The audited code is the code that runs.** All 13 langgraph files cited below are byte-identical at their tags and
+  in the wheels uv.lock installs (research/evidence/t-03/upstream-search.txt). The psycopg citations are to the
+  installed psycopg 3.3.6 wheel.
+- **Main had not moved.** At `main` ([`7daa3ab`](https://github.com/langchain-ai/langgraph/tree/7daa3ab49d678a5da75edb08baa87db4a2be52c3),
+  2026-09-23), the Postgres saver, the Pregel package, and the conformance suite were identical to the tags. The
+  SQLite saver and the checkpoint base differed only in lint comments and one typing cast.
+- **Four kinds of evidence:**
   - reading the code (citations below);
   - direct-saver tests in `tests/audit/`, which call only public saver methods and use the database as the witness
     (rows, `xmin`, commit timestamps);
   - a statement log of one `put` and one `put_writes`: research/evidence/t-03/statements.log, captured with
-    per-connection `log_statement=all`.
+    per-connection `log_statement=all`;
+  - one in-process ordering experiment for section 8 (research/evidence/t-03/first_tick_order.txt).
+- **What is read from code and what is tested** is marked where it matters; a code reading is a claim to measure,
+  not a finding.
 
 Citation prefixes (each is a permalink base at the commit above):
 
@@ -46,27 +50,34 @@ pg/aio.py:268-278). It then sends:
    metadata` with `parent_checkpoint_id` taken from the caller's config (pg/base.py:137-144; pg/__init__.py:334-344).
 
 No statement reads the thread first. **Nothing checks that the parent is still the head**, so any number of writers
-can attach children to one parent. The statement log shows exactly these two statements for a put, with no BEGIN or
-COMMIT.
+can attach children to one parent. This fork is not new: langgraph#8796 and the xbstack two-process repro
+(https://github.com/xbstack/langgraph-same-thread-concurrent-writer-repro) show it end to end, and
+`test_two_sync_savers_fork_one_parent` and `test_two_async_savers_fork_one_parent` replicate it at the saver level.
+The statement log shows exactly the two statements above for a put, with no BEGIN or COMMIT.
 
-**Transaction boundary: one transaction per call, in every connection mode.** `put` runs inside
-`_cursor(pipeline=True)` (pg/__init__.py:404-442; pg/aio.py:363-403):
+**Transaction boundary: one transaction per call.** `put` runs inside `_cursor(pipeline=True)`
+(pg/__init__.py:404-442; pg/aio.py:363-403):
 
-| Mode | Code | Boundary |
-| --- | --- | --- |
-| Default (`from_conn_string`, autocommit, no saver pipeline) and libpq supports pipelines | `with conn.pipeline(), conn.cursor()` (pg/__init__.py:427-432) | One implicit transaction, committed at the pipeline's Sync when the block exits. psycopg documents that "even in autocommit, the server wraps the statements sent in pipeline mode in an implicit transaction, which will be only committed when the Sync is received" ([psycopg pipeline docs](https://www.psycopg.org/psycopg3/docs/advanced/pipeline.html)). `executemany` rides an open pipeline "in order to avoid sending unnecessary Sync" (psycopg 3.3.6 `psycopg/cursor.py:128-134`) |
-| Saver built with `pipeline=True` | cursor on the long-lived pipeline, then `self.pipe.sync()` in `finally` (pg/__init__.py:414-423) | One implicit transaction per call, ended by that Sync |
-| libpq without pipeline support | `with conn.transaction(), conn.cursor()` (pg/__init__.py:433-439) | An explicit transaction |
-| `ConnectionPool` | the pool lends one connection per `_cursor` (pg/_internal.py:17-19), then one of the rows above | Same as the row above; pools must be autocommit per the saver docs |
+| Mode | Code | Boundary | Evidence |
+| --- | --- | --- | --- |
+| Default (`from_conn_string`, autocommit, no saver pipeline) and libpq supports pipelines | `with conn.pipeline(), conn.cursor()` (pg/__init__.py:427-432) | One implicit transaction, committed at the pipeline's Sync when the block exits. psycopg documents that "even in autocommit, the server wraps the statements sent in pipeline mode in an implicit transaction, which will be only committed when the Sync is received" ([psycopg pipeline docs](https://www.psycopg.org/psycopg3/docs/advanced/pipeline.html)). `executemany` rides an open pipeline "in order to avoid sending unnecessary Sync" (psycopg 3.3.6 `psycopg/cursor.py:128-134`) | Tested, sync and async |
+| Saver built with `pipeline=True` | cursor on the long-lived pipeline, then `self.pipe.sync()` in `finally` (pg/__init__.py:414-423) | One implicit transaction per call, ended by that Sync | Tested |
+| libpq without pipeline support | `with conn.transaction(), conn.cursor()` (pg/__init__.py:433-439) | An explicit transaction | Read from code |
+| `ConnectionPool` | the pool lends one connection per `_cursor` (pg/_internal.py:17-19), then one of the rows above | Same as the row above; pools must be autocommit per the saver docs | Read from code |
 
-Verified, not assumed:
+What the tests show, in the three tested modes:
 
-- `test_put_writes_blobs_and_checkpoint_in_one_transaction`, for sync, sync with a saver pipeline, and async: after a
-  put with two blob channels, the checkpoint row and both blob rows carry the same `xmin`.
-- `test_rejected_checkpoint_row_rolls_back_its_blobs`, same three modes: Postgres rejects a NUL character in JSONB, so
-  the checkpoint upsert fails after the blob upsert was sent, and no blob row survives.
+- `test_put_writes_blobs_and_checkpoint_in_one_transaction`: after a put with two blob channels, the checkpoint row
+  and both blob rows carry the same `xmin`.
+- `test_rejected_checkpoint_row_rolls_back_its_blobs`: Postgres rejects a NUL character in JSONB (SQLSTATE 22P05,
+  which the test requires), so the checkpoint upsert fails after the blob upsert was sent, and no blob row survives.
 
-A `put` is therefore atomic. The spec preface and section 4 listed its atomicity as unverified.
+What they do not show: that a put is atomic when the client side fails between its two statements. psycopg's
+`Pipeline.__exit__` sends a Sync on every exit, including when the block raised (psycopg 3.3.6
+`psycopg/_pipeline.py:65-81`, `psycopg/_pipeline_base.py:98-106`). So an exception raised inside `put` after the blob
+statement and before the checkpoint statement, a cancellation for instance, would commit the blob rows without
+their checkpoint. That is read from code, not tested; orphaned blob rows are not referenced by any checkpoint, but
+they are state the put did not mean to leave.
 
 **Same id twice.** Re-putting an existing `(thread_id, checkpoint_ns, checkpoint_id)` overwrites that row's checkpoint
 and metadata but keeps its original `parent_checkpoint_id`: the `DO UPDATE` sets only `checkpoint` and `metadata`
@@ -79,13 +90,15 @@ and metadata but keeps its original `parent_checkpoint_id`: the `DO UPDATE` sets
   NOTHING` (pg/base.py:155-159). The choice is made per batch, not per row (pg/__init__.py:363-367; pg/aio.py:323-327).
 - **Special channels.** `WRITES_IDX_MAP = {ERROR: -1, SCHEDULED: -2, INTERRUPT: -3, RESUME: -4}` (cb/__init__.py:795)
   gives these channels fixed negative indices; other writes use their position in the batch (pg/base.py:606).
-- **Consequences, tested in `test_put_writes_conflict_rules`.** For the same task and index:
+- **Consequences, tested in `test_put_writes_conflict_rules`,** which reads the rows from `checkpoint_writes` directly.
+  For the same task and index:
   - regular writes keep the **first** writer's value;
   - an all-special batch (such as a resume value) keeps the **last** writer's value;
   - a batch that mixes a regular write with a special one is insert-only throughout, so its special write also keeps
     the **first** value.
-  - SQLite behaves the same (`test_sqlite_put_writes_conflict_rules`).
-- **Boundary.** One `executemany` in `_cursor(pipeline=True)`, so one transaction per call (section 1).
+  - SQLite behaves the same, mixed batches included (`test_sqlite_put_writes_conflict_rules`).
+- **Boundary.** One `executemany` in `_cursor(pipeline=True)`, so one transaction per call, as for `put`. Read from
+  code: no test checks `put_writes`' transaction.
 
 ## 3. `get_tuple`, `list`
 
@@ -105,13 +118,13 @@ and metadata but keeps its original `parent_checkpoint_id`: the `DO UPDATE` sets
 
 ## 4. Checkpoint ids and channel versions
 
-- **Checkpoint ids are UUIDv6, not ULIDs** as the docs page says.
+- **Checkpoint ids are UUIDv6, not ULIDs** as the checkpointers docs page says.
   - The runtime mints them with `uuid6(clock_seq=step)` (pregel/_checkpoint.py:209).
   - The timestamp is `time.time_ns()`, the process's wall clock (cb/id.py:92). The node is 48 random bits
     (cb/id.py:101-102).
   - A module-global guard keeps ids increasing within one process (cb/id.py:96-98). Nothing orders ids across
     processes except their wall clocks, so with two workers, "latest" (section 3) is whichever worker's clock read
-    later. Clock skew (F18) reorders it directly.
+    later. Clock skew between workers reorders it directly.
 - **Channel versions** are `"{n:032}.{random:016}"` (pg/base.py:613-622). Two writers advancing one channel from the
   same version produce the same integer part with different random suffixes. Their blob rows do not collide
   (`DO NOTHING` on `(thread, ns, channel, version)`), so each forked checkpoint keeps its own blobs.
@@ -125,7 +138,9 @@ and metadata but keeps its original `parent_checkpoint_id`: the `DO UPDATE` sets
 | `SqliteSaver` | `threading.Lock` (sq/__init__.py:95, 181) | Same |
 | `AsyncSqliteSaver` | `asyncio.Lock` (sq/aio.py:127) | Same |
 
-- **No pinned saver takes any inter-process lock**: no advisory lock, no `SELECT ... FOR UPDATE`, no lease.
+- **No pinned saver takes any inter-process lock**: no advisory lock, no `SELECT ... FOR UPDATE`, no lease. The
+  instance lock #7259 describes for the async Postgres saver is an `asyncio.Lock`; neither saver's lock spans
+  processes.
 - **#8796's reference is to an unmerged test.** #8796 cites `test_put_waits_for_interprocess_write_lock` from PR #6985.
   That PR is still open and unmerged, and it targets the SQLite saver's tests; the test exists at no pinned tag and not
   on `main`.
@@ -140,9 +155,9 @@ and metadata but keeps its original `parent_checkpoint_id`: the `DO UPDATE` sets
   explicitly (sq/aio.py:552, 600).
 - **Rows.** A checkpoint is one row with the whole state serialized in it: no blobs table, `INSERT OR REPLACE`
   (sq/__init__.py:424-436). Writes use `INSERT OR REPLACE` for an all-special batch and `INSERT OR IGNORE` otherwise
-  (sq/__init__.py:462-466), the same first- and last-writer rules as Postgres.
-- **Two savers on one file fork the thread** exactly as on Postgres (`test_two_sqlite_savers_fork_one_parent`). WAL
-  serializes the writes; nothing checks the parent.
+  (sq/__init__.py:462-466), the same first- and last-writer rules as Postgres, tested for mixed batches too.
+- **Two savers on one file fork the thread** exactly as on Postgres (`test_two_sqlite_savers_fork_one_parent`, the
+  #8796 fork replicated on SQLite). WAL serializes the writes; nothing checks the parent.
 
 ## 7. The Pregel write path
 
@@ -150,15 +165,16 @@ and metadata but keeps its original `parent_checkpoint_id`: the `DO UPDATE` sets
   - When a task finishes, the runner's done-callback calls `loop.put_writes` (pregel/_runner.py:116-132, 574-613).
     `put_writes` records the writes in memory, then *submits* `checkpointer.put_writes` to the background executor
     (pregel/_loop.py:415-508; the submit is at :466-494).
-  - The only background writes waited on before the next checkpoint put are those to delta channels
-    (pregel/_loop.py:495-498, 1538-1540) and error-handler writes (:502-505).
-- **The #8115 race is still reachable.**
+  - The only background writes waited on are those to delta channels, before the next checkpoint put
+    (pregel/_loop.py:495-498, 1538-1540), and error-handler writes (:502-505), before the error handler runs
+    (:1579-1581).
+- **The #8115 race is present in the code.**
   - `put_writes` replaces `self.checkpoint_pending_writes` with a filtered copy and then extends it
     (pregel/_loop.py:434-437, 457), with no lock.
   - With the sync driver, task futures complete on pool threads, and `FuturesDict.on_done` invokes the commit callback
     outside its own lock (pregel/_runner.py:122-124), so two tasks finishing together interleave there.
   - With the async driver, callbacks run on the event loop thread.
-  - This matches #8115 (open) and is why H6 uses W2 with the sync driver.
+  - This matches #8115 (open). Exercising it end to end needs a parallel fan-out workload on the sync driver.
 - **Exceptions from savers can be dropped.**
   - Background futures are awaited when the executor exits, but their first exception is re-raised only
     `if exc_type is None` (pregel/_executor.py:111 sync, :202 async).
@@ -166,7 +182,10 @@ and metadata but keeps its original `parent_checkpoint_id`: the `DO UPDATE` sets
 - **A failed put does not stop the next one.**
   - `_checkpointer_put_after_previous` waits for the previous put inside `try` and calls `put` in `finally`
     (pregel/_loop.py:1541-1547; async :1796-1802).
-  - If put N fails and put N+1 succeeds, row N+1 names a parent that was never written.
+  - If put N does not commit and put N+1 does, row N+1 names a parent that was never written. A comment on #8234
+    reports reproducing exactly that
+    ([#8234 comment](https://github.com/langchain-ai/langgraph/issues/8234#issuecomment-5547306337)), and open PR
+    #9235 (2026-10-07) proposes not saving a checkpoint past a failed delta-channel write.
 - **Every run starts from an unlocked read.** `__enter__` reads the head with `get_tuple` when no `checkpoint_id` is
   given (pregel/_loop.py:1651-1654) and never re-checks it. This check-then-act gap is what lets two workers resume one
   thread from the same head.
@@ -179,87 +198,96 @@ and metadata but keeps its original `parent_checkpoint_id`: the `DO UPDATE` sets
 
 | Mode | Where it branches | Waits for |
 | --- | --- | --- |
-| `sync` | after each tick, `loop._put_checkpoint_fut.result()` (pregel/main.py:2986-2988; async :3461-3462) | That step's checkpoint put, and through the chain every earlier put. **Not** the step's regular task writes |
+| `sync` | after each tick, `loop._put_checkpoint_fut.result()` (pregel/main.py:2986-2988; async :3461-3462) | That tick's checkpoint put, and through the chain every earlier put. **Not** the tick's regular task writes |
 | `async` | no wait | Nothing until the executor exits |
 | `exit` | `do_checkpoint` is false except when exiting (pregel/_loop.py:1133-1135); `put_writes` skips the saver (:466) | One checkpoint and its pending writes saved in `_suppress_interrupt` at exit or interrupt (:1324-1334) |
 
-So under `sync`, a checkpoint is durable before the next step starts, which is what LG-DUR-SYNC says. A finished
-node's writes are durable only when their background `put_writes` commits, and nothing waits for that before the next
-step or for the client's result. This bears on LG-PW's "already durable" wording: a crash after a node returns but
-before its writes commit loses them, and the node re-runs on resume (a LG-DE-RERUN case, not LG-PW). This is a reading
-of the code, to be measured, not a finding.
+**Under `sync`, the wait comes after a tick, so the first tick runs before the input checkpoint is known to be
+durable.** `__enter__` calls `_first()` (pregel/_loop.py:1703), which submits the input checkpoint's put (:1033)
+without waiting, and the first wait is after the first tick and `after_tick()` (pregel/main.py:2984-2988).
+
+- In a `StateGraph`, the first tick is the internal `__start__` step, and user nodes run from the next tick, after the
+  input and step-0 puts committed. A commenter on #8764 traced this order on 1.2.11
+  ([#8764 comment](https://github.com/langchain-ai/langgraph/issues/8764#issuecomment-5537080433)), and
+  research/evidence/t-03/first_tick_order.txt shows it on 1.2.12.
+- In a functional-API `@entrypoint`, the first tick runs user code. In the same experiment, the entrypoint's body ran
+  while the input checkpoint's put was still in flight.
+- Because each put runs in `finally` after its predecessor (section 7), a failed input put followed by a successful
+  step-0 put leaves a step-0 row whose parent was never written, under `sync` as well as `async` (AW4).
+
+These are readings, backed by one in-process experiment against `InMemorySaver`; they are to be measured with the
+pinned savers, not findings.
+
+A finished node's writes are durable only when their background `put_writes` commits, and nothing waits for that
+before the next tick or for the client's result. This bears on LG-PW's "already durable" wording: a crash after a
+node returns but before its writes commit loses them, and the node re-runs on resume (a LG-DE-RERUN case, not LG-PW).
+This too is a reading of the code, to be measured, not a finding.
 
 ## 9. Existing tests, branches, and open PRs
 
+The searches below are reproduced by research/evidence/t-03/search_upstream.py; its output, with every hit, is
+research/evidence/t-03/upstream-search.txt (run 2026-10-08).
+
 - **Saver tests.** `libs/checkpoint-postgres/tests` at 3.1.2 and `libs/checkpoint-sqlite/tests` at 3.1.1 contain no
-  test using a second saver, multiple processes, a barrier, an advisory lock, or `FOR UPDATE`.
-- **Runtime tests.** The "fork" tests in `libs/langgraph/tests` are explicit forks (time travel, `update_state`), not
-  concurrent writers.
-- **Conformance suite.** The published `langgraph-checkpoint-conformance` 0.0.2 has 81 tests in 8 capability files.
-  `main` (identical to the 1.2.12 commit) has 89 in 9; the ninth is delta channel history, with 8 tests. None involves
-  a second saver instance. This matches #8796's counts.
-- **Branches.** 331 branches on 2026-09-27; none is named for locks, fencing, leases, ownership, or multiple writers.
-  The only name matches were incidental substrings.
-- **Open PRs touching savers or the conformance suite** (2026-09-27), the ones relevant here:
+  test using a second saver, multiple processes, a barrier, an advisory lock, or `FOR UPDATE`. The card's pattern
+  (`concurrent|race|fork|lock|advisory|interprocess`) hits seven lines there, all incidental: a `concurrent.futures`
+  import in a store test, `clock_seq`, and "blocked" in assertion messages.
+- **Runtime tests.** In `libs/langgraph/tests`, the tests whose names match are explicit forks (time travel,
+  `update_state`, copied threads) and tracing. The ones named for concurrency, such as `test_concurrent_execution` and
+  `test_concurrent_execution_thread_safety`, run ten invocations of a graph compiled without a checkpointer;
+  `test_graph_error_handler_does_not_swallow_interrupt_concurrent` runs nodes concurrently within one superstep on one
+  `InMemorySaver`. None uses two savers or two processes.
+- **Conformance suite.** The published `langgraph-checkpoint-conformance` 0.0.2 has 81 capability tests in 8 files.
+  At the 1.2.12 tag it has 89 in 9; the ninth file is delta channel history, with 8 tests. None involves a second
+  saver instance. This matches #8796's counts.
+- **Branches.** 334 branches on 2026-10-08 (331 on 2026-09-27); none is named for locks, fencing, leases, ownership,
+  or multiple writers. The name matches are incidental substrings ("release" contains "lease"; "uv-lock",
+  "lockfile", "blocks").
+- **Open PRs touching savers or the conformance suite**, the ones relevant here, as of 2026-10-08:
 
-| PR | What | Relevance |
-| --- | --- | --- |
-| #8838 (draft, by a maintainer) | `queue_state`: a durable queue of state updates applied at superstep boundaries, "exactly once per run" | A new durable write path with a written guarantee; steering, not per-thread run serialization. Watch item |
-| #6985 | SQLite inter-process write-lock test | The test #8796 cites; unmerged |
-| #7269 | No shared async lock for pooled async savers | #7259 |
-| #7237 | Restart-safety coverage for `put_writes` idempotency | Adjacent to I2 |
-| #7207 | Ignore late writes after `delete_thread` | The silent-refusal shape #8796 argues against |
-| #6871 | Deterministic ordering for same-timestamp checkpoints | Tie-break for "latest" (section 4) |
-| #6883 | Extended methods and conformance tests for the Postgres saver | Conformance coverage of the primary target |
-| #6759 | Race in `FuturesDict` | The runner code in section 7 |
-| #8242, #8544, #8556, #8557 | Delta-channel replay and ancestor-walk fixes | I10 |
+| PR | What | State | Relevance |
+| --- | --- | --- | --- |
+| #8838 (draft, by a maintainer) | `queue_state`: a durable queue of state updates applied at superstep boundaries, "exactly once per run" | Open | A new durable write path with a written guarantee; steering, not per-thread run serialization. Watch item |
+| #9235 | Don't save a checkpoint past a failed delta-channel write | Open (2026-10-07) | The failed-put-then-successful-put window (section 7, AW4) for delta channels |
+| #6985 | SQLite inter-process write-lock test | Open | The test #8796 cites; unmerged |
+| #7269 | No shared async lock for pooled async savers | Open | #7259 |
+| #7237 | Restart-safety coverage for `put_writes` idempotency | Open | Adjacent to reusing committed task writes on resume |
+| #7207 | Ignore late writes after `delete_thread` | Not found on 2026-10-08 (listed on 2026-09-27) | The silent-refusal shape #8796 argues against |
+| #6871 | Deterministic ordering for same-timestamp checkpoints | Open | Tie-break for "latest" (section 4) |
+| #6883 | Extended methods and conformance tests for the Postgres saver | Open | Conformance coverage of the primary target |
+| #6759 | Race in `FuturesDict` | Open | The runner code in section 7 |
+| #8242 | Delta replay for a channel migrated from a non-delta channel | Open | Delta channel reconstruction |
+| #8544, #8556, #8557 | Delta-channel replay order and ancestor walks | Merged since 2026-09-27 | Delta channel reconstruction; not in the pinned releases |
 
-## 10. Ambiguous-commit windows (input to F10 and F11)
+## 10. Ambiguous-commit windows (input to the network and database fault cells)
 
 Each window below commits on the server before the client learns the outcome. A lost acknowledgment or a connection
 reset between the server's commit and the client's receipt of the result leaves committed-but-unacknowledged state.
-Toxiproxy's hold on the server-to-client stream (a `timeout` toxic with `timeout=0`) turns each one into a
-deterministic schedule; T-05 verifies the stream direction first.
+Toxiproxy turns each one into a deterministic schedule on the server-to-client stream: a `timeout` toxic with
+`timeout=0` drops the response, which is the lost acknowledgment, and a `latency` toxic holds it, which is a delayed
+one. T-05's self-test checks both directions.
 
 | ID | Window | Commit point | What the client sees | What to measure |
 | --- | --- | --- | --- | --- |
-| AW1 | Checkpoint put | Pipeline Sync at the end of `put`'s `_cursor(pipeline=True)` (pg/__init__.py:321-344; pg/aio.py:280-304) | A connection error from the background future. Under `sync`, raised at the next wait (pregel/main.py:2988); under `async`, deferred to executor exit | I1, I5, I6, I11: does a retry fork from, duplicate, or regress past the committed checkpoint? |
-| AW2 | Task writes | Sync at the end of `put_writes` (pg/__init__.py:368-379) | Only at executor exit, and dropped if another exception is in flight (pregel/_executor.py:111) | I2, I9: are committed writes reused on resume while the client saw a failure? |
-| AW3 | Resume value | All-special batch, `DO UPDATE` (pg/base.py:146-153) | As AW2 | I8, F08: a retried or conflicting resume replaces a value that may already have been acted on |
-| AW4 | Failed put followed by a successful put | `finally` in `_checkpointer_put_after_previous` (pregel/_loop.py:1541-1547) | The first error, raised later | I5: a checkpoint whose parent row is missing (async durability) |
+| AW1 | Checkpoint put | Pipeline Sync at the end of `put`'s `_cursor(pipeline=True)` (pg/__init__.py:321-344; pg/aio.py:280-304) | A connection error from the background future. Under `sync`, raised at the next wait (pregel/main.py:2988); under `async`, deferred to executor exit | Does a retry fork from, duplicate, or regress past the committed checkpoint? Is every checkpoint acknowledged under `sync` present afterwards? |
+| AW2 | Task writes | Sync at the end of `put_writes` (pg/__init__.py:368-379) | Only at executor exit, and dropped if another exception is in flight (pregel/_executor.py:111) | Are committed writes reused on resume while the client saw a failure? |
+| AW3 | Resume value | All-special batch, `DO UPDATE` (pg/base.py:146-153) | As AW2 | A retried or conflicting resume replaces a value that may already have been acted on |
+| AW4 | Failed put followed by a successful put | `finally` in `_checkpointer_put_after_previous` (pregel/_loop.py:1541-1547) | The first error, raised later | A checkpoint whose parent row is missing, under `sync` or `async` durability (section 8) |
 | AW5 | First checkpoint of a run | The input checkpoint's put (pregel/_loop.py:1033) | As AW1 | #8764's loss before the first checkpoint, now under a lost acknowledgment rather than a crash |
-| AW6 | Database restart | A put in flight when the server stops | A connection error; the commit either happened or not | F13: after restart, is every checkpoint acknowledged under `sync` present (I1)? |
-
-## Spec preface items
-
-| Item | Status |
-| --- | --- |
-| Transaction boundaries of `aput` / `aput_writes` | Resolved: one transaction per call in every mode (section 1); verified with `xmin` and rollback tests |
-| Atomicity of multi-statement `put` (section 4) | Resolved: atomic |
-| Branch lists | Resolved: no concurrency, lease, or ownership branch (section 9) |
-| Test directories | Resolved: no multi-writer or inter-process test at the pinned tags or on `main` (section 9) |
-| Conformance suite, `main` vs the pinned release | Resolved: 81 tests in 0.0.2, 89 on `main`; no difference between the 1.2.12 commit and `main` |
-
-## Where the spec's wording differs from the code (recorded here; the spec is unchanged)
-
-- **Section 4 lock type.** Section 4 says `AsyncPostgresSaver` holds an instance-level `threading.Lock` (#7259). The
-  async saver's lock is an `asyncio.Lock` (#7259 says so too); the sync saver's is a `threading.Lock`. Neither spans
-  processes.
-- **Checkpoint ids.** The docs, and section 12's LG-LATEST source, call checkpoint ids ULIDs; they are UUIDv6 from each
-  process's wall clock.
-- **Mixed write batches.** Section 4's "special writes such as resume values: last writer wins" holds only for
-  all-special batches; a mixed batch is first-writer-wins throughout.
-- **#8796's "PR #6985 test".** It is an open PR against the SQLite saver, not merged code.
+| AW6 | Database restart | A put in flight when the server stops | A connection error; the commit either happened or not | After restart, is every checkpoint acknowledged under `sync` present? |
 
 ## G0
 
-Gate question (spec section 28): are the transaction boundaries and ambiguous-commit windows located in code at the
-pinned tags?
+Gate question: are the transaction boundaries and ambiguous-commit windows located in code at the pinned tags?
 
-- Every write path commits in exactly one implicit or explicit transaction per call, verified against a real Postgres.
+- Every write path commits in one implicit or explicit transaction per call. Tested against a real Postgres for `put`
+  in three connection modes; read from code for `put_writes`, the pool path, and the no-pipeline fallback.
+- A `put` rolls back when the server rejects its checkpoint row; a client-side exception between its two statements
+  could commit the blob rows alone (section 1).
 - Six ambiguous-commit windows are located with citations (section 10).
-- The storage-level fork is reproduced directly (section 1), consistent with #8796.
-- Nothing found removes the network-fault cells. AW1 to AW3 are the targets for F10 and F11.
+- The storage-level fork is replicated at the saver level (section 1), consistent with #8796 and the xbstack repro.
+- Nothing found removes the network-fault cells. AW1 to AW3 are the targets for the lost-acknowledgment and
+  connection-reset faults.
 
 **Evidence decision: supports PASS.** The gate note is mine to write (research/gates/g0-note.md); G0 has not passed
 until it exists.
