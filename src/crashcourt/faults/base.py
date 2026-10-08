@@ -1,8 +1,10 @@
 """The inject and heal bookkeeping shared by every fault primitive.
 
 `fault.inject` is written before the fault is applied, so it precedes every consequence. Every
-inject gets exactly one `fault.heal`: when the fault is healed, or at once if applying it failed
-(with the error in data) or if the fault is instantaneous.
+inject gets exactly one `fault.heal`: when the fault is healed, or at once if the fault is
+instantaneous or applying it failed. The heal carries what was observed (an exit status, how
+many backends ended, how long a restart took), so the history holds it, not only the caller. A
+heal after a failure has status fail and the error in the envelope's error field.
 """
 
 from __future__ import annotations
@@ -53,9 +55,9 @@ class ActiveFault:
                 result = self._heal() if self._heal is not None else None
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
-                self.history.emit("fault.heal", fault_id=self.fault_id, data={"error": error})
+                _close(self.history, self.fault_id, self.observed, error)
                 raise FaultError(f"healing {self.fault_id} failed: {error}") from exc
-            self.history.emit("fault.heal", fault_id=self.fault_id, data=result or {})
+            _close(self.history, self.fault_id, {**self.observed, **(result or {})})
 
     def __enter__(self) -> Self:
         return self
@@ -67,6 +69,11 @@ class ActiveFault:
         traceback: TracebackType | None,
     ) -> None:
         self.heal()
+
+
+def _close(history: HistoryWriter, fault_id: str, data: Data, error: str | None = None) -> None:
+    status = "ok" if error is None else "fail"
+    history.emit("fault.heal", fault_id=fault_id, status=status, error=error, data=data)
 
 
 def inject(
@@ -82,7 +89,7 @@ def inject(
         observed = apply() or {}
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
-        history.emit("fault.heal", fault_id=fault_id, data={"error": error})
+        _close(history, fault_id, {}, error)
         raise FaultError(f"injecting {fault_id} failed: {error}") from exc
     return ActiveFault(history, fault_id, observed, heal)
 
@@ -90,7 +97,9 @@ def inject(
 def inject_instant(
     history: HistoryWriter, fault_id: str, data: Data, apply: Callable[[], Data | None]
 ) -> Data:
-    """A fault with no duration (a kill, a backend termination): inject, apply, heal at once."""
+    """A fault with no duration (a kill, a backend termination): inject, apply, heal at once.
+
+    The heal carries what `apply` observed."""
     fault = inject(history, fault_id, data, apply)
     fault.heal()
     return fault.observed
