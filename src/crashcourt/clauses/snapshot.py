@@ -1,6 +1,7 @@
 """Source snapshots: hash, cache, and re-check the documents clauses cite.
 
-Only hashes and short quotes live in git. Full documents go to a gitignored cache (spec section 29).
+Only hashes and short quotes live in git; full documents go to a gitignored cache, so the
+repository never holds copies of documentation pages.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ Fetcher = Callable[[str], bytes]
 
 _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _SPACE = re.compile(r"\s+")
+_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
 
 
 def normalize(raw: bytes) -> bytes:
@@ -43,6 +45,22 @@ def quotes_missing(clause: Clause, raw: bytes) -> list[str]:
     return [q for q in clause.quotes if plain_text(q) not in text]
 
 
+def heading_slug(heading: str) -> str:
+    """The anchor a docs site derives from a heading: lowercase words joined by hyphens."""
+    text = plain_text(heading).replace("\\", "").lower()
+    text = re.sub(r"[^\w\s-]", "", text)
+    return re.sub(r"\s+", "-", text.strip())
+
+
+def anchor_missing(clause: Clause, raw: bytes) -> str | None:
+    """The source_url fragment, when no heading on the fetched page produces it."""
+    _, _, fragment = clause.source_url.partition("#")
+    if not fragment or clause.snapshot_url is None:
+        return None  # no fragment, or the page itself is not what was fetched
+    slugs = {heading_slug(h) for h in _HEADING.findall(normalize(raw).decode("utf-8"))}
+    return None if fragment in slugs else fragment
+
+
 def fetch(url: str) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": f"crashcourt/{__version__}"})
     with urllib.request.urlopen(request, timeout=30) as response:
@@ -62,6 +80,7 @@ class DriftReport:
     expected_sha256: str
     actual_sha256: str | None = None
     missing_quotes: tuple[str, ...] = field(default=())
+    missing_anchor: str | None = None
     error: str | None = None
 
     @property
@@ -70,6 +89,7 @@ class DriftReport:
             self.error is None
             and self.actual_sha256 == self.expected_sha256
             and not self.missing_quotes
+            and self.missing_anchor is None
         )
 
 
@@ -98,13 +118,18 @@ def refetch(
         if isinstance(result, str):
             reports.append(DriftReport(clause.id, url, clause.snapshot_sha256, error=result))
             continue
-        reports.append(
-            DriftReport(
+        try:
+            report = DriftReport(
                 clause.id,
                 url,
                 clause.snapshot_sha256,
                 actual_sha256=snapshot_sha256(result),
                 missing_quotes=tuple(quotes_missing(clause, result)),
+                missing_anchor=anchor_missing(clause, result),
             )
-        )
+        except UnicodeDecodeError as exc:  # a source that is not UTF-8 is reported, not raised
+            report = DriftReport(
+                clause.id, url, clause.snapshot_sha256, error=f"not UTF-8 text: {exc}"
+            )
+        reports.append(report)
     return reports

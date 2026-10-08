@@ -5,7 +5,9 @@ from datetime import date
 from pathlib import Path
 
 from crashcourt.clauses import Clause, ClauseRegistry, Polarity, VersionScope
+from crashcourt.clauses.report import drift_text
 from crashcourt.clauses.snapshot import (
+    anchor_missing,
     plain_text,
     quotes_missing,
     refetch,
@@ -80,3 +82,36 @@ def test_refetch_reports_match_drift_and_errors_without_raising(tmp_path: Path) 
     assert reports["LG-C"].error == "OSError: 404 Not Found" and not reports["LG-C"].ok
     cached = list(tmp_path.iterdir())
     assert len(cached) == 1 and cached[0].read_bytes() == PAGE
+
+
+def test_a_source_that_is_not_utf8_is_reported_not_raised(tmp_path: Path) -> None:
+    clause = make_clause("LG-A", "https://docs.example.com/a", "0" * 64)
+    [report] = refetch(ClauseRegistry([clause]), tmp_path, lambda url: b"\xff\xfe not text")
+    assert report.error is not None and report.error.startswith("not UTF-8 text")
+    assert not report.ok
+
+
+def anchored(fragment: str) -> Clause:
+    return make_clause("LG-A", "https://docs.example.com/a", "0" * 64).model_copy(
+        update={
+            "source_url": f"https://docs.example.com/a#{fragment}",
+            "snapshot_url": "https://docs.example.com/a.md",
+        }
+    )
+
+
+def test_anchor_must_match_a_heading_on_the_page() -> None:
+    page = b"# Interrupts\n\n## Rules of interrupts\n\ntext\n\n#### put\\_writes / aput\\_writes\n"
+    assert anchor_missing(anchored("rules-of-interrupts"), page) is None
+    assert anchor_missing(anchored("put_writes-aput_writes"), page) is None
+    assert anchor_missing(anchored("pending-writes"), page) == "pending-writes"
+
+
+def test_a_missing_anchor_is_reported_as_drift(tmp_path: Path) -> None:
+    page = b"# Checkpointers\n\n## Why use checkpointers\n"
+    clause = anchored("pending-writes").model_copy(
+        update={"snapshot_sha256": snapshot_sha256(page)}
+    )
+    [report] = refetch(ClauseRegistry([clause]), tmp_path, lambda url: page)
+    assert report.missing_anchor == "pending-writes" and not report.ok
+    assert "ANCHOR LG-A  #pending-writes matches no heading on the page" in drift_text([report])

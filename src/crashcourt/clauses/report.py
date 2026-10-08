@@ -50,6 +50,8 @@ def drift_text(reports: Sequence[DriftReport]) -> str:
                 f"re-read {r.url}"
             )
         lines.extend(f"QUOTE  {name}  not found in the source: {q!r}" for q in r.missing_quotes)
+        if r.missing_anchor is not None:
+            lines.append(f"ANCHOR {name}  #{r.missing_anchor} matches no heading on the page")
     unreachable = sum(r.error is not None for r in reports)
     unchanged = sum(r.ok for r in reports)
     drifted = len(reports) - unreachable - unchanged
