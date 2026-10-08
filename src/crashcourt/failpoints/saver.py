@@ -3,8 +3,10 @@
 Each of `put`, `put_writes`, `get_tuple`, and `list` (and their async forms, under the same
 names) runs as: `saver.<op>.call`, the `<op>.before` failpoint, the inner call, the
 `<op>.after` failpoint, then `saver.<op>.return`, or `saver.<op>.raise` if the inner call raised
-(no `after` failpoint then). A failpoint that fires writes `fp.hit`, performs its action, and
-writes `fp.action`; for a pause the action is recorded after the release.
+(no `after` failpoint then). A failpoint that fires writes `fp.hit`, then `fp.action` just
+before it acts: for a pause, after the release; for an exit or a signal, before the process
+ends. A failpoint that cannot be honored (two arms due on one call, a pause with no barrier)
+writes `fp.hit` with status fail and raises FailpointError.
 
 The wrapper never changes what the inner saver does or returns. Everything else is forwarded:
 `serde`, `config_specs`, `get_next_version`, delta-channel history, `delete_thread`, and exactly
@@ -33,15 +35,11 @@ from pydantic import JsonValue
 
 from crashcourt.failpoints.barrier import Barrier
 from crashcourt.failpoints.context import current_op
-from crashcourt.failpoints.registry import FailpointRegistry, Firing
+from crashcourt.failpoints.registry import FailpointError, FailpointRegistry, Firing
 from crashcourt.history.writer import HistoryWriter
 from crashcourt.spec.events import Event, EventKind
 
 Fields = dict[str, Any]
-
-
-class FailpointError(Exception):
-    """A failpoint was armed in a way this saver cannot honor (a spec error)."""
 
 
 def _text(value: object) -> str | None:
@@ -104,12 +102,16 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
     def _check(self, point: str, fields: Fields) -> tuple[Firing, Event] | None:
         if self.registry is None:
             return None
-        firing = self.registry.check(point, current_op(), fields.get("thread_id"))
+        hit_fields = {k: v for k, v in fields.items() if k != "data"}
+        try:
+            firing = self.registry.check(point, current_op(), fields.get("thread_id"))
+            if firing is not None and firing.arm.action == "pause" and self.barrier is None:
+                raise FailpointError(f"{point} is armed to pause but the saver has no barrier")
+        except FailpointError as exc:
+            self._emit("fp.hit", hit_fields, fp=point, status="fail", error=str(exc))
+            raise
         if firing is None:
             return None
-        if firing.arm.action == "pause" and self.barrier is None:
-            raise FailpointError(f"{point} is armed to pause but the saver has no barrier")
-        hit_fields = {k: v for k, v in fields.items() if k != "data"}
         data: dict[str, JsonValue] = {"action": firing.arm.action, "occurrence": firing.occurrence}
         hit = self._emit("fp.hit", hit_fields, fp=point, data=data)
         assert hit is not None  # a registry implies a history writer

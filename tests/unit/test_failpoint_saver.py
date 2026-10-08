@@ -195,6 +195,28 @@ def test_pause_without_a_barrier_is_a_spec_error(tmp_path: Path) -> None:
         saver = wrap(InMemorySaver(), history=history, registry=registry)
         with pytest.raises(FailpointError, match="no barrier"):
             saver.get_tuple(config())
+    hit = read_history(tmp_path / "w.jsonl").events[-1]
+    assert (hit.kind, hit.fp, hit.status) == ("fp.hit", "get_tuple.before", "fail")
+    assert hit.error is not None and "no barrier" in hit.error
+
+
+def test_two_arms_due_on_one_call_are_a_spec_error(rig: Rig) -> None:
+    rig.registry.arm(Arm("get_tuple.before", "none"))
+    rig.registry.arm(Arm("get_tuple.before", "none", op_id="op-1"))
+    with operation("op-1"), pytest.raises(FailpointError, match="2 arms fire on one"):
+        rig.saver.get_tuple(config())
+    hit = rig.events()[-1]
+    assert (hit.kind, hit.status) == ("fp.hit", "fail")
+    assert not rig.registry.armed  # neither arm is left waiting for a call that will not come
+
+
+def test_arms_due_on_different_calls_both_fire(rig: Rig) -> None:
+    rig.registry.arm(Arm("get_tuple.before", "none", occurrence=1))
+    rig.registry.arm(Arm("get_tuple.before", "none", occurrence=2))
+    rig.saver.get_tuple(config())
+    rig.saver.get_tuple(config())
+    hits = [e.data["occurrence"] for e in rig.events() if e.kind == "fp.hit"]
+    assert hits == [1, 2]
 
 
 def test_failpoints_need_a_history_writer() -> None:
@@ -210,6 +232,8 @@ def test_failpoints_need_a_history_writer() -> None:
         {"point": "put.before", "action": "signal"},
         {"point": "put.before", "action": "none", "signal": "SIGKILL"},
         {"point": "put.before", "action": "none", "occurrence": 0},
+        {"point": "put.before", "action": "signal", "signal": "SIGFOO"},
+        {"point": "put.before", "action": "exit", "exit_code": 256},
     ],
 )
 def test_invalid_arms_are_rejected(kwargs: dict[str, Any]) -> None:

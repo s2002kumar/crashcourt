@@ -2,7 +2,9 @@
 
 An arm names a point and an action, and optionally narrows which hit it fires on: the worker,
 the client operation, the thread, and the occurrence (the nth matching call, counting from 1).
-Each arm fires at most once. Arming an unknown point or action is a spec error.
+Each arm fires at most once. Arming an unknown point, action, or signal is a spec error, and so
+is a call on which two arms reach their occurrence: only one action can run there, so the other
+arm would never fire and the trial would run a different schedule from the one declared.
 """
 
 from __future__ import annotations
@@ -26,6 +28,14 @@ POINTS: tuple[str, ...] = get_args(Point)
 Action = Literal["none", "pause", "exit", "signal"]
 ACTIONS: tuple[str, ...] = get_args(Action)
 
+#: Signals a worker may send itself at a failpoint (POSIX names; workers run on Linux).
+Signal = Literal["SIGKILL", "SIGTERM", "SIGSTOP", "SIGINT", "SIGQUIT", "SIGABRT", "SIGSEGV"]
+SIGNALS: tuple[str, ...] = get_args(Signal)
+
+
+class FailpointError(Exception):
+    """A failpoint cannot be honored as armed (a spec error); the trial is INVALID."""
+
 
 @dataclass(frozen=True)
 class Arm:
@@ -36,7 +46,7 @@ class Arm:
     thread_id: str | None = None
     occurrence: int = 1
     #: For action "signal": the signal the worker sends itself, e.g. "SIGKILL" or "SIGSTOP".
-    signal: str | None = None
+    signal: Signal | None = None
     #: For action "exit": the status passed to os._exit.
     exit_code: int = 1
 
@@ -49,6 +59,10 @@ class Arm:
             raise ValueError("occurrence counts from 1")
         if (self.action == "signal") != (self.signal is not None):
             raise ValueError("a signal name is required for action 'signal', and only for it")
+        if self.signal is not None and self.signal not in SIGNALS:
+            raise ValueError(f"unknown signal {self.signal!r}; known: {', '.join(SIGNALS)}")
+        if not 0 <= self.exit_code <= 255:
+            raise ValueError("an exit status is between 0 and 255")
 
     def matches(self, point: str, worker: str, op_id: str | None, thread_id: str | None) -> bool:
         return (
@@ -94,16 +108,20 @@ class FailpointRegistry:
     def check(self, point: str, op_id: str | None, thread_id: str | None) -> Firing | None:
         """Count this call against every matching arm; return the one that fires now, if any.
 
-        When several arms fire on the same call, the earliest armed wins and the others stay
-        armed for a later occurrence count of their own.
+        Raises FailpointError when two or more arms reach their occurrence on this call.
         """
         with self._lock:
-            firing: Firing | None = None
+            due: list[int] = []
             for index, arm in enumerate(self._arms):
                 if index in self._fired or not arm.matches(point, self.worker, op_id, thread_id):
                     continue
                 self._counts[index] += 1
-                if firing is None and self._counts[index] == arm.occurrence:
-                    self._fired.add(index)
-                    firing = Firing(arm, self._counts[index])
-            return firing
+                if self._counts[index] == arm.occurrence:
+                    due.append(index)
+            self._fired.update(due)
+            if len(due) > 1:
+                arms = "; ".join(repr(self._arms[i]) for i in due)
+                raise FailpointError(f"{len(due)} arms fire on one {point} call: {arms}")
+            if not due:
+                return None
+            return Firing(self._arms[due[0]], self._counts[due[0]])
