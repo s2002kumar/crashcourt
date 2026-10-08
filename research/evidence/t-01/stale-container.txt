@@ -1,0 +1,52 @@
+# doctor against a stale container on the real Docker engine (T-01, review item 4)
+# Run on the developer machine (Windows 11, Docker Desktop) at the commit below; output trimmed to the relevant checks.
+date: 2026-10-08T20:45:45Z
+docker: 28.4.0, kernel 6.6.87.2-microsoft-standard-WSL2
+commit: b503e4bc887e378f9a87427a1d11a392ea02ae8e
+
+$ docker compose up -d --wait
+ Container crashcourt-toxiproxy-1  Waiting
+ Container crashcourt-postgres-1  Healthy
+ Container crashcourt-toxiproxy-1  Healthy
+postgres container image: postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722 sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+toxiproxy container image: ghcr.io/shopify/toxiproxy:2.12.0@sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e
+
+$ uv run crashcourt doctor --manifest <scratch>/before.json
+ok    images pinned by digest           all pinned
+ok    compose services up               postgres healthy, toxiproxy running
+ok    running images match pins         all match
+doctor: all checks passed
+exit: 0
+
+$ docker pull ghcr.io/shopify/toxiproxy:2.11.0
+ghcr.io/shopify/toxiproxy:2.11.0
+
+$ docker compose -f compose.yaml -f stale-override.yaml up -d --wait toxiproxy   # stale-override.yaml sets toxiproxy's image to ghcr.io/shopify/toxiproxy:2.11.0
+ Container crashcourt-toxiproxy-1  Waiting
+ Container crashcourt-toxiproxy-1  Healthy
+postgres container image: postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722 sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+toxiproxy container image: ghcr.io/shopify/toxiproxy:2.11.0 sha256:cfdb2ca7ac7131a650d09db49782cc33e5c5d97fd3be5b3a6e27cd13d0ee8d57
+
+$ docker compose config --format json   # what compose.yaml asks for is unchanged
+postgres: postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+toxiproxy: ghcr.io/shopify/toxiproxy:2.12.0@sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e
+
+$ uv run crashcourt doctor --manifest <scratch>/stale.json
+FAIL  running images match pins         toxiproxy: containers run sha256:cfdb2ca7ac7131a650d09db49782cc33e5c5d97fd3be5b3a6e27cd13d0ee8d57, pinned ref is sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e
+                                        -> Run `docker compose up -d --wait` to recreate containers from the pinned images.
+--
+doctor: 1 check(s) failed
+exit: 1
+manifest written: no
+
+$ docker compose up -d --wait   # back to compose.yaml alone
+ Container crashcourt-toxiproxy-1  Waiting
+ Container crashcourt-toxiproxy-1  Healthy
+ Container crashcourt-postgres-1  Healthy
+postgres container image: postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722 sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+toxiproxy container image: ghcr.io/shopify/toxiproxy:2.12.0@sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e
+
+$ uv run crashcourt doctor --manifest <scratch>/after.json
+ok    running images match pins         all match
+doctor: all checks passed
+exit: 0

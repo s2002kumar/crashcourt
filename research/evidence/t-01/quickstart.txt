@@ -1,0 +1,64 @@
+# Timed fresh-clone quickstart (T-01 manual check), on the developer machine
+# Cold start: the crashcourt containers and both pinned images removed first, and uv given an empty cache and
+# Python install directory, so the run downloads Python 3.12.13, every package, and both images.
+# Output trimmed of download progress. Times are wall-clock per step.
+date: 2026-10-08T20:46:33Z
+machine: Windows 11, Docker Desktop 28.4.0, uv 0.12.1
+cold start: no crashcourt containers, pinned images removed, empty uv cache and Python install directory
+
+$ git clone --quiet --branch t-01-environment https://github.com/s2002kumar/crashcourt.git
+[clone: exit 0, 1.7 s]
+checked out b503e4bc887e378f9a87427a1d11a392ea02ae8e
+
+$ uv sync --locked --group dev
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+Resolved 58 packages in 48ms
+Prepared 57 packages in 24.34s
+Installed 57 packages in 11.08s
+[uv sync: exit 0, 45.6 s]
+
+$ docker compose up -d --wait
+ Network crashcourt_default  Creating
+ Network crashcourt_default  Created
+ Container crashcourt-postgres-1  Creating
+ Container crashcourt-toxiproxy-1  Creating
+ Container crashcourt-toxiproxy-1  Created
+ Container crashcourt-postgres-1  Created
+ Container crashcourt-postgres-1  Starting
+ Container crashcourt-toxiproxy-1  Starting
+ Container crashcourt-postgres-1  Started
+ Container crashcourt-toxiproxy-1  Started
+ Container crashcourt-toxiproxy-1  Healthy
+ Container crashcourt-postgres-1  Healthy
+[compose up: exit 0, 28.1 s]
+
+$ uv run crashcourt doctor
+ok    docker daemon                     28.4.0
+ok    docker compose                    2.39.4-desktop.1
+ok    images pinned by digest           all pinned
+ok    compose services up               postgres healthy, toxiproxy running
+ok    running images match pins         all match
+ok    postgres track_commit_timestamp   track_commit_timestamp=on
+ok    toxiproxy api                     version 2.12.0
+ok    installed versions match uv.lock  all match
+ok    python matches .python-version    running 3.12.13, pinned 3.12.13
+ok    psycopg cancel_safe               binary implementation, libpq 18.4, built against 18.4
+ok    git commit                        b503e4bc887e378f9a87427a1d11a392ea02ae8e
+ok    manifest complete                 complete
+
+doctor: all checks passed
+[doctor: exit 0, 11.5 s]
+[quickstart total: 86.9 s]
+
+$ docker compose exec -T postgres psql -U crashcourt -d crashcourt -c 'SHOW track_commit_timestamp'
+ track_commit_timestamp 
+------------------------
+ on
+(1 row)
+
+
+$ uv run crashcourt doctor --compare research/evidence/t-01/manifest-local.json   # same machine, same pins
+doctor: all checks passed
+pinned fields match research\evidence\t-01\manifest-local.json
+manifest.json: git_dirty=False, git_sha=b503e4bc887e378f9a87427a1d11a392ea02ae8e
