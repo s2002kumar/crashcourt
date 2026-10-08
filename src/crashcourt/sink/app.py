@@ -4,10 +4,13 @@
 
 | Endpoint | Does |
 | --- | --- |
-| GET /health | liveness, version, the open trial, and whether a test hook is armed |
+| GET /health | liveness, version, source hash, the open trial, and whether a test hook is armed |
 | POST /trials | open, or reopen after a restart, the ledger for one trial |
 | POST /effects | append one effect (never deduplicated); answers only after the commit |
 | POST /attempts/next | increment and return an attempt counter |
+
+POST /effects and POST /attempts/next name the trial they belong to and get 409 unless it is the
+open one, so a late request from a previous trial's worker cannot land in the next trial's ledger.
 | GET /ledger | every row of the open trial's ledger |
 | GET /ledger/verify | recompute the hash chain |
 
@@ -21,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any
@@ -30,6 +34,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from crashcourt import __version__
 from crashcourt.sink.ledger import LEDGER_VERSION, EffectRequest, Ledger, TrialId
+from crashcourt.sink.source import source_sha256
 
 EXIT_HOOK_ENV = "CRASHCOURT_SINK_TEST_EXIT_AFTER_COMMIT"
 
@@ -46,7 +51,29 @@ class TrialRequest(BaseModel):
 class AttemptRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    trial: TrialRequest
     key: str = Field(min_length=1)
+
+
+class EffectPost(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trial: TrialRequest
+    effect: EffectRequest
+
+
+def _write_atomically(path: Path, data: bytes) -> None:
+    """Write a file so that a crash leaves the old content or the new, never a mix."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 class SinkState:
@@ -71,17 +98,25 @@ class SinkState:
                 self.ledger.close()
             self.ledger = Ledger(trial.path(self.root), trial)
             data = json.dumps(trial.__dict__, sort_keys=True).encode("utf-8")
-            (self.root / "current.json").write_bytes(data)
+            _write_atomically(self.root / "current.json", data)
             return self.ledger
 
-    def require(self) -> Ledger:
+    def require(self, trial: TrialRequest | None = None) -> Ledger:
+        """The open ledger; with `trial`, only if that is the trial it belongs to."""
         if self.ledger is None:
             raise HTTPException(status_code=409, detail="no trial is open; POST /trials first")
+        if trial is not None and TrialId(**trial.model_dump()) != self.ledger.trial:
+            raise HTTPException(
+                status_code=409,
+                detail=f"request for trial {trial.model_dump()}, "
+                f"but the open trial is {self.ledger.trial.__dict__}",
+            )
         return self.ledger
 
 
 def create_app(root: Path, *, exit_after_commit: int | None = None) -> FastAPI:
     state = SinkState(root, exit_after_commit)
+    source = source_sha256()
     app = FastAPI(title="Crashcourt effect sink", version=__version__)
 
     @app.get("/health")
@@ -90,6 +125,7 @@ def create_app(root: Path, *, exit_after_commit: int | None = None) -> FastAPI:
         return {
             "status": "ok",
             "version": __version__,
+            "source_sha256": source,
             "ledger_version": LEDGER_VERSION,
             "trial": trial,
             "test_hooks": state.exit_after_commit is not None,
@@ -101,8 +137,8 @@ def create_app(root: Path, *, exit_after_commit: int | None = None) -> FastAPI:
         return {"trial": ledger.trial.__dict__, "rows": len(ledger.rows())}
 
     @app.post("/effects")
-    def append_effect(request: EffectRequest) -> dict[str, Any]:
-        row = state.require().append(request)
+    def append_effect(request: EffectPost) -> dict[str, Any]:
+        row = state.require(request.trial).append(request.effect)
         state.commits += 1
         if state.exit_after_commit is not None and state.commits >= state.exit_after_commit:
             os._exit(70)  # test hook: committed, never answered
@@ -114,7 +150,7 @@ def create_app(root: Path, *, exit_after_commit: int | None = None) -> FastAPI:
 
     @app.post("/attempts/next")
     def next_attempt(request: AttemptRequest) -> dict[str, int]:
-        return {"attempt": state.require().next_attempt(request.key)}
+        return {"attempt": state.require(request.trial).next_attempt(request.key)}
 
     @app.get("/ledger")
     def ledger_rows() -> dict[str, Any]:

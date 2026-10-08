@@ -46,11 +46,15 @@ class SinkClient:
     def open_trial(self, trial: TrialId) -> dict[str, Any]:
         return self._call("POST", "/trials", trial.__dict__)
 
-    def post_effect(self, effect: EffectRequest) -> dict[str, Any]:
-        return self._call("POST", "/effects", effect.model_dump())
+    def post_effect(self, trial: TrialId, effect: EffectRequest) -> dict[str, Any]:
+        """Append one effect to `trial`'s ledger; the sink answers 409 if another is open."""
+        return self._call(
+            "POST", "/effects", {"trial": trial.__dict__, "effect": effect.model_dump()}
+        )
 
-    def next_attempt(self, key: str) -> int:
-        return int(self._call("POST", "/attempts/next", {"key": key})["attempt"])
+    def next_attempt(self, trial: TrialId, key: str) -> int:
+        body = {"trial": trial.__dict__, "key": key}
+        return int(self._call("POST", "/attempts/next", body)["attempt"])
 
     def ledger(self) -> list[dict[str, Any]]:
         return cast(list[dict[str, Any]], self._call("GET", "/ledger")["rows"])
@@ -59,12 +63,26 @@ class SinkClient:
         return self._call("GET", "/ledger/verify")
 
 
+def trial_of(history: HistoryWriter) -> TrialId:
+    run = history.run
+    return TrialId(batch=run.batch, cell=run.cell, trial=run.trial, seed=run.seed)
+
+
 def record_effect(history: HistoryWriter, client: SinkClient, effect: EffectRequest) -> int:
     """POST one effect with its request and response events; returns the sink's sink_seq.
+
+    The effect's worker and pid must be the history writer's: the merge links the sink's append
+    to this worker's events by that name. The trial is the writer's too, and the sink refuses
+    the effect if a different trial is open.
 
     If the sink does not answer, `effect.response` records the failure and SinkError propagates:
     the effect may or may not be in the ledger, which only the ledger can say.
     """
+    if (effect.worker, effect.pid) != (history.proc, history.pid):
+        raise ValueError(
+            f"effect from {effect.worker} (pid {effect.pid}) recorded by "
+            f"{history.proc} (pid {history.pid})"
+        )
     fields: dict[str, Any] = {
         "op_id": effect.op_id,
         "logical_op": effect.logical_op,
@@ -77,7 +95,7 @@ def record_effect(history: HistoryWriter, client: SinkClient, effect: EffectRequ
         "effect.request", **fields, data={"node": effect.node, "payload_hash": effect.payload_hash}
     )
     try:
-        answer = client.post_effect(effect)
+        answer = client.post_effect(trial_of(history), effect)
     except SinkError as exc:
         history.emit("effect.response", **fields, status="info", error=str(exc))
         raise

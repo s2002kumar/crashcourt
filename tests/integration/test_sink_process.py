@@ -29,6 +29,7 @@ EFFECT = EffectRequest(
     op_id="op-7",
     attempt=1,
     worker="worker-1",
+    pid=os.getpid(),  # the history writer's pid: record_effect checks they match
     thread_id="t3",
     node="execute",
     checkpoint_id_seen="C4",
@@ -115,10 +116,10 @@ def test_a_restart_keeps_the_ledger_and_the_counters(tmp_path: Path) -> None:
         with sink_process(root) as (_, client):
             client.open_trial(TRIAL)
             assert record_effect(history, client, EFFECT) == 1
-            assert client.next_attempt("t3/execute/0") == 1
+            assert client.next_attempt(TRIAL, "t3/execute/0") == 1
         with sink_process(root) as (_, client):
             assert record_effect(history, client, EFFECT) == 2
-            assert client.next_attempt("t3/execute/0") == 2
+            assert client.next_attempt(TRIAL, "t3/execute/0") == 2
             assert client.verify()["ok"] is True
     responses = [e for e in read_history(history_path).events if e.kind == "effect.response"]
     assert [e.data["sink_seq"] for e in responses] == [1, 2]
