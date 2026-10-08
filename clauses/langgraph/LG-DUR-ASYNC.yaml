@@ -12,8 +12,8 @@ quotes:
     checkpoints if the process crashes during execution.
 source_url: https://docs.langchain.com/oss/python/langgraph/checkpointers#durability-modes
 snapshot_url: https://docs.langchain.com/oss/python/langgraph/checkpointers.md
-retrieved: 2026-09-27
-snapshot_sha256: "4a73f776970a6e5294d9e4c6ab4956164a78e807a352abacf2a70b2e7fd212c4"
+retrieved: 2026-10-08
+snapshot_sha256: "3881beeb186af756c6f5495c89effa821fd654957c63584341b91861e6677b6a"
 version_scope:
   package: langgraph
   specifier: ">=1.2,<1.3"

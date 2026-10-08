@@ -28,5 +28,6 @@ notes: >-
   against langgraph-checkpoint-conformance 0.0.2 and main; not part of any release. On 2026-09-27
   the issue was open and unassigned with no maintainer reply. The snapshot is the proposal's README
   on the main branch of bharatnpti/langgraph-write-ownership (commit 9cfadc5, 2026-09-09), where
-  the contract is stated. None of the V1 targets advertise the capability; it is C10's source and
-  never judges LangGraph itself.
+  the contract is stated. None of the savers tested here advertise the capability; it is the
+  clause source for control C10 (rerunning a scenario with a fenced saver) and never judges
+  LangGraph itself.

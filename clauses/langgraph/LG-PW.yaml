@@ -15,17 +15,21 @@ quotes:
     checkpoint_writes table as task entries linked to the in-progress checkpoint. These per-task
     writes are what enable pending writes recovery: if another node in the same super-step fails,
     the successful nodes' writes are already durable and don't need to be re-run on resume.
-source_url: https://docs.langchain.com/oss/python/langgraph/checkpointers#pending-writes
+source_url: https://docs.langchain.com/oss/python/langgraph/checkpointers#why-use-checkpointers
 snapshot_url: https://docs.langchain.com/oss/python/langgraph/checkpointers.md
-retrieved: 2026-09-27
-snapshot_sha256: "4a73f776970a6e5294d9e4c6ab4956164a78e807a352abacf2a70b2e7fd212c4"
+retrieved: 2026-10-08
+snapshot_sha256: "3881beeb186af756c6f5495c89effa821fd654957c63584341b91861e6677b6a"
 version_scope:
   package: langgraph
   specifier: ">=1.2,<1.3"
 applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
 notes: >-
-  Open question for review: the docs frame this around a node failing (an exception) in a
-  super-step. They do not say whether it also holds when the process crashes after a sibling's
-  writes were stored. I2 and I9 apply it to crashes; the second quote ("already durable") supports
-  that reading but does not state it. Until that is settled, a crash-time re-run of a sibling
-  whose writes committed should be treated as a VIOLATION candidate only with that caveat attached.
+  Open question: the docs frame this around a node failing (an exception) in a super-step. They
+  do not say whether it also holds when the process crashes after a sibling's writes were stored.
+  Applying it to crashes is my reading; the second quote ("already durable") supports it but does
+  not state it, and it does not hold mid-run under durability="exit": in langgraph 1.2.12,
+  per-task writes go to the saver only when durability is not "exit" (pregel/_loop.py:466), and
+  exit mode writes them when the run ends. Until that is settled, a crash-time re-run of a
+  sibling whose writes committed is a VIOLATION candidate only with that caveat attached. The
+  first quote is under "Why use checkpointers" and the second under "Super-steps"; the page's
+  own links to a #pending-writes anchor match no heading.

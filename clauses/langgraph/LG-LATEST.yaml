@@ -17,14 +17,17 @@ quotes:
   - Because checkpoint_id is a ULID, it sorts lexicographically — larger values are newer.
 source_url: https://docs.langchain.com/oss/python/langgraph/checkpointers#build-a-custom-checkpointer
 snapshot_url: https://docs.langchain.com/oss/python/langgraph/checkpointers.md
-retrieved: 2026-09-27
-snapshot_sha256: "4a73f776970a6e5294d9e4c6ab4956164a78e807a352abacf2a70b2e7fd212c4"
+retrieved: 2026-10-08
+snapshot_sha256: "3881beeb186af756c6f5495c89effa821fd654957c63584341b91861e6677b6a"
 version_scope:
   package: langgraph-checkpoint
   specifier: ">=4.2,<4.3"
 applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
 notes: >-
   Written as guidance for authors of custom checkpointers, not as a guarantee about the official
-  savers. The page calls checkpoint ids ULIDs; the official savers' id generation is audited in
-  T-03. The page does not say which checkpoint is "latest" when two writers create sibling
-  checkpoints of one parent.
+  savers. The page calls checkpoint ids ULIDs, but langgraph-checkpoint 4.2.0 generates them with
+  uuid6 (checkpoint/base/__init__.py:854); how the official savers order them is the T-03 source
+  audit's question. The page does not say which checkpoint is "latest" when two writers create
+  sibling checkpoints of one parent. Open question: as a describes clause, whether it can support
+  a verdict on its own, which decides whether the lineage and head invariants can ever be
+  violations (see Polarity in src/crashcourt/clauses/models.py).

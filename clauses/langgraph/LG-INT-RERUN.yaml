@@ -15,14 +15,14 @@ quotes:
     before interrupt should (ideally) be idempotent.
 source_url: https://docs.langchain.com/oss/python/langgraph/interrupts#rules-of-interrupts
 snapshot_url: https://docs.langchain.com/oss/python/langgraph/interrupts.md
-retrieved: 2026-09-27
-snapshot_sha256: "df80f2e6ec5b1788a4dfc92d592f69560c1ec4b1f11ac5a73ade85bc51bb39cd"
+retrieved: 2026-10-08
+snapshot_sha256: "daecd0a9f23aff377cb56093915b403d97bd3bfe8d571fbecfccd3e0b28184c8"
 version_scope:
   package: langgraph
   specifier: ">=1.2,<1.3"
 applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
 notes: >-
   The first quote is the exact text of the rule (Rules of interrupts); code formatting is dropped.
-  It makes the W1 misuse variant (effect before interrupt()) EXPECTED to duplicate its effect on
-  resume. The page says nothing about two resumes of the same interrupt, or resumes with
-  different values; those cases (F07, F08) have no clause and are GAP.
+  It makes a node that performs a side effect before calling interrupt() EXPECTED to repeat that
+  effect on resume. The page says nothing about two resumes of the same interrupt, or resumes
+  with different values; those cases have no clause and are GAP.

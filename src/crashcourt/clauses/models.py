@@ -1,4 +1,4 @@
-"""Clause model: one documented statement a verdict may cite (spec sections 8 and 12, C6)."""
+"""Clause model: one documented statement a verdict may cite (control C6)."""
 
 from __future__ import annotations
 
@@ -24,7 +24,9 @@ class Polarity(StrEnum):
 
     guarantees: a broken clause is a VIOLATION candidate; a clause that holds is PASS.
     permits: an anomaly it covers is EXPECTED.
-    describes: context for invariants; never decides a verdict alone.
+    describes: context for invariants. Open question, to settle with the checker: whether a
+        describes clause can support a verdict on its own. LG-LATEST is the only clause behind the
+        lineage and head invariants, so the answer decides whether those can ever be violations.
     disclaims: the runtime explicitly does not provide the behavior.
     proposed: an upstream proposal; judges only implementations that advertise it.
     """
