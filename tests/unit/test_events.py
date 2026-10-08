@@ -127,6 +127,8 @@ def test_booleans_are_not_integers() -> None:
         ("fp.action", {"data": {}}, "hit_seq"),
         ("effect.request", {"effect_key": None}, "effect_key"),
         ("sink.append", {"effect_key": "k", "data": {}}, "worker"),
+        ("sink.append", {"effect_key": "k", "data": {"worker": "worker-1"}}, "sink_seq"),
+        ("effect.response", {"effect_key": "k", "status": "ok", "data": {}}, "sink_seq"),
         ("client.invoke", {"op_id": None}, "op_id"),
         ("fault.inject", {"fault_id": None}, "fault_id"),
         ("client.ok", {"op_id": "op-1", "data": {"worker": "worker-1"}}, "worker_seq"),
@@ -149,3 +151,10 @@ def test_kind_specific_requirements_accept_complete_events() -> None:
         ("fault.inject", {"toxic": "timeout"}),
     ]:
         Event.model_validate({**base, "kind": kind, "data": data})
+
+
+def test_a_failed_effect_response_names_no_ledger_row() -> None:
+    fields = {"kind": "effect.response", "effect_key": "k", "status": "fail", "data": {}}
+    assert Event.model_validate(event(**fields)).status == "fail"
+    ok = {**fields, "status": "ok", "data": {"sink_seq": 4}}
+    assert Event.model_validate(event(**ok)).data == {"sink_seq": 4}

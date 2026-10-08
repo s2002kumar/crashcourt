@@ -12,6 +12,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 import pytest
+from hypothesis import event as count_case
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -48,7 +49,8 @@ class Simulation:
         self.next_seq: dict[str, int] = dict.fromkeys((ORCH, SINK, *WORKERS), 0)
         self.sent: dict[str, list[str]] = {w: [] for w in WORKERS}
         self.requests: list[tuple[str, str, str, int]] = []
-        self.appended: list[tuple[str, str, str, int]] = []
+        #: Each ledger row: the request it answers, and its sink_seq.
+        self.appended: list[tuple[tuple[str, str, str, int], int]] = []
         self.hits: list[tuple[str, int]] = []
         self.released: list[tuple[str, int]] = []
         self.exited: set[str] = set()
@@ -75,7 +77,10 @@ class Simulation:
             opts["redeliver"] = lambda draw: self.redeliver(draw, draw(st.sampled_from(live)))
         if self.requests:
             opts["append"] = lambda draw: self.append(draw(st.sampled_from(self.requests)))
-        answerable = [a for a in self.appended if a[0] in live]
+        failing = [r for r in self.requests if r[0] in live]
+        if failing:
+            opts["fail"] = lambda draw: self.fail(draw(st.sampled_from(failing)))
+        answerable = [a for a in self.appended if a[0][0] in live]
         if answerable:
             opts["respond"] = lambda draw: self.respond(draw(st.sampled_from(answerable)))
         unreleased = [h for h in self.hits if h not in self.released]
@@ -117,16 +122,32 @@ class Simulation:
         self.emit(worker, "effect.request", op_id=op, effect_key=key, attempt=attempt)
         self.requests.append((worker, op, key, attempt))
 
-    def append(self, triple: tuple[str, str, str, int]) -> None:
-        worker, op, key, attempt = triple
-        self.emit(
-            SINK, "sink.append", op_id=op, effect_key=key, attempt=attempt, data={"worker": worker}
-        )
-        self.appended.append(triple)
+    def append(self, request: tuple[str, str, str, int]) -> None:
+        worker, op, key, attempt = request
+        row = len(self.appended) + 1
+        data = {"worker": worker, "sink_seq": row}
+        self.emit(SINK, "sink.append", op_id=op, effect_key=key, attempt=attempt, data=data)
+        self.appended.append((request, row))
 
-    def respond(self, triple: tuple[str, str, str, int]) -> None:
-        worker, op, key, attempt = triple
-        self.emit(worker, "effect.response", op_id=op, effect_key=key, attempt=attempt)
+    def fail(self, request: tuple[str, str, str, int]) -> None:
+        """A response that reports failure (a timeout, a reset): it names no ledger row, and the
+        sink may still append for this key later, from this request or a retry."""
+        worker, op, key, attempt = request
+        self.emit(
+            worker, "effect.response", op_id=op, effect_key=key, attempt=attempt, status="fail"
+        )
+
+    def respond(self, entry: tuple[tuple[str, str, str, int], int]) -> None:
+        (worker, op, key, attempt), row = entry
+        self.emit(
+            worker,
+            "effect.response",
+            op_id=op,
+            effect_key=key,
+            attempt=attempt,
+            status="ok",
+            data={"sink_seq": row},
+        )
 
     def hit(self, worker: str) -> None:
         self.hits.append((worker, self.emit(worker, "fp.hit", fp="put.before")))
@@ -186,7 +207,10 @@ def test_merge_respects_seq_and_every_edge(case: tuple[list[Event], bool]) -> No
 def test_every_derived_edge_holds_in_the_true_order(case: tuple[list[Event], bool]) -> None:
     truth, _ = case
     actual = {Ref(e.proc, e.seq): i for i, e in enumerate(truth)}
+    kind = {Ref(e.proc, e.seq): e.kind for e in truth}
     for before, after in causal_edges(group_by_process(split(truth))):
+        # Hypothesis's statistics (pytest --hypothesis-show-statistics) count each edge kind.
+        count_case(f"edge {kind[before]} -> {kind[after]}")
         assert actual[before] < actual[after]
 
 
@@ -214,8 +238,8 @@ def test_edges_override_clocks() -> None:
         ev("worker-1", 1, "effect.request", 90, op_id="op-1", effect_key="k", attempt=1),
     ]
     orchestrator = [ev(ORCH, 0, "dispatch.send", 60, op_id="op-1", data={"to": "worker-1"})]
-    append = {"op_id": "op-1", "effect_key": "k", "attempt": 1, "data": {"worker": "worker-1"}}
-    sink = [ev(SINK, 0, "sink.append", 5, **append)]
+    append = {"op_id": "op-1", "effect_key": "k", "attempt": 1}
+    sink = [ev(SINK, 0, "sink.append", 5, **append, data={"worker": "worker-1", "sink_seq": 1})]
     order = [(e.proc, e.seq) for e in merge([sink, worker, orchestrator])]
     assert order == [(ORCH, 0), ("worker-1", 0), ("worker-1", 1), (SINK, 0)]
 
@@ -279,3 +303,32 @@ def test_histories_from_different_trials_are_rejected() -> None:
     other = ev("x", 0, "node.start").model_copy(update={"trial": 1})
     with pytest.raises(HistoryError, match="another trial"):
         merge([[ev("w", 0, "node.start")], [other]])
+
+
+EFFECT = {"op_id": "op-1", "effect_key": "k", "attempt": 1}
+
+
+def test_a_failed_response_does_not_order_a_later_append() -> None:
+    # The first response failed; the retry reached the sink. The append must not be pulled ahead
+    # of the failure, which is what linking the first response for the key used to do.
+    worker = [
+        ev("worker-1", 0, "effect.request", 10, **EFFECT),
+        ev("worker-1", 1, "effect.response", 20, status="fail", **EFFECT),
+        ev("worker-1", 2, "effect.request", 30, **EFFECT),
+        ev("worker-1", 3, "effect.response", 50, status="ok", data={"sink_seq": 1}, **EFFECT),
+    ]
+    sink = [ev(SINK, 0, "sink.append", 40, **EFFECT, data={"worker": "worker-1", "sink_seq": 1})]
+    edges = causal_edges(group_by_process([worker, sink]))
+    assert (Ref(SINK, 0), Ref("worker-1", 1)) not in edges
+    assert (Ref(SINK, 0), Ref("worker-1", 3)) in edges
+    order = [(e.proc, e.seq) for e in merge([worker, sink])]
+    assert order.index((SINK, 0)) > order.index(("worker-1", 2))
+
+
+def test_a_response_naming_a_row_the_sink_lacks_is_rejected() -> None:
+    worker = [ev("worker-1", 0, "effect.response", status="ok", data={"sink_seq": 7}, **EFFECT)]
+    sink = [ev(SINK, 0, "sink.append", **EFFECT, data={"worker": "worker-1", "sink_seq": 1})]
+    with pytest.raises(HistoryError, match="ledger row 7"):
+        merge([worker, sink])
+    with pytest.raises(HistoryError, match="ledger row 7"):
+        merge([worker])  # no sink history at all

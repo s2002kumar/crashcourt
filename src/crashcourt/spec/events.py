@@ -13,9 +13,13 @@ events of these kinds must carry them:
 - worker.start, worker.exit: data.proc, the worker's proc name.
 - fp.hit: fp.
 - fp.release: data.proc, the paused worker; data.hit_seq, the seq of its fp.hit.
-- fp.action: data.hit_seq, the seq of the fp.hit whose action this is.
+- fp.action: data.hit_seq, the seq of the fp.hit whose action this is. For a pause, the failpoint
+  saver writes fp.action only after the orchestrator's fp.release, so the merge orders release
+  before action; a writer that logged the action before its release would break that edge.
 - effect.request, effect.response, sink.append: effect_key, op_id, attempt.
-- sink.append: data.worker, the requesting worker's proc name.
+- sink.append: data.worker, the requesting worker's proc name; data.sink_seq, the ledger row.
+- effect.response with status ok: data.sink_seq, the ledger row the sink acknowledged. The merge
+  links the append to this response; a failed response names no row and gets no edge.
 - fault.inject, fault.heal: fault_id.
 """
 
@@ -147,8 +151,17 @@ class Event(BaseModel):
                 for name in ("effect_key", "op_id", "attempt")
                 if getattr(self, name) in (None, "")
             )
-        if self.kind == "sink.append" and not _data_str(self.data, "worker"):
-            missing.append("data.worker")
+        if self.kind == "sink.append":
+            if not _data_str(self.data, "worker"):
+                missing.append("data.worker")
+            if not _data_count(self.data, "sink_seq"):
+                missing.append("data.sink_seq")
+        if (
+            self.kind == "effect.response"
+            and self.status == "ok"
+            and not _data_count(self.data, "sink_seq")
+        ):
+            missing.append("data.sink_seq")
         if family == "fault" and not self.fault_id:
             missing.append("fault_id")
         if missing:
