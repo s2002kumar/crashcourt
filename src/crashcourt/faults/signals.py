@@ -37,12 +37,19 @@ def _returncode(observed: Data) -> int:
 
 
 def kill(history: HistoryWriter, process: Process, fault_id: str, timeout: float = 10) -> int:
-    """SIGKILL. Returns the exit status once the process has been reaped (-9)."""
-    _signal("SIGKILL")
+    """SIGKILL. Returns the exit status once the process has been reaped (-9).
+
+    Any other status means the process ended some other way first, so the kill did nothing and
+    FaultError is raised.
+    """
+    number = _signal("SIGKILL")
 
     def apply() -> Data:
         _send(process, "SIGKILL")
-        return {"returncode": process.wait(timeout)}
+        returncode = process.wait(timeout)
+        if returncode != -number:
+            raise FaultError(f"pid {process.pid} exited with {returncode}, not from SIGKILL")
+        return {"returncode": returncode}
 
     data: Data = {"fault": "kill", "signal": "SIGKILL", "pid": process.pid}
     return _returncode(inject_instant(history, fault_id, data, apply))

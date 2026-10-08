@@ -22,21 +22,29 @@ TARGET_SERVICE = "postgres"
 def terminate_backends(
     history: HistoryWriter, admin_dsn: str, fault_id: str, *, application_name: str
 ) -> int:
-    """`pg_terminate_backend` every backend with this application_name. Returns the count.
+    """`pg_terminate_backend` every backend with this application_name; returns how many ended.
 
-    The client's next statement fails with AdminShutdown (SQLSTATE 57P01).
+    The client's next statement fails with AdminShutdown (SQLSTATE 57P01). Ending no backend
+    raises FaultError: the fault did nothing, so the trial cannot count it as injected.
     """
     if not application_name:
         raise FaultError("terminate_backends needs an application_name to target")
 
     def apply() -> Data:
         with psycopg.connect(admin_dsn, autocommit=True, connect_timeout=5) as conn:
+            # pg_terminate_backend returns false for a backend that is already gone; count
+            # only the ones it ended.
             row = conn.execute(
-                "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity "
-                "WHERE application_name = %s AND pid <> pg_backend_pid()",
+                "SELECT count(*) FROM ("
+                " SELECT pg_terminate_backend(pid) AS ended FROM pg_stat_activity"
+                " WHERE application_name = %s AND pid <> pg_backend_pid()"
+                ") AS t WHERE ended",
                 (application_name,),
             ).fetchone()
-        return {"terminated": int(row[0]) if row else 0}
+        terminated = int(row[0]) if row else 0
+        if terminated == 0:
+            raise FaultError(f"no backend with application_name {application_name!r} ended")
+        return {"terminated": terminated}
 
     data: Data = {"fault": "terminate_backends", "application_name": application_name}
     observed = inject_instant(history, fault_id, data, apply)
