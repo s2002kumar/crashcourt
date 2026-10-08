@@ -24,7 +24,7 @@ from langgraph.checkpoint.base import Checkpoint
 from langgraph.checkpoint.base.id import uuid6
 from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg import Connection
-from psycopg.conninfo import make_conninfo
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 ROOT = Path(__file__).resolve().parents[3]
 DSN = os.environ.get(
@@ -46,10 +46,11 @@ def main() -> None:
         updated_channels=None,
     )
     config = {"configurable": {"thread_id": thread, "checkpoint_ns": ""}}
-    # make_conninfo merges the option into any DSN, including one that already has a query string.
-    with PostgresSaver.from_conn_string(
-        make_conninfo(DSN, options="-c log_statement=all")
-    ) as saver:
+    # Add the option to any DSN, including one with a query string or options of its own.
+    params = conninfo_to_dict(DSN)
+    options = " ".join(filter(None, [str(params.get("options") or ""), "-c log_statement=all"]))
+    conninfo = make_conninfo("", **{**params, "options": options})
+    with PostgresSaver.from_conn_string(conninfo) as saver:
         assert isinstance(saver.conn, Connection)
         pid = saver.conn.info.backend_pid
         saved = saver.put(config, cp, {"source": "loop", "step": 0}, {"items": "1", "n": "1"})

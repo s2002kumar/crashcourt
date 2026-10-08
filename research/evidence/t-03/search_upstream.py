@@ -124,35 +124,27 @@ def clone(root: Path, key: str) -> Path:
     return target
 
 
-def grep(clone: Path, path: str) -> list[str]:
+def git_grep(clone: Path, *args: str) -> str:
+    """git grep's output; exit 1 means no match, anything else (a failed lazy fetch) is an error."""
     done = subprocess.run(
-        ["git", "-C", str(clone), "grep", "-n", "-I", "-i", "-E", PATTERN, "HEAD", "--", path],
+        ["git", "-C", str(clone), "grep", *args],
         capture_output=True,
         text=True,
         encoding="utf-8",
     )
-    return [line.removeprefix("HEAD:") for line in done.stdout.splitlines()]
+    if done.returncode not in (0, 1):
+        raise RuntimeError(f"git grep failed ({done.returncode}): {done.stderr.strip()}")
+    return done.stdout
+
+
+def grep(clone: Path, path: str) -> list[str]:
+    out = git_grep(clone, "-n", "-I", "-i", "-E", PATTERN, "HEAD", "--", path)
+    return [line.removeprefix("HEAD:") for line in out.splitlines()]
 
 
 def test_counts(clone: Path, glob: str) -> tuple[int, int]:
-    done = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(clone),
-            "grep",
-            "-c",
-            "-E",
-            r"^\s*(async )?def test_",
-            "HEAD",
-            "--",
-            glob,
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    counts = [int(line.rsplit(":", 1)[1]) for line in done.stdout.splitlines()]
+    out = git_grep(clone, "-c", "-E", "^[[:space:]]*(async )?def test_", "HEAD", "--", glob)
+    counts = [int(line.rsplit(":", 1)[1]) for line in out.splitlines()]
     return sum(counts), len(counts)
 
 
