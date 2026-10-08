@@ -24,30 +24,56 @@ DEFAULT_PG_DSN = "postgresql://crashcourt:crashcourt@127.0.0.1:55432/crashcourt"
 DEFAULT_TOXIPROXY_URL = "http://127.0.0.1:8474"
 
 
-def parse_compose_ps(raw: str) -> dict[str, str]:
-    """Map service -> health (if it has a healthcheck) or state.
-
-    Accepts both shapes of `docker compose ps --format json`: one array, or one object per line.
-    """
+def _compose_ps_items(raw: str) -> list[dict[str, object]]:
+    """Parse both shapes of `docker compose ps --format json`: an array, or an object per line."""
     raw = raw.strip()
     if not raw:
-        return {}
+        return []
     items: list[Any] = (
         json.loads(raw)
         if raw.startswith("[")
         else [json.loads(line) for line in raw.splitlines() if line.strip()]
     )
+    return [cast("dict[str, object]", item) for item in items if isinstance(item, dict)]
+
+
+def parse_compose_ps(raw: str) -> dict[str, str]:
+    """Map service -> health (if it has a healthcheck) or state."""
     states: dict[str, str] = {}
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        fields = cast("dict[str, object]", item)
+    for fields in _compose_ps_items(raw):
         service = str(fields.get("Service") or "")
         health = str(fields.get("Health") or "")
         state = str(fields.get("State") or "")
         if service:
             states[service] = health or state
     return states
+
+
+def parse_compose_containers(raw: str) -> dict[str, str]:
+    """Map service -> container ID."""
+    containers: dict[str, str] = {}
+    for fields in _compose_ps_items(raw):
+        service = str(fields.get("Service") or "")
+        container = str(fields.get("ID") or "")
+        if service and container:
+            containers[service] = container
+    return containers
+
+
+def read_python_pin(text: str) -> str | None:
+    """The first version in a .python-version file; uv allows comments and blank lines."""
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            return line
+    return None
+
+
+def runner_kind(env: Mapping[str, str]) -> str:
+    """`local`, or the RUNNER_ENVIRONMENT GitHub Actions sets (`github-hosted`, `self-hosted`)."""
+    if env.get("GITHUB_ACTIONS") == "true":
+        return env.get("RUNNER_ENVIRONMENT", "") or "unknown"
+    return "local"
 
 
 class SystemProbes:
@@ -68,6 +94,9 @@ class SystemProbes:
     def docker_version(self) -> str | None:
         return self._run("docker", "version", "--format", "{{.Server.Version}}") or None
 
+    def docker_kernel(self) -> str | None:
+        return self._run("docker", "version", "--format", "{{.Server.KernelVersion}}") or None
+
     def compose_version(self) -> str | None:
         return self._run("docker", "compose", "version", "--short") or None
 
@@ -82,6 +111,20 @@ class SystemProbes:
         return parse_compose_ps(
             self._run("docker", "compose", "ps", "--all", "--format", "json") or ""
         )
+
+    def running_image_ids(self) -> Mapping[str, str]:
+        containers = parse_compose_containers(
+            self._run("docker", "compose", "ps", "--format", "json") or ""
+        )
+        found: dict[str, str] = {}
+        for service, container in containers.items():
+            image = self._run("docker", "inspect", "--format", "{{.Image}}", container)
+            if image:
+                found[service] = image
+        return found
+
+    def image_id(self, ref: str) -> str | None:
+        return self._run("docker", "image", "inspect", "--format", "{{.Id}}", ref) or None
 
     def postgres_settings(self, names: Iterable[str]) -> Mapping[str, str]:
         import psycopg  # lazy: unit tests never need a database driver
@@ -121,6 +164,15 @@ class SystemProbes:
         path = self.root / "uv.lock"
         return sha256_file(path) if path.exists() else None
 
+    def python_pin(self) -> str | None:
+        path = self.root / ".python-version"
+        return read_python_pin(path.read_text(encoding="utf-8")) if path.exists() else None
+
+    def psycopg_info(self) -> tuple[str, int]:
+        from psycopg import pq  # lazy: unit tests never need a database driver
+
+        return pq.__impl__, pq.version()
+
     def git_state(self) -> tuple[str | None, bool]:
         sha = self._run("git", "rev-parse", "HEAD")
         if not sha:
@@ -133,6 +185,9 @@ class SystemProbes:
 
     def platform_info(self) -> tuple[str, str, str]:
         return platform.system(), platform.release(), platform.machine()
+
+    def runner(self) -> str:
+        return runner_kind(os.environ)
 
     def now_utc(self) -> str:
         return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")

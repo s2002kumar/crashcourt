@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from crashcourt.doctor import format_report, run_doctor
 
-from ._factories import GOOD_PG, GOOD_VERSIONS, FakeProbes
+from ._factories import GOOD_IMAGE_IDS, GOOD_PG, GOOD_RUNNING, GOOD_VERSIONS, ID_PG, FakeProbes
 
 
 def failed(probes: FakeProbes) -> dict[str, str]:
@@ -18,6 +18,59 @@ def test_healthy_environment_yields_complete_manifest() -> None:
     assert report.manifest is not None
     assert report.manifest.postgres["track_commit_timestamp"] == "on"
     assert report.manifest.images["postgres"].startswith("postgres:18@sha256:")
+    assert report.manifest.image_ids == GOOD_RUNNING
+    assert report.manifest.docker_kernel == "6.8.0-45-generic"
+    assert report.manifest.runner == "local"
+    assert (report.manifest.psycopg_impl, report.manifest.libpq_version) == ("binary", "18.4")
+
+
+def test_container_running_another_image_fails() -> None:
+    # compose.yaml can name the pinned digest while an older container is still running.
+    stale = "sha256:" + "e" * 64
+    fails = failed(FakeProbes(running={**GOOD_RUNNING, "postgres": stale}))
+    detail = fails["running images match pins"]
+    assert detail == f"postgres: container runs {stale}, pinned ref is {ID_PG}"
+
+
+def test_service_without_container_fails_image_check() -> None:
+    fails = failed(FakeProbes(running={"postgres": ID_PG}))
+    assert fails["running images match pins"] == "toxiproxy: no container"
+
+
+def test_pinned_image_absent_locally_fails() -> None:
+    present = {ref: i for ref, i in GOOD_IMAGE_IDS.items() if i == ID_PG}
+    fails = failed(FakeProbes(local_ids=present))
+    assert "toxiproxy: pinned image" in fails["running images match pins"]
+
+
+def test_python_other_than_the_pin_fails() -> None:
+    fails = failed(FakeProbes(pin="3.12.13"))
+    assert fails["python matches .python-version"] == "running 3.12.7, pinned 3.12.13"
+
+
+def test_missing_python_version_file_fails() -> None:
+    fails = failed(FakeProbes(pin=None))
+    assert fails["python matches .python-version"] == ".python-version not found"
+
+
+def test_libpq_older_than_17_fails() -> None:
+    fails = failed(FakeProbes(psycopg=("python", 160009)))
+    assert fails["psycopg libpq"] == "python implementation, libpq 16.9"
+
+
+def test_broken_psycopg_is_a_failed_check_not_a_crash() -> None:
+    fails = failed(FakeProbes(psycopg=ImportError("no pq wrapper available")))
+    assert fails["psycopg libpq"] == "ImportError: no pq wrapper available"
+
+
+def test_unknown_runner_blocks_the_manifest() -> None:
+    fails = failed(FakeProbes(runner_env="unknown"))
+    assert "runner must be one of" in fails["manifest complete"]
+
+
+def test_missing_docker_kernel_blocks_the_manifest() -> None:
+    fails = failed(FakeProbes(kernel=None))
+    assert "docker_kernel is missing" in fails["manifest complete"]
 
 
 def test_docker_missing_fails_with_remedy() -> None:
@@ -35,6 +88,7 @@ def test_unpinned_image_fails() -> None:
 def test_missing_compose_config_fails_without_crashing() -> None:
     fails = failed(FakeProbes(images=None))
     assert "postgres=missing" in fails["images pinned by digest"]
+    assert "postgres: no image in compose.yaml" in fails["running images match pins"]
 
 
 def test_unhealthy_postgres_fails() -> None:

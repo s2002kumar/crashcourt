@@ -11,10 +11,12 @@ from typing import Protocol
 
 from crashcourt.manifest import (
     DIGEST_MARKER,
+    MIN_LIBPQ_MAJOR,
     PINNED_DISTRIBUTIONS,
     POSTGRES_SETTINGS,
     REQUIRED_SERVICES,
     Manifest,
+    format_libpq_version,
     normalize_dist,
     validate_manifest,
 )
@@ -50,17 +52,23 @@ class DoctorReport:
 
 class Probes(Protocol):
     def docker_version(self) -> str | None: ...
+    def docker_kernel(self) -> str | None: ...
     def compose_version(self) -> str | None: ...
     def compose_images(self) -> Mapping[str, str] | None: ...
     def service_states(self) -> Mapping[str, str]: ...
+    def running_image_ids(self) -> Mapping[str, str]: ...
+    def image_id(self, ref: str) -> str | None: ...
     def postgres_settings(self, names: Iterable[str]) -> Mapping[str, str]: ...
     def toxiproxy_version(self) -> str: ...
     def installed_versions(self, dists: Iterable[str]) -> Mapping[str, str | None]: ...
     def locked_versions(self) -> Mapping[str, str] | None: ...
     def lockfile_sha256(self) -> str | None: ...
+    def python_pin(self) -> str | None: ...
+    def psycopg_info(self) -> tuple[str, int]: ...
     def git_state(self) -> tuple[str | None, bool]: ...
     def python_info(self) -> tuple[str, str]: ...
     def platform_info(self) -> tuple[str, str, str]: ...
+    def runner(self) -> str: ...
     def now_utc(self) -> str: ...
 
 
@@ -105,6 +113,30 @@ def run_doctor(probes: Probes) -> DoctorReport:
             not bad,
             "postgres healthy, toxiproxy running" if not bad else "; ".join(bad),
             "Run `docker compose up -d --wait`.",
+        )
+    )
+
+    # compose.yaml says what should run; the containers say what does. Compare image IDs.
+    running = dict(probes.running_image_ids())
+    stale: list[str] = []
+    for service in REQUIRED_SERVICES:
+        ref = images.get(service, "")
+        want = probes.image_id(ref) if ref else None
+        have = running.get(service)
+        if have is None:
+            stale.append(f"{service}: no container")
+        elif not ref:
+            stale.append(f"{service}: no image in compose.yaml")
+        elif want is None:
+            stale.append(f"{service}: pinned image {ref} is not present locally")
+        elif have != want:
+            stale.append(f"{service}: container runs {have}, pinned ref is {want}")
+    checks.append(
+        _check(
+            "running images match pins",
+            not stale,
+            "all match" if not stale else "; ".join(stale),
+            "Run `docker compose up -d --wait` to recreate containers from the pinned images.",
         )
     )
 
@@ -163,6 +195,41 @@ def run_doctor(probes: Probes) -> DoctorReport:
             )
         )
 
+    py_version, py_impl = probes.python_info()
+    pin = probes.python_pin()
+    checks.append(
+        _check(
+            "python matches .python-version",
+            pin is not None and py_version == pin,
+            f"running {py_version}, pinned {pin}" if pin else ".python-version not found",
+            "Run `uv sync --locked --group dev`; uv installs the pinned interpreter.",
+        )
+    )
+
+    psycopg_impl, libpq = "", ""
+    try:
+        psycopg_impl, libpq_number = probes.psycopg_info()
+    except Exception as exc:  # noqa: BLE001 - a broken driver is a failed check, not a crash
+        checks.append(
+            _check(
+                "psycopg libpq",
+                False,
+                f"{type(exc).__name__}: {exc}",
+                "Run `uv sync --locked --group dev`.",
+            )
+        )
+    else:
+        libpq = format_libpq_version(libpq_number)
+        checks.append(
+            _check(
+                "psycopg libpq",
+                libpq_number // 10000 >= MIN_LIBPQ_MAJOR,
+                f"{psycopg_impl} implementation, libpq {libpq}",
+                f"psycopg needs libpq {MIN_LIBPQ_MAJOR} or newer to bound the wait after an "
+                "interrupt; run `uv sync --locked --group dev` to get the pinned psycopg-binary.",
+            )
+        )
+
     sha, dirty = probes.git_state()
     checks.append(
         _check(
@@ -175,7 +242,6 @@ def run_doctor(probes: Probes) -> DoctorReport:
 
     manifest: Manifest | None = None
     if all(check.ok for check in checks):
-        py_version, py_impl = probes.python_info()
         system, release, machine = probes.platform_info()
         candidate = Manifest(
             generated_at=probes.now_utc(),
@@ -186,11 +252,16 @@ def run_doctor(probes: Probes) -> DoctorReport:
             os_system=system,
             os_release=release,
             machine=machine,
+            runner=probes.runner(),
             lockfile_sha256=probes.lockfile_sha256() or "",
             packages={d: installed.get(d) or "" for d in PINNED_DISTRIBUTIONS},
+            psycopg_impl=psycopg_impl,
+            libpq_version=libpq,
             docker_version=docker or "",
+            docker_kernel=probes.docker_kernel() or "",
             compose_version=compose or "",
             images={s: images[s] for s in REQUIRED_SERVICES},
+            image_ids={s: running[s] for s in REQUIRED_SERVICES},
             postgres=pg,
             toxiproxy_version=toxiproxy or "",
         )

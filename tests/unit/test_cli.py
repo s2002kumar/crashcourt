@@ -48,3 +48,13 @@ def test_compare_fails_on_pinned_drift(
     args = ["doctor", "--manifest", str(tmp_path / "m.json"), "--compare", str(other)]
     assert main(args) == 2
     assert "packages:" in capsys.readouterr().out
+
+
+def test_compare_fails_on_python_patch_drift(
+    probes: FakeProbes, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    other = tmp_path / "other.json"
+    other.write_text(make_manifest(python_version="3.12.3").to_json(), encoding="utf-8")
+    args = ["doctor", "--manifest", str(tmp_path / "m.json"), "--compare", str(other)]
+    assert main(args) == 2
+    assert "python_version: '3.12.7' != '3.12.3'" in capsys.readouterr().out
