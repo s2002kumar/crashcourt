@@ -131,6 +131,7 @@ def test_booleans_are_not_integers() -> None:
         ("sink.append", {"effect_key": "k", "data": {}}, "worker"),
         ("sink.append", {"effect_key": "k", "data": {"worker": "worker-1"}}, "sink_seq"),
         ("effect.response", {"effect_key": "k", "status": "ok", "data": {}}, "sink_seq"),
+        ("effect.response", {"effect_key": "k", "status": None, "data": {}}, "status"),
         ("client.invoke", {"op_id": None}, "op_id"),
         ("fault.inject", {"fault_id": None}, "fault_id"),
         ("client.ok", {"op_id": "op-1", "data": {"worker": "worker-1"}}, "worker_seq"),

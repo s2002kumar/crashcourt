@@ -17,9 +17,15 @@ events of these kinds must carry them:
   saver writes fp.action only after the orchestrator's fp.release, so the merge orders release
   before action; a writer that logged the action before its release would break that edge.
 - effect.request, effect.response, sink.append: effect_key, op_id, attempt.
-- sink.append: data.worker, the requesting worker's proc name; data.sink_seq, the ledger row.
-- effect.response with status ok: data.sink_seq, the ledger row the sink acknowledged. The merge
-  links the append to this response; a failed response names no row and gets no edge.
+- effect.request: the worker writes it before it sends the request, so the merge orders it
+  before the sink's append.
+- sink.append: data.worker, the requesting worker's proc name; data.sink_seq, the ledger row,
+  each row appended once. The sink writes it after the row commits and before it answers, so
+  the merge orders it before the worker's response; a sink that logged after answering would
+  break that edge.
+- effect.response: a status. With status ok, data.sink_seq, the ledger row the sink answered
+  with. The merge links the append to this response; a failed response names no row and gets
+  no edge.
 - fault.inject, fault.heal: fault_id.
 """
 
@@ -174,12 +180,11 @@ class Event(BaseModel):
                 missing.append("data.worker")
             if not _data_count(self.data, "sink_seq"):
                 missing.append("data.sink_seq")
-        if (
-            self.kind == "effect.response"
-            and self.status == "ok"
-            and not _data_count(self.data, "sink_seq")
-        ):
-            missing.append("data.sink_seq")
+        if self.kind == "effect.response":
+            if self.status is None:
+                missing.append("status")
+            if self.status == "ok" and not _data_count(self.data, "sink_seq"):
+                missing.append("data.sink_seq")
         if family == "fault" and not self.fault_id:
             missing.append("fault_id")
         if missing:
