@@ -2,9 +2,10 @@
 
 Needs the compose services. From the repository root:
 
-    uv run python research/evidence/t-06/c4.py
+    uv run python research/evidence/t-06/c4.py [conformance]
 
-Writes conformance.md and overhead-<os>.md (for example overhead-linux.md) next to this file.
+Writes conformance.md and overhead-<os>.md (for example overhead-linux.md) next to this file;
+with `conformance`, only conformance.md.
 """
 
 from __future__ import annotations
@@ -58,8 +59,9 @@ async def sqlite() -> AsyncIterator[BaseCheckpointSaver[Any]]:
 
 
 def conformance_section(name: str, factory: SaverFactory) -> list[str]:
-    raw = run(report(name, factory, wrapped=False))
-    wrapped = run(report(name, factory, wrapped=True))
+    raw = run(report(name, factory, history_dir=None))
+    with tempfile.TemporaryDirectory() as histories:
+        wrapped = run(report(name, factory, history_dir=Path(histories)))
     lines = [
         f"### {name}",
         "",
@@ -93,7 +95,8 @@ def write_conformance() -> None:
         "# Conformance through the failpoint wrapper (T-06, control C4)",
         "",
         f"langgraph-checkpoint-conformance 0.0.2; savers at the uv.lock pins; host {HOST}.",
-        "Each suite runs once on the raw saver and once on the same saver wrapped (disarmed).",
+        "Each suite runs once on the raw saver and once on the same saver wrapped as in a trial: "
+        "recording every call to a history writer, with an empty failpoint registry.",
         "Postgres gets a fresh database per capability suite. The comparison is the whole report "
         "(`CapabilityReport.to_dict()` without the name).",
         "",
@@ -253,6 +256,7 @@ def write_overhead(n_memory: int = 3000, n_postgres: int = 500) -> None:
 
 if __name__ == "__main__":
     write_conformance()
-    write_overhead()
     print((HERE / "conformance.md").read_text(encoding="utf-8"))
-    print((HERE / OVERHEAD).read_text(encoding="utf-8"))
+    if sys.argv[1:] != ["conformance"]:
+        write_overhead()
+        print((HERE / OVERHEAD).read_text(encoding="utf-8"))

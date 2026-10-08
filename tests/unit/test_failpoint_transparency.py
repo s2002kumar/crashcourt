@@ -1,8 +1,11 @@
 """Control C4 in the unit tier: a disarmed FailpointSaver is indistinguishable from its inner saver.
 
 The official conformance suite (langgraph-checkpoint-conformance 0.0.2) must report identical
-results for the raw and the wrapped saver, and a graph run through either must persist the same
-states. Postgres is covered in tests/integration.
+results for the raw and the wrapped saver; the suite calls only async methods, so a fixed sync
+script must return the same through both; and a graph run through either must persist the same
+states. The wrapped saver always records, with an empty failpoint registry, as in a trial, and
+what it stored is read back through the raw saver, not through the wrapper. Postgres is covered
+in tests/integration.
 """
 
 from __future__ import annotations
@@ -27,6 +30,8 @@ from crashcourt.failpoints.saver import FailpointSaver, wrap
 from crashcourt.history.reader import read_history
 from crashcourt.history.writer import HistoryWriter, RunIdentity
 
+from ..c4 import recorded, script_checkpoints, sync_reads, sync_script, writer
+
 RUN = RunIdentity(batch="DEMO-c4", cell="DEMO-cell", trial=0, seed="s")
 Factory = Callable[[], AbstractAsyncContextManager[BaseCheckpointSaver[Any]]]
 
@@ -46,15 +51,15 @@ async def conformance(
 
 
 def test_in_memory_saver_conformance_is_identical_through_the_wrapper(tmp_path: Path) -> None:
-    writer = HistoryWriter(tmp_path / "worker.jsonl", run=RUN, proc="worker")
+    history = writer(tmp_path / "worker.jsonl", "memory")
 
     async def raw() -> AsyncIterator[BaseCheckpointSaver[Any]]:
         yield InMemorySaver()
 
     async def wrapped() -> AsyncIterator[BaseCheckpointSaver[Any]]:
-        yield wrap(InMemorySaver(), history=writer)
+        yield recorded(InMemorySaver(), history)
 
-    with writer:
+    with history:
         raw_report = run(conformance("raw", raw))
         wrapped_report = run(conformance("wrapped", wrapped))
     assert wrapped_report == raw_report
@@ -62,15 +67,39 @@ def test_in_memory_saver_conformance_is_identical_through_the_wrapper(tmp_path: 
 
 
 def test_async_sqlite_saver_conformance_is_identical_through_the_wrapper(tmp_path: Path) -> None:
+    history = writer(tmp_path / "worker.jsonl", "sqlite")
+
     async def raw() -> AsyncIterator[BaseCheckpointSaver[Any]]:
         async with AsyncSqliteSaver.from_conn_string(":memory:") as saver:
             yield saver
 
     async def wrapped() -> AsyncIterator[BaseCheckpointSaver[Any]]:
         async with AsyncSqliteSaver.from_conn_string(":memory:") as saver:
-            yield wrap(saver)
+            yield recorded(saver, history)
 
-    assert run(conformance("wrapped", wrapped)) == run(conformance("raw", raw))
+    with history:
+        assert run(conformance("wrapped", wrapped)) == run(conformance("raw", raw))
+    assert read_history(tmp_path / "worker.jsonl").events, "the wrapper recorded saver calls"
+
+
+def test_sync_calls_return_and_store_the_same_through_the_wrapper(tmp_path: Path) -> None:
+    checkpoints = script_checkpoints()
+    with (
+        SqliteSaver.from_conn_string(str(tmp_path / "raw.sqlite")) as raw,
+        SqliteSaver.from_conn_string(str(tmp_path / "wrapped.sqlite")) as inner,
+        writer(tmp_path / "worker.jsonl", "sync") as history,
+    ):
+        through_raw = sync_script(raw, checkpoints)
+        assert sync_script(recorded(inner, history), checkpoints) == through_raw
+        # What the wrapper stored, read without it.
+        assert sync_reads(inner, through_raw[1]) == through_raw[-1]
+    memory_raw, memory_inner = InMemorySaver(), InMemorySaver()
+    with writer(tmp_path / "memory.jsonl", "sync-memory") as history:
+        through_raw = sync_script(memory_raw, checkpoints)
+        assert sync_script(recorded(memory_inner, history), checkpoints) == through_raw
+        assert sync_reads(memory_inner, through_raw[1]) == through_raw[-1]
+    kinds = {e.kind for e in read_history(tmp_path / "worker.jsonl").events}
+    assert {f"saver.{m}.return" for m in ("put", "put_writes", "get_tuple", "list")} <= kinds
 
 
 class PruningSaver(InMemorySaver):
@@ -130,13 +159,12 @@ def history_view(graph: Any, thread: str) -> list[tuple[Any, ...]]:
 
 
 def test_a_graph_persists_the_same_states_through_the_wrapper(tmp_path: Path) -> None:
-    config = {"configurable": {"thread_id": "t1"}}
     with (
         SqliteSaver.from_conn_string(str(tmp_path / "raw.sqlite")) as raw_saver,
         SqliteSaver.from_conn_string(str(tmp_path / "wrapped.sqlite")) as inner,
-        HistoryWriter(tmp_path / "worker.jsonl", run=RUN, proc="worker") as writer,
+        writer(tmp_path / "worker.jsonl", "graph") as history,
     ):
-        wrapped_saver = wrap(inner, history=writer)
+        wrapped_saver = recorded(inner, history)
         for durability in ("sync", "async", "exit"):
             thread = {"configurable": {"thread_id": durability}}
             raw_graph, wrapped_graph = build_graph(raw_saver), build_graph(wrapped_saver)
@@ -145,25 +173,27 @@ def test_a_graph_persists_the_same_states_through_the_wrapper(tmp_path: Path) ->
                 {"items": [], "count": 0}, thread, durability=durability
             )
             assert wrapped_out == raw_out
-            assert history_view(wrapped_graph, durability) == history_view(raw_graph, durability)
-        assert config  # both stores were written independently
+            # Read what the wrapper stored through the raw saver, not through the wrapper.
+            stored = history_view(build_graph(inner), durability)
+            assert stored == history_view(raw_graph, durability)
     kinds = {e.kind for e in read_history(tmp_path / "worker.jsonl").events}
     assert {"saver.put.call", "saver.put.return", "saver.get_tuple.call"} <= kinds
 
 
-def test_an_async_graph_persists_the_same_states_through_the_wrapper() -> None:
-    async def scenario() -> tuple[Any, Any]:
-        raw_saver, inner = InMemorySaver(), InMemorySaver()
-        raw_graph, wrapped_graph = build_graph(raw_saver), build_graph(wrap(inner))
+def test_an_async_graph_persists_the_same_states_through_the_wrapper(tmp_path: Path) -> None:
+    raw_saver, inner = InMemorySaver(), InMemorySaver()
+
+    async def scenario(history: HistoryWriter) -> tuple[Any, Any]:
+        raw_graph, wrapped_graph = build_graph(raw_saver), build_graph(recorded(inner, history))
         thread = {"configurable": {"thread_id": "t1"}}
         raw_out = await raw_graph.ainvoke({"items": [], "count": 0}, thread, durability="sync")
         wrapped_out = await wrapped_graph.ainvoke(
             {"items": [], "count": 0}, thread, durability="sync"
         )
-        return (raw_out, history_view(raw_graph, "t1")), (
-            wrapped_out,
-            history_view(wrapped_graph, "t1"),
-        )
+        return raw_out, wrapped_out
 
-    raw_result, wrapped_result = run(scenario())
-    assert wrapped_result == raw_result
+    with writer(tmp_path / "worker.jsonl", "async-graph") as history:
+        raw_out, wrapped_out = run(scenario(history))
+    assert wrapped_out == raw_out
+    # Read what the wrapper stored through the raw saver, not through the wrapper.
+    assert history_view(build_graph(inner), "t1") == history_view(build_graph(raw_saver), "t1")

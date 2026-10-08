@@ -1,7 +1,7 @@
 # Conformance through the failpoint wrapper (T-06, control C4)
 
 langgraph-checkpoint-conformance 0.0.2; savers at the uv.lock pins; host Windows 11, Python 3.12.13.
-Each suite runs once on the raw saver and once on the same saver wrapped (disarmed).
+Each suite runs once on the raw saver and once on the same saver wrapped as in a trial: recording every call to a history writer, with an empty failpoint registry.
 Postgres gets a fresh database per capability suite. The comparison is the whole report (`CapabilityReport.to_dict()` without the name).
 
 ### InMemorySaver
