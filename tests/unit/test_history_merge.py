@@ -332,3 +332,30 @@ def test_a_response_naming_a_row_the_sink_lacks_is_rejected() -> None:
         merge([worker, sink])
     with pytest.raises(HistoryError, match="ledger row 7"):
         merge([worker])  # no sink history at all
+
+
+def test_a_ledger_row_appended_twice_is_rejected() -> None:
+    other = {"op_id": "op-2", "effect_key": "k2", "attempt": 1}
+    sink = [
+        ev(SINK, 0, "sink.append", **EFFECT, data={"worker": "worker-1", "sink_seq": 1}),
+        ev(SINK, 1, "sink.append", **other, data={"worker": "worker-1", "sink_seq": 1}),
+    ]
+    with pytest.raises(HistoryError, match="ledger row 1 appended twice"):
+        merge([sink])
+
+
+@pytest.mark.parametrize(
+    ("response", "appended_by"),
+    [
+        ({"op_id": "op-2", "effect_key": "k2", "attempt": 1}, "worker-1"),  # another request
+        ({**EFFECT, "attempt": 2}, "worker-1"),  # another attempt
+        (EFFECT, "worker-2"),  # another worker's row
+    ],
+)
+def test_a_response_naming_another_requests_row_is_rejected(
+    response: dict[str, Any], appended_by: str
+) -> None:
+    worker = [ev("worker-1", 0, "effect.response", status="ok", data={"sink_seq": 1}, **response)]
+    sink = [ev(SINK, 0, "sink.append", **EFFECT, data={"worker": appended_by, "sink_seq": 1})]
+    with pytest.raises(HistoryError, match="for another request"):
+        merge([worker, sink])

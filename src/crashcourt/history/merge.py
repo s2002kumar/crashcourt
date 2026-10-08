@@ -10,7 +10,10 @@ each of which holds in every real execution:
 3. Effect: for one (worker, op_id, effect_key, attempt), the worker's first `effect.request`
    precedes the sink's first `sink.append`. Each `sink.append` precedes the worker's ok
    `effect.response` that names its ledger row (data.sink_seq). A failed response names no row
-   and gets no edge, so a failure followed by a successful retry cannot be reordered.
+   and gets no edge, so a failure followed by a successful retry cannot be reordered. Both
+   edges rest on write order: the worker logs a request before sending it, and the sink logs an
+   append before answering (crashcourt.spec.events). A ledger row that appears twice, or an ok
+   response whose row is missing or belongs to another request, contradicts the trial.
 4. Exit: a worker's last event precedes the `worker.exit` naming it (recorded from waitpid).
 5. Result: the worker event named by a `client.ok` or `client.fail` (data.worker, data.worker_seq,
    the worker's last event before it sent its result) precedes that client event.
@@ -95,7 +98,7 @@ def causal_edges(by_proc: Mapping[str, Sequence[Event]]) -> set[Edge]:
 
     earliest_dispatch: dict[tuple[str, str, str], Event] = {}
     first_append: dict[tuple[str, str, str, int], Event] = {}
-    append_by_row: dict[tuple[str, int], Event] = {}
+    append_by_row: dict[int, Event] = {}
     for proc, events in by_proc.items():
         for event in events:
             if event.kind in {"dispatch.send", "dispatch.redeliver"}:
@@ -110,7 +113,10 @@ def causal_edges(by_proc: Mapping[str, Sequence[Event]]) -> set[Edge]:
                     int(event.attempt or 0),
                 )
                 first_append.setdefault(key, event)
-                append_by_row[(_text(event, "worker"), _count(event, "sink_seq"))] = event
+                row = _count(event, "sink_seq")
+                if row in append_by_row:
+                    raise HistoryError(f"{proc} seq {event.seq}: ledger row {row} appended twice")
+                append_by_row[row] = event
             elif event.kind == "worker.exit":
                 worker = by_proc.get(_text(event, "proc"))
                 if worker:
@@ -127,13 +133,15 @@ def causal_edges(by_proc: Mapping[str, Sequence[Event]]) -> set[Edge]:
     for response in acknowledged:
         # The sink writes its append before it answers, so an ok response whose row is missing
         # from the sink's history (or with no sink history at all) contradicts the trial.
-        row = (response.proc, _count(response, "sink_seq"))
+        row = _count(response, "sink_seq")
+        where = f"{response.proc} seq {response.seq}: effect.response names ledger row {row}"
         append = append_by_row.get(row)
         if append is None:
-            raise HistoryError(
-                f"{response.proc} seq {response.seq}: effect.response names ledger row "
-                f"{row[1]}, which the sink's history does not hold for {response.proc}"
-            )
+            raise HistoryError(f"{where}, which the sink's history does not hold")
+        asked = (response.proc, response.op_id, response.effect_key, response.attempt)
+        stored = (_text(append, "worker"), append.op_id, append.effect_key, append.attempt)
+        if asked != stored:
+            raise HistoryError(f"{where}, which the sink appended for another request {stored}")
         edges.add((_ref(append), _ref(response)))
     return {(a, b) for a, b in edges if a.proc != b.proc}
 
