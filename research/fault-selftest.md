@@ -12,7 +12,7 @@ Run it with `docker compose up -d --wait && uv run crashcourt faults selftest --
 
 ## Result on Linux CI
 
-From CI run [37855133961](https://github.com/s2002kumar/crashcourt/actions/runs/37855133961) (ubuntu-24.04), artifact
+From CI run [37857300421](https://github.com/s2002kumar/crashcourt/actions/runs/37857300421) (ubuntu-24.04), artifact
 `doctor-evidence/fault-selftest-ci.md`, verbatim:
 
 Trials passed: 20 of 20 (a trial passes when no check fails). Skipped: none. Not run: none.
@@ -22,12 +22,12 @@ Trials passed: 20 of 20 (a trial passes when no check fails). Skipped: none. Not
 | downstream_drop_is_lost_ack | 20 | 0 | 0 | committed_while_client_waited=True, client_blocked_until_heal=True, client_after_heal=OperationalError: consuming input failed: server closed the connection unexpectedly, committed_final=True |
 | upstream_drop_never_reaches_server | 20 | 0 | 0 | committed_while_client_waited=False, client_blocked_until_heal=True, client_after_heal=OperationalError: consuming input failed: server closed the connection unexpectedly, committed_final=False |
 | downstream_hold_is_delayed_ack | 20 | 0 | 0 | committed_while_client_waited=True, client_blocked_until_heal=True, client_after_heal=ok, committed_final=True |
-| downstream_latency_delays_response | 20 | 0 | 0 | latency_ms=200, client=ok, elapsed_ms=201, committed=True |
+| downstream_latency_delays_response | 20 | 0 | 0 | latency_ms=200, client=ok, elapsed_ms=201.8, committed=True |
 | reset_downstream_after_commit | 20 | 0 | 0 | client=OperationalError: consuming input failed: server closed the connection unexpectedly, committed=True |
 | reset_upstream_before_execute | 20 | 0 | 0 | client=OperationalError: consuming input failed: server closed the connection unexpectedly, committed=False |
 | new_toxic_on_held_stream_releases_hold | 20 | 0 | 0 | api_refused_second_toxic=True, upstream_add_released_hold=False, downstream_add_released_hold=True |
 | terminate_backend | 20 | 0 | 0 | terminated=1, client_next_query=AdminShutdown [57P01]: terminating connection due to administrator command |
-| restart_database | 20 | 0 | 0 | acked_row_survived=True, open_connection=AdminShutdown [57P01]: terminating connection due to administrator command, container=81b37b0bf34d, restart_s=0.301, ready_s=0.109 |
+| restart_database | 20 | 0 | 0 | acked_row_survived=True, open_connection=AdminShutdown [57P01]: terminating connection due to administrator command, container=ed26d059dd30, restart_s=0.365, ready_s=0.113 |
 | signals | 20 | 0 | 0 | advanced_while_stopped=0, resumed=True, sigterm_returncode=-15, sigkill_returncode=-9 |
 | inject_heal_pairs | 20 | 0 | 0 | injects=11, heals=11, failed_heals=0 |
 
@@ -41,7 +41,7 @@ Trials passed: 20 of 20 (a trial passes when no check fails). Skipped: none. Not
 | `latency` toxic, 200 ms | downstream | Yes | Success, at least 200 ms later | Slow network |
 | `reset_peer`, timeout=0 | downstream | Yes; the reset hits the first response | Connection closed | Lost acknowledgment in one step |
 | `reset_peer`, timeout=0 | upstream | No | Connection closed | Connection reset before execution |
-| `pg_terminate_backend`, waiting for the exit | none (direct) | Nothing in flight | `AdminShutdown` (57P01) on the next statement | Backend termination |
+| `pg_terminate_backend` on every matching backend in one scan, then a wait until they are gone | none (direct) | Nothing in flight | `AdminShutdown` (57P01) on the next statement | Backend termination |
 | `docker compose restart postgres` | none (container) | Acknowledged commits survive | Open connections end with 57P01 (fast shutdown) | Fast database restart |
 | SIGSTOP, then SIGCONT | none (process) | n/a | The process stops making progress, then resumes | Process pause |
 | SIGTERM; SIGKILL | none (process) | n/a | Exit status -15; -9 | Graceful stop; kill |
@@ -94,5 +94,5 @@ Retrieved 2026-09-27:
 - https://github.com/Shopify/toxiproxy/blob/v2.12.0/toxics/timeout.go, https://github.com/Shopify/toxiproxy/blob/v2.12.0/toxics/latency.go, https://github.com/Shopify/toxiproxy/blob/v2.12.0/toxics/reset_peer.go
 
 Retrieved 2026-10-08:
-- https://www.postgresql.org/docs/18/functions-admin.html#FUNCTIONS-ADMIN-SIGNAL (`pg_terminate_backend`: with no
-  timeout it returns true once the signal is sent; with a timeout, true only once the backend has exited)
+- https://www.postgresql.org/docs/18/functions-admin.html#FUNCTIONS-ADMIN-SIGNAL (`pg_terminate_backend` returns true
+  once the signal is sent, whether or not the backend exits; with a timeout it waits for the exit)
