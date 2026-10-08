@@ -1,0 +1,15 @@
+langgraph 1.2.12
+--- StateGraph, durability=sync
+    put start input -1
+    put end   input -1
+    put start loop 0
+    put end   loop 0
+    USER CODE (StateGraph node)
+    put start loop 1
+    put end   loop 1
+--- entrypoint, durability=sync
+    put start input -1
+    USER CODE (entrypoint body)
+    put end   input -1
+    put start loop 0
+    put end   loop 0
