@@ -28,14 +28,15 @@
  26  orchestrator   9  dispatch.send            op=op-9 data={'to': 'worker-2'}
  27  worker-2       7  node.start               op=op-9
  28  worker-2       8  effect.request           op=op-9 cp=C5b effect=notify:t3
- 29  worker-2       9  effect.response          op=op-9 effect=notify:t3 status=fail error=ConnectionResetError
- 30  orchestrator  10  client.fail              op=op-9 status=fail error=effect failed data={'worker': 'worker-2', 'worker_seq': 9}
- 31  orchestrator  11  client.invoke            op=op-10
- 32  orchestrator  12  dispatch.send            op=op-10 data={'to': 'worker-1'}
- 33  worker-1       9  node.start               op=op-10
- 34  worker-1      10  saver.put.call           op=op-10 cp=C6a parent=C5a
- 35  orchestrator  13  fault.inject             data={'signal': 'SIGKILL', 'proc': 'worker-1'}
- 36  orchestrator  14  worker.exit              data={'proc': 'worker-1', 'returncode': -9, 'signal': 'SIGKILL'}
- 37  orchestrator  15  client.info              op=op-10 status=info error=worker killed mid-put
- 38  orchestrator  16  fault.heal               
- 39  orchestrator  17  worker.exit              data={'proc': 'worker-2', 'returncode': 0}
+ 29  sink           1  sink.append              op=op-9 effect=notify:t3 data={'worker': 'worker-2', 'sink_seq': 2}
+ 30  worker-2       9  effect.response          op=op-9 effect=notify:t3 status=fail error=ConnectionResetError
+ 31  orchestrator  10  client.fail              op=op-9 status=fail error=effect failed data={'worker': 'worker-2', 'worker_seq': 9}
+ 32  orchestrator  11  client.invoke            op=op-10
+ 33  orchestrator  12  dispatch.send            op=op-10 data={'to': 'worker-1'}
+ 34  worker-1       9  node.start               op=op-10
+ 35  worker-1      10  saver.put.call           op=op-10 cp=C6a parent=C5a
+ 36  orchestrator  13  fault.inject             data={'signal': 'SIGKILL', 'proc': 'worker-1'}
+ 37  orchestrator  14  worker.exit              data={'proc': 'worker-1', 'returncode': -9, 'signal': 'SIGKILL'}
+ 38  orchestrator  15  client.info              op=op-10 status=info error=worker killed mid-put
+ 39  orchestrator  16  fault.heal               status=ok data={'returncode': -9}
+ 40  orchestrator  17  worker.exit              data={'proc': 'worker-2', 'returncode': 0}

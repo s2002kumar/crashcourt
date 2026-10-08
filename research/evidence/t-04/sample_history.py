@@ -3,10 +3,11 @@
 One Python process plays the orchestrator, two workers, and the effect sink through a forced
 fork of an approval thread: both workers read head C4, pause at a barrier, are released
 together, and each writes a child of C4; worker-1 also fires one effect. Then two operations go
-wrong, so the history has every client outcome to label: op-9's effect fails and the client is
-told so (client.fail), and worker-1 is killed with SIGKILL while writing op-10's checkpoint, so
-the client cannot know whether it committed (client.info). All four histories are real
-HistoryWriter output; they share one pid because one process wrote them.
+wrong, so the history has every client outcome to label: op-9's effect reaches the sink and is
+recorded, but the answer is lost (the worker sees a reset), so the worker reports a failure
+(client.fail) for an effect that happened; and worker-1 is killed with SIGKILL while writing
+op-10's checkpoint, so the client cannot know whether it committed (client.info). All four
+histories are real HistoryWriter output; they share one pid because one process wrote them.
 
     uv run python research/evidence/t-04/sample_history.py
 """
@@ -74,12 +75,15 @@ def main() -> None:
         result = {"worker": last.proc, "worker_seq": last.seq}
         orch.emit("client.ok", op_id=op, status="ok", data=result)
 
-    # op-9 fails: the effect call to the sink errors out, and the worker reports the failure.
+    # op-9: a lost acknowledgment. The sink records the effect (row 2), the answer never reaches
+    # the worker, and the worker reports a failure. The failed response names no row, so the
+    # merge draws no edge from the append to it.
     orch.emit("client.invoke", op_id="op-9", logical_op="notify:t3:i2")
     orch.emit("dispatch.send", op_id="op-9", logical_op="notify:t3:i2", data={"to": "worker-2"})
     w2.emit("node.start", op_id="op-9", attempt=1, task_id="notify", **THREAD)
     failed: dict[str, Any] = {"op_id": "op-9", "effect_key": "notify:t3", "attempt": 1}
     w2.emit("effect.request", checkpoint_id="C5b", **failed, **THREAD)
+    sink.emit("sink.append", **failed, data={"worker": "worker-2", "sink_seq": 2})
     last_fail = w2.emit(
         "effect.response", status="fail", error="ConnectionResetError", **failed, **THREAD
     )
@@ -97,7 +101,7 @@ def main() -> None:
     )
     orch.emit("worker.exit", data={"proc": "worker-1", "returncode": -9, "signal": "SIGKILL"})
     orch.emit("client.info", op_id="op-10", status="info", error="worker killed mid-put")
-    orch.emit("fault.heal", fault_id=fault.fault_id)
+    orch.emit("fault.heal", fault_id=fault.fault_id, status="ok", data={"returncode": -9})
     orch.emit("worker.exit", data={"proc": "worker-2", "returncode": 0})
     for writer in w.values():
         writer.close()
