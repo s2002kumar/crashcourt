@@ -68,3 +68,11 @@ def test_remote_or_implicit_databases_are_refused(dsn: str) -> None:
     with pytest.raises(FaultError, match="not on this host") as caught:
         require_local_dsn(dsn)
     assert "secret" not in str(caught.value)
+
+
+def test_the_cli_refuses_zero_trials() -> None:
+    from crashcourt.cli import main
+
+    with pytest.raises(SystemExit) as exited:
+        main(["faults", "selftest", "--trials", "0"])
+    assert exited.value.code == 2

@@ -151,7 +151,11 @@ def _network_check(
 ) -> Check:
     targets.toxiproxy.reset()
     insert = _Insert(targets.proxied_dsn)
-    active = fault()
+    try:
+        active = fault()
+    except BaseException:
+        insert.conn.close()
+        raise
     insert.start()
     if expect_commit_while_waiting:
         committed_early = _wait_until(lambda: _committed(targets.direct_dsn, insert.key))
@@ -196,7 +200,7 @@ def _latency_check(targets: Targets, history: HistoryWriter, trial: int) -> Chec
             outcome = "ok"
         except psycopg.Error as exc:
             outcome = _error(exc)
-        elapsed_ms = round((time.perf_counter() - started) * 1000)
+        elapsed_ms = (time.perf_counter() - started) * 1000
     committed = _committed(targets.direct_dsn, key)
     ok = outcome == "ok" and elapsed_ms >= LATENCY_MS and committed
     return Check(
@@ -205,7 +209,7 @@ def _latency_check(targets: Targets, history: HistoryWriter, trial: int) -> Chec
         {
             "latency_ms": LATENCY_MS,
             "client": outcome,
-            "elapsed_ms": elapsed_ms,
+            "elapsed_ms": round(elapsed_ms, 1),
             "committed": committed,
         },
     )
@@ -284,14 +288,15 @@ def _hold_guard_check(targets: Targets, history: HistoryWriter, trial: int) -> C
 def _terminate_check(targets: Targets, history: HistoryWriter, trial: int) -> Check:
     app = f"selftest-victim-{uuid.uuid4().hex[:8]}"
     victim = psycopg.connect(targets.direct_dsn, autocommit=True, application_name=app)
-    count = db.terminate_backends(
-        history, targets.direct_dsn, f"terminate-{trial}", application_name=app
-    )
     try:
-        victim.execute("SELECT 1")
-        outcome = "ok"
-    except psycopg.Error as exc:
-        outcome = _error(exc)
+        count = db.terminate_backends(
+            history, targets.direct_dsn, f"terminate-{trial}", application_name=app
+        )
+        try:
+            victim.execute("SELECT 1")
+            outcome = "ok"
+        except psycopg.Error as exc:
+            outcome = _error(exc)
     finally:
         victim.close()
     ok = count == 1 and "57P01" in outcome
@@ -307,16 +312,22 @@ def _restart_check(targets: Targets, history: HistoryWriter, trial: int) -> Chec
     with psycopg.connect(targets.direct_dsn, autocommit=True) as conn:
         conn.execute(f"INSERT INTO {TABLE} (id) VALUES (%s)", (key,))
     held = psycopg.connect(targets.direct_dsn, autocommit=True)
-    timing = db.restart_database(history, targets.direct_dsn, f"restart-{trial}", root=targets.root)
     try:
-        held.execute("SELECT 1")
-        outcome = "ok"
-    except psycopg.Error as exc:
-        outcome = _error(exc)
+        timing = db.restart_database(
+            history, targets.direct_dsn, f"restart-{trial}", root=targets.root
+        )
+        try:
+            held.execute("SELECT 1")
+            outcome = "ok"
+        except psycopg.Error as exc:
+            outcome = _error(exc)
     finally:
         held.close()
     survived = _committed(targets.direct_dsn, key)
-    ok = survived and outcome != "ok"
+    # On Linux, fast shutdown ends open connections with 57P01. Through Docker Desktop's
+    # networking on Windows the client sees a socket abort instead.
+    ended_cleanly = sys.platform == "win32" or "57P01" in outcome
+    ok = survived and outcome != "ok" and ended_cleanly
     return Check(
         "restart_database",
         "pass" if ok else "fail",
@@ -487,13 +498,24 @@ def require_local_dsn(dsn: str) -> None:
         raise FaultError(f"refusing a database that is not on this host: host {shown!r}")
 
 
+def require_local_connection(conn: psycopg.Connection[object]) -> None:
+    """Where a connection actually went, after environment variables and service files: a
+    loopback address, or a Unix socket directory."""
+    hostaddr, host = conn.info.hostaddr, conn.info.host
+    if hostaddr not in {"127.0.0.1", "::1"} and not (not hostaddr and host.startswith("/")):
+        raise FaultError(f"refusing a database that is not on this host: {host} ({hostaddr})")
+
+
 def prepare(direct_dsn: str, proxied_dsn: str, toxiproxy_url: str, root: Path) -> Targets:
     """Ensure the Postgres proxy and the self-test table exist."""
     require_local_dsn(direct_dsn)
     require_local_dsn(proxied_dsn)
     targets = Targets(direct_dsn, proxied_dsn, ToxiproxyClient(toxiproxy_url), root)
     ensure_postgres_proxy(targets.toxiproxy)
+    with psycopg.connect(proxied_dsn, autocommit=True, connect_timeout=5) as conn:
+        require_local_connection(conn)
     with psycopg.connect(direct_dsn, autocommit=True) as conn:
+        require_local_connection(conn)
         conn.execute(f"CREATE TABLE IF NOT EXISTS {TABLE} (id text PRIMARY KEY)")
     return targets
 

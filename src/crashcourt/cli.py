@@ -112,6 +112,13 @@ def _schema_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _positive_int(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"{value} is not at least 1")
+    return value
+
+
 def _faults_selftest(args: argparse.Namespace) -> int:
     from crashcourt.faults import selftest
     from crashcourt.probes import DEFAULT_PG_DSN, DEFAULT_PG_PROXY_DSN, DEFAULT_TOXIPROXY_URL
@@ -177,7 +184,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     selftest = fault_commands.add_parser(
         "selftest", help="check every fault primitive against the compose services"
     )
-    selftest.add_argument("--trials", type=int, default=20)
+    selftest.add_argument("--trials", type=_positive_int, default=20)
     selftest.add_argument(
         "--no-restart", action="store_true", help="skip the database restart check"
     )
