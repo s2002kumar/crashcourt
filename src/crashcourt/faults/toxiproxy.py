@@ -31,6 +31,8 @@ from crashcourt.history.writer import HistoryWriter
 Stream = Literal["upstream", "downstream"]
 
 DEFAULT_URL = "http://127.0.0.1:8474"
+#: Hosts accepted for anything the fault primitives control: the lab is local by design.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 #: The proxy the harness puts between workers and the target database (compose.yaml).
 POSTGRES_PROXY = "postgres"
 POSTGRES_LISTEN = "0.0.0.0:15432"
@@ -96,7 +98,7 @@ class ToxiproxyClient:
 
     def __init__(self, url: str = DEFAULT_URL, timeout: float = 5.0) -> None:
         host = urlsplit(url).hostname
-        if host not in {"127.0.0.1", "localhost", "::1"}:
+        if host not in LOOPBACK_HOSTS:
             raise ToxiproxyError(f"refusing a non-local Toxiproxy API: {url}")
         self.url = url.rstrip("/")
         self.timeout = timeout

@@ -1,4 +1,4 @@
-"""`crashcourt faults selftest`: prove each fault primitive does what the fault model assumes.
+"""`crashcourt faults selftest`: check each fault primitive does what the fault model assumes.
 
 Every network check runs one INSERT through the proxy while a direct connection (the oracle
 path) watches whether it committed. A check passes only when both the client's view and the
@@ -21,16 +21,19 @@ from pathlib import Path
 from typing import Literal
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
 
 from crashcourt.faults import db, signals
-from crashcourt.faults.base import ActiveFault
+from crashcourt.faults.base import ActiveFault, FaultError
 from crashcourt.faults.toxiproxy import (
     HOLD_MS,
     HOLD_TOXIC,
+    LOOPBACK_HOSTS,
     POSTGRES_PROXY,
     Toxic,
     ToxiproxyClient,
     ToxiproxyError,
+    add_latency,
     drop_responses,
     ensure_postgres_proxy,
     hold_responses,
@@ -43,6 +46,21 @@ from crashcourt.history.writer import HistoryWriter, RunIdentity
 Status = Literal["pass", "fail", "skip"]
 TABLE = "crashcourt_fault_selftest"
 WAIT_S = 5.0
+LATENCY_MS = 200
+#: Every check, in report order. `restart_database` is omitted under --no-restart.
+CHECKS = (
+    "downstream_drop_is_lost_ack",
+    "upstream_drop_never_reaches_server",
+    "downstream_hold_is_delayed_ack",
+    "downstream_latency_delays_response",
+    "reset_downstream_after_commit",
+    "reset_upstream_before_execute",
+    "new_toxic_on_held_stream_releases_hold",
+    "terminate_backend",
+    "restart_database",
+    "signals",
+    "inject_heal_pairs",
+)
 
 
 @dataclass
@@ -160,6 +178,35 @@ def _network_check(
             "client_blocked_until_heal": blocked,
             "client_after_heal": outcome or "still blocked",
             "committed_final": committed,
+        },
+    )
+
+
+def _latency_check(targets: Targets, history: HistoryWriter, trial: int) -> Check:
+    """A downstream latency delays the response by at least that long; the row commits."""
+    targets.toxiproxy.reset()
+    key = f"selftest-{uuid.uuid4()}"
+    with (
+        psycopg.connect(targets.proxied_dsn, autocommit=True, connect_timeout=5) as conn,
+        add_latency(history, targets.toxiproxy, f"latency-{trial}", LATENCY_MS),
+    ):
+        started = time.perf_counter()
+        try:
+            conn.execute(f"INSERT INTO {TABLE} (id) VALUES (%s)", (key,))
+            outcome = "ok"
+        except psycopg.Error as exc:
+            outcome = _error(exc)
+        elapsed_ms = round((time.perf_counter() - started) * 1000)
+    committed = _committed(targets.direct_dsn, key)
+    ok = outcome == "ok" and elapsed_ms >= LATENCY_MS and committed
+    return Check(
+        "downstream_latency_delays_response",
+        "pass" if ok else "fail",
+        {
+            "latency_ms": LATENCY_MS,
+            "client": outcome,
+            "elapsed_ms": elapsed_ms,
+            "committed": committed,
         },
     )
 
@@ -332,12 +379,21 @@ def _history_check(path: Path) -> Check:
     paired = all(
         sum(1 for h in heals if h.fault_id == i.fault_id and h.seq > i.seq) == 1 for i in injects
     )
-    ok = bool(injects) and paired and len(injects) == len(heals)
+    failed = sum(1 for h in heals if h.status != "ok")
+    ok = bool(injects) and paired and len(injects) == len(heals) and failed == 0
     return Check(
         "inject_heal_pairs",
         "pass" if ok else "fail",
-        {"injects": len(injects), "heals": len(heals)},
+        {"injects": len(injects), "heals": len(heals), "failed_heals": failed},
     )
+
+
+def _guarded(name: str, check: Callable[[], Check]) -> Check:
+    """Run a check; a primitive that raises (FaultError, a database error) fails the check."""
+    try:
+        return check()
+    except Exception as exc:  # noqa: BLE001 - reported as the check's observation
+        return Check(name, "fail", {"raised": _error(exc)})
 
 
 def run_trial(targets: Targets, number: int, history_dir: Path, *, restart: bool) -> Trial:
@@ -346,60 +402,95 @@ def run_trial(targets: Targets, number: int, history_dir: Path, *, restart: bool
     checks: list[Check] = []
     with HistoryWriter(path, run=run, proc="orchestrator") as history:
         tp = targets.toxiproxy
-        checks.append(
-            _network_check(
+        planned: list[tuple[str, Callable[[], Check]]] = [
+            (
                 "downstream_drop_is_lost_ack",
-                targets,
-                lambda: drop_responses(history, tp, f"drop-{number}"),
-                expect_commit_while_waiting=True,
-                expect_client="error",
-                expect_committed=True,
-            )
-        )
-        checks.append(
-            _network_check(
-                "upstream_drop_never_reaches_server",
-                targets,
-                lambda: toxic_fault(
-                    history,
-                    tp,
-                    f"drop-up-{number}",
-                    "drop_requests",
-                    Toxic(f"drop-up-{number}", "timeout", "upstream", {"timeout": 0}),
-                    POSTGRES_PROXY,
+                lambda: _network_check(
+                    "downstream_drop_is_lost_ack",
+                    targets,
+                    lambda: drop_responses(history, tp, f"drop-{number}"),
+                    expect_commit_while_waiting=True,
+                    expect_client="error",
+                    expect_committed=True,
                 ),
-                expect_commit_while_waiting=False,
-                expect_client="error",
-                expect_committed=False,
-            )
-        )
-        checks.append(
-            _network_check(
+            ),
+            (
+                "upstream_drop_never_reaches_server",
+                lambda: _network_check(
+                    "upstream_drop_never_reaches_server",
+                    targets,
+                    lambda: toxic_fault(
+                        history,
+                        tp,
+                        f"drop-up-{number}",
+                        "drop_requests",
+                        Toxic(f"drop-up-{number}", "timeout", "upstream", {"timeout": 0}),
+                        POSTGRES_PROXY,
+                    ),
+                    expect_commit_while_waiting=False,
+                    expect_client="error",
+                    expect_committed=False,
+                ),
+            ),
+            (
                 "downstream_hold_is_delayed_ack",
-                targets,
-                lambda: hold_responses(history, tp, f"hold-{number}"),
-                expect_commit_while_waiting=True,
-                expect_client="ok",
-                expect_committed=True,
-            )
-        )
-        checks.append(
-            _reset_check("reset_downstream_after_commit", targets, history, "downstream", number)
-        )
-        checks.append(
-            _reset_check("reset_upstream_before_execute", targets, history, "upstream", number)
-        )
-        checks.append(_hold_guard_check(targets, history, number))
-        checks.append(_terminate_check(targets, history, number))
+                lambda: _network_check(
+                    "downstream_hold_is_delayed_ack",
+                    targets,
+                    lambda: hold_responses(history, tp, f"hold-{number}"),
+                    expect_commit_while_waiting=True,
+                    expect_client="ok",
+                    expect_committed=True,
+                ),
+            ),
+            (
+                "downstream_latency_delays_response",
+                lambda: _latency_check(targets, history, number),
+            ),
+            (
+                "reset_downstream_after_commit",
+                lambda: _reset_check(
+                    "reset_downstream_after_commit", targets, history, "downstream", number
+                ),
+            ),
+            (
+                "reset_upstream_before_execute",
+                lambda: _reset_check(
+                    "reset_upstream_before_execute", targets, history, "upstream", number
+                ),
+            ),
+            (
+                "new_toxic_on_held_stream_releases_hold",
+                lambda: _hold_guard_check(targets, history, number),
+            ),
+            ("terminate_backend", lambda: _terminate_check(targets, history, number)),
+        ]
         if restart:
-            checks.append(_restart_check(targets, history, number))
-        checks.append(_signal_check(history, number, history_dir))
-    checks.append(_history_check(path))
+            planned.append(("restart_database", lambda: _restart_check(targets, history, number)))
+        planned.append(("signals", lambda: _signal_check(history, number, history_dir)))
+        checks += [_guarded(name, check) for name, check in planned]
+    checks.append(_guarded("inject_heal_pairs", lambda: _history_check(path)))
     return Trial(number, checks)
+
+
+def require_local_dsn(dsn: str) -> None:
+    """The self-test's databases must be on this host, like the Toxiproxy API."""
+    params = conninfo_to_dict(dsn)
+    hosts = [
+        host
+        for key in ("host", "hostaddr")
+        for host in str(params.get(key) or "").split(",")
+        if host
+    ]
+    if not hosts or any(h not in LOOPBACK_HOSTS and not h.startswith("/") for h in hosts):
+        shown = params.get("host") or params.get("hostaddr")
+        raise FaultError(f"refusing a database that is not on this host: host {shown!r}")
 
 
 def prepare(direct_dsn: str, proxied_dsn: str, toxiproxy_url: str, root: Path) -> Targets:
     """Ensure the Postgres proxy and the self-test table exist."""
+    require_local_dsn(direct_dsn)
+    require_local_dsn(proxied_dsn)
     targets = Targets(direct_dsn, proxied_dsn, ToxiproxyClient(toxiproxy_url), root)
     ensure_postgres_proxy(targets.toxiproxy)
     with psycopg.connect(direct_dsn, autocommit=True) as conn:
@@ -434,11 +525,22 @@ def run_selftest(
 
 
 def report(results: list[Trial]) -> str:
-    """Markdown: pass counts per check and the observations from the first trial."""
+    """Markdown: pass counts per check and the observations from the first trial.
+
+    The headline names every check that was skipped or left out, so a pass is never read as
+    covering a check that did not run.
+    """
     names = [c.name for c in results[0].checks] if results else []
     passed = sum(t.ok for t in results)
+    skipped = [
+        f"{name} in {count} of {len(results)} trials"
+        for index, name in enumerate(names)
+        if (count := sum(t.checks[index].status == "skip" for t in results))
+    ]
+    omitted = [name for name in CHECKS if name not in names]
     lines = [
-        f"Trials passed: {passed} of {len(results)} (a trial passes when no check fails).",
+        f"Trials passed: {passed} of {len(results)} (a trial passes when no check fails). "
+        f"Skipped: {'; '.join(skipped) or 'none'}. Not run: {', '.join(omitted) or 'none'}.",
         "",
         "| Check | Pass | Fail | Skip | First trial's observation |",
         "| --- | --- | --- | --- | --- |",
