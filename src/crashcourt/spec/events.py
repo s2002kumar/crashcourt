@@ -20,8 +20,9 @@ events of these kinds must carry them:
 - effect.request: the worker writes it before it sends the request, so the merge orders it
   before the sink's append.
 - sink.append: data.worker, the requesting worker's proc name; data.sink_seq, the ledger row,
-  each row appended once. The sink writes it after the row commits and before it answers, so
-  the merge orders it before the worker's response; a sink that logged after answering would
+  each row appended once. The effect sink derives these events from its ledger rows
+  (crashcourt.sink.ledger), and each row commits before the sink answers, so the merge orders
+  the append before the worker's response; a sink that recorded rows after answering would
   break that edge.
 - effect.response: a status. With status ok, data.sink_seq, the ledger row the sink answered
   with. The merge links the append to this response; a failed response names no row and gets
