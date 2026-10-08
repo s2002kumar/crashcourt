@@ -187,3 +187,22 @@ def test_registry_digest_ignores_line_endings_and_tracks_every_change(tmp_path: 
     assert edited != first
     path.rename(path.with_name("LG-RENAMED.yaml"))
     assert registry_sha256(tmp_path) not in {first, edited}
+
+
+def test_clause_files_need_a_lowercase_yaml_suffix(tmp_path: Path) -> None:
+    write(tmp_path, clause_data())
+    other = write(tmp_path, clause_data(id="LG-OTHER"))
+    other.rename(other.with_name("LG-OTHER.YAML"))
+    assert "lg/LG-OTHER.YAML: clause files must end in .yaml" in problems(tmp_path)
+    from crashcourt.clauses.registry import clause_files
+
+    assert [p.name for p in clause_files(tmp_path)] == ["LG-TEST.yaml"]  # nor read, nor digested
+
+
+def test_registry_digest_orders_paths_the_same_on_every_platform(tmp_path: Path) -> None:
+    from crashcourt.clauses.registry import clause_files
+
+    write(tmp_path, clause_data(), sub="b")
+    write(tmp_path, clause_data(id="LG-UPPER"), sub="Z")
+    order = [p.relative_to(tmp_path).as_posix() for p in clause_files(tmp_path)]
+    assert order == ["Z/LG-UPPER.yaml", "b/LG-TEST.yaml"]  # code-point order, not case-folded

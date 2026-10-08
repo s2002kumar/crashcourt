@@ -45,11 +45,12 @@ class ClauseRegistry:
 
     @classmethod
     def load(cls, root: Path) -> ClauseRegistry:
-        paths = sorted(root.rglob("*.yaml"))
-        # A clause saved as .yml would otherwise be skipped without a word.
+        paths = clause_files(root)
+        # A clause saved as .yml or .YAML would otherwise be skipped, or read on one platform only.
         problems: list[str] = [
             f"{p.relative_to(root).as_posix()}: clause files must end in .yaml"
-            for p in sorted(root.rglob("*.yml"))
+            for p in _yaml_like(root)
+            if p.suffix != ".yaml"
         ]
         if not paths:
             raise RegistryError([*problems, f"{root}: no clause files (*.yaml) found"])
@@ -101,6 +102,19 @@ class ClauseRegistry:
         return len(self._by_id)
 
 
+def _yaml_like(root: Path) -> list[Path]:
+    return [p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in {".yaml", ".yml"}]
+
+
+def clause_files(root: Path) -> list[Path]:
+    """Every clause file under root, in the order of their POSIX paths on every platform.
+
+    The suffix must be exactly .yaml: Windows globs ignore case, and Path ordering does too there.
+    """
+    files = [p for p in _yaml_like(root) if p.suffix == ".yaml"]
+    return sorted(files, key=lambda p: p.relative_to(root).as_posix())
+
+
 def registry_sha256(root: Path) -> str:
     """The registry's version: sha256 over each clause file's path and LF-normalized bytes.
 
@@ -108,7 +122,7 @@ def registry_sha256(root: Path) -> str:
     addition, removal, or rename changes it.
     """
     digest = hashlib.sha256()
-    for path in sorted(root.rglob("*.yaml")):
+    for path in clause_files(root):
         digest.update(path.relative_to(root).as_posix().encode("utf-8") + b"\0")
         digest.update(path.read_bytes().replace(b"\r\n", b"\n") + b"\0")
     return digest.hexdigest()
