@@ -1,8 +1,8 @@
 # T-01 evidence
 
 - `manifest-local.json`: written by `uv run crashcourt doctor --manifest research/evidence/t-01/manifest-local.json`
-  on the developer machine from a clean checkout, then committed. A unit test fails if it is incomplete, was written
-  from a dirty tree, or no longer matches the manifest schema.
+  on the developer machine from a clean checkout, then committed. While CI compared against it, a unit test failed if
+  it was incomplete, written from a dirty tree, or not in the manifest schema of the time.
 - CI's `doctor` job writes `manifest-ci.json` and runs `--compare` against the committed file. Any drift in pinned
   fields fails the job: lockfile hash, package versions, the full Python version and implementation, psycopg's
   implementation, libpq, image digests, Postgres settings, and the Toxiproxy version. This is control C7's first use.
