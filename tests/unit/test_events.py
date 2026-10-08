@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from crashcourt.spec.events import EVENT_KINDS, SCHEMA_VERSION, Event
 
-SPEC_EXAMPLE = {
+EXAMPLE = {
     "v": 1,
     "batch": "b-2026-10-07-01",
     "cell": "pg-async-sync-W1-F06",
@@ -37,27 +37,27 @@ SPEC_EXAMPLE = {
 
 
 def event(**changes: Any) -> dict[str, Any]:
-    return {**SPEC_EXAMPLE, **changes}
+    return {**EXAMPLE, **changes}
 
 
-def test_spec_example_validates_and_round_trips() -> None:
-    parsed = Event.model_validate(SPEC_EXAMPLE)
+def test_the_example_validates_and_round_trips() -> None:
+    parsed = Event.model_validate(EXAMPLE)
     assert parsed.v == SCHEMA_VERSION == 1
     again = Event.model_validate_json(parsed.to_line())
     assert again == parsed
 
 
 def test_line_is_one_compact_json_object_with_every_field_in_envelope_order() -> None:
-    line = Event.model_validate(SPEC_EXAMPLE).to_line()
+    line = Event.model_validate(EXAMPLE).to_line()
     assert line.endswith("\n") and line.count("\n") == 1
     keys = list(json.loads(line))
-    spec_order = [k for k in SPEC_EXAMPLE if k != "data"]
-    # effect_key is an identifier in spec section 9 but absent from its example line: after attempt.
-    expected = [*spec_order[:14], "effect_key", *spec_order[14:], "data"]
+    example_order = [k for k in EXAMPLE if k != "data"]
+    # effect_key is not in the example line; it sits after attempt.
+    expected = [*example_order[:14], "effect_key", *example_order[14:], "data"]
     assert keys == expected
 
 
-def test_kinds_are_exactly_the_spec_families() -> None:
+def test_kinds_are_exactly_the_v1_set() -> None:
     savers = {
         f"saver.{m}.{p}"
         for m in ("put", "put_writes", "get_tuple", "list")

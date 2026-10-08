@@ -1,4 +1,4 @@
-"""The history event envelope, schema v1 (spec section 9). Frozen: a change needs schema v2.
+"""The history event envelope, schema v1. Frozen: a change needs schema v2.
 
 Every process writes one JSONL line per event. A line carries the full envelope, with null for
 fields that do not apply, so every line is self-describing.

@@ -1,4 +1,4 @@
-"""Merge per-process histories into one causal order (spec section 9, "Ordering model").
+"""Merge per-process histories into one causal order.
 
 Within a process, `seq` is a total order. Across processes the merge uses only these edges,
 each of which holds in every real execution:

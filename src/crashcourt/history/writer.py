@@ -1,8 +1,9 @@
 """Per-process history writer: one JSONL line per event, written before `emit` returns.
 
 Each line goes to the kernel with one unbuffered `write` on an append-only descriptor, so a
-process killed with SIGKILL loses at most the line it was writing. A machine crash can lose
-more; the spec accepts that (section 7), and nothing here calls fsync.
+process killed with SIGKILL loses at most the line it was writing: the rest is in the kernel's
+page cache. A machine crash can lose more. Trials kill processes, not the host, so nothing here
+calls fsync.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ if sys.platform == "win32":
 else:
 
     def _host_monotonic_ns() -> int:
-        """CLOCK_MONOTONIC: the host-wide clock spec section 9 names for mono_ns."""
+        """CLOCK_MONOTONIC: one host-wide clock, so mono_ns compares across processes."""
         return time.clock_gettime_ns(time.CLOCK_MONOTONIC)
 
 
