@@ -19,6 +19,7 @@ from typing import Any, cast
 
 from crashcourt.doctor import DriverInfo
 from crashcourt.manifest import parse_uv_lock, sha256_file
+from crashcourt.sink.source import source_sha256
 
 #: Direct connection to the target database: the oracle path, never through Toxiproxy
 #: (the oracle path).
@@ -26,7 +27,7 @@ DEFAULT_PG_DSN = "postgresql://crashcourt:crashcourt@127.0.0.1:55432/crashcourt"
 DEFAULT_TOXIPROXY_URL = "http://127.0.0.1:8474"
 #: The same database through Toxiproxy: the path workers use and faults act on.
 DEFAULT_PG_PROXY_DSN = "postgresql://crashcourt:crashcourt@127.0.0.1:15432/crashcourt"
-#: The effect sink, reached directly: it is never behind Toxiproxy (spec section 7).
+#: The effect sink, reached directly: it is never behind Toxiproxy.
 DEFAULT_SINK_URL = "http://127.0.0.1:8480"
 #: The full image reference, digest included, of a Dockerfile FROM line.
 _FROM_IMAGE = re.compile(r"^\s*FROM\s+(\S+)", re.IGNORECASE)
@@ -211,6 +212,10 @@ class SystemProbes:
         if not isinstance(data, dict):
             raise ValueError(f"unexpected /health body: {data!r}")
         return cast("dict[str, object]", data)
+
+    def sink_source_sha256(self) -> str:
+        """The source the sink should be serving: this checkout's crashcourt package."""
+        return source_sha256(self.root / "src" / "crashcourt")
 
     def harness_base_images(self) -> Sequence[str] | None:
         path = self.root / "Dockerfile.harness"

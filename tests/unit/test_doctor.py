@@ -244,6 +244,8 @@ def test_unreachable_sink_fails() -> None:
         ({**GOOD_SINK, "test_hooks": True}, "a test hook is armed"),
         ({**GOOD_SINK, "ledger_version": 2}, "ledger version 2, expected 1"),
         ({**GOOD_SINK, "status": "degraded"}, "status degraded"),
+        ({**GOOD_SINK, "source_sha256": "a" * 64}, "serving source aaaaaaaaaaaa, the checkout is"),
+        ({k: v for k, v in GOOD_SINK.items() if k != "source_sha256"}, "serving source None"),
     ],
 )
 def test_sink_health_problems_fail(health: dict[str, object], problem: str) -> None:

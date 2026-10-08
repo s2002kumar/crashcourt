@@ -34,9 +34,11 @@ SPEC_SHA = "c" * 64
 GOOD_DRIVER = DriverInfo(
     impl="binary", libpq=180006, libpq_build=180006, cancel_safe=True, wheel=LINUX_WHEEL
 )
+SINK_SOURCE = "f" * 64
 GOOD_SINK = {
     "status": "ok",
     "version": "0.0.1",
+    "source_sha256": SINK_SOURCE,
     "ledger_version": 1,
     "trial": None,
     "test_hooks": False,
@@ -149,6 +151,9 @@ class FakeProbes:
         if isinstance(self.sink, Exception):
             raise self.sink
         return self.sink
+
+    def sink_source_sha256(self) -> str:
+        return SINK_SOURCE
 
     def harness_base_images(self) -> Sequence[str] | None:
         return self.bases

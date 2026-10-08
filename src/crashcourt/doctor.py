@@ -80,6 +80,7 @@ class Probes(Protocol):
     def postgres_settings(self, names: Iterable[str]) -> Mapping[str, str]: ...
     def toxiproxy_version(self) -> str: ...
     def sink_health(self) -> Mapping[str, object]: ...
+    def sink_source_sha256(self) -> str: ...
     def harness_base_images(self) -> Sequence[str] | None: ...
     def installed_versions(self, dists: Iterable[str]) -> Mapping[str, str | None]: ...
     def locked_versions(self) -> Mapping[str, str] | None: ...
@@ -179,11 +180,18 @@ def run_doctor(probes: Probes) -> DoctorReport:
             )
         if sink.get("test_hooks") is not False:
             problems.append("a test hook is armed")
+        expected = probes.sink_source_sha256()
+        if sink.get("source_sha256") != expected:
+            problems.append(
+                f"serving source {str(sink.get('source_sha256'))[:12]}, "
+                f"the checkout is {expected[:12]}"
+            )
         checks.append(
             _check(
                 "effect sink",
                 not problems,
-                f"version {sink.get('version')}, ledger v{sink.get('ledger_version')}"
+                f"version {sink.get('version')}, ledger v{sink.get('ledger_version')}, "
+                f"source {expected[:12]}"
                 if not problems
                 else "; ".join(problems),
                 "Rebuild and restart the sink: `docker compose up -d --wait --build sink`.",
