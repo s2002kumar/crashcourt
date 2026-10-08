@@ -308,11 +308,16 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
         self._emit("saver.list.call", fields)
         self._fire("list.before", fields)
         count = 0
+        items = self.inner.list(config, filter=filter, before=before, limit=limit)
         try:
-            for item in self.inner.list(config, filter=filter, before=before, limit=limit):
+            for item in items:
                 count += 1
                 yield item
         except GeneratorExit:
+            # Close the inner iterator too, so a saver holding a cursor releases it now.
+            close = getattr(items, "close", None)
+            if close is not None:
+                close()
             self._emit("saver.list.return", {**fields, "data": {"items": count, "complete": False}})
             raise
         except BaseException as exc:
@@ -334,11 +339,15 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
         self._emit("saver.list.call", fields)
         await self._afire("list.before", fields)
         count = 0
+        items = self.inner.alist(config, filter=filter, before=before, limit=limit)
         try:
-            async for item in self.inner.alist(config, filter=filter, before=before, limit=limit):
+            async for item in items:
                 count += 1
                 yield item
         except GeneratorExit:
+            aclose = getattr(items, "aclose", None)
+            if aclose is not None:
+                await aclose()
             self._emit("saver.list.return", {**fields, "data": {"items": count, "complete": False}})
             raise
         except BaseException as exc:
@@ -376,8 +385,11 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
         return await self.inner.aget_delta_channel_history(config=config, channels=channels)
 
     def with_allowlist(self, extra_allowlist: Collection[tuple[str, ...]]) -> FailpointSaver:
+        inner = self.inner.with_allowlist(extra_allowlist)
+        if inner is self.inner:  # nothing changed; keep this wrapper, as the inner saver does
+            return self
         return wrap(
-            self.inner.with_allowlist(extra_allowlist),
+            inner,
             history=self.history,
             registry=self.registry,
             barrier=self.barrier,

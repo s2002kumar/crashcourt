@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Callable, Coroutine, Generator
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,7 +14,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from crashcourt.failpoints.barrier import InProcessBarrier
 from crashcourt.failpoints.context import operation
-from crashcourt.failpoints.registry import Arm, FailpointRegistry
+from crashcourt.failpoints.registry import POINTS, Arm, FailpointRegistry
 from crashcourt.failpoints.saver import FailpointError, FailpointSaver, wrap
 from crashcourt.history.merge import merge
 from crashcourt.history.reader import read_history
@@ -106,22 +106,67 @@ def _put_in_thread(saver: FailpointSaver, cp: Checkpoint) -> threading.Thread:
     return thread
 
 
-@pytest.mark.parametrize(
-    ("point", "stored_while_paused"), [("put.before", False), ("put.after", True)]
-)
-def test_pause_blocks_exactly_at_its_point(rig: Rig, point: str, stored_while_paused: bool) -> None:
+def _sync_call(saver: FailpointSaver, method: str, base: Any) -> Callable[[], object]:
+    calls: dict[str, Callable[[], object]] = {
+        "put": lambda: saver.put(config(), checkpoint(), {"source": "loop", "step": 1}, {"n": "2"}),
+        "put_writes": lambda: saver.put_writes(base, [("n", 5)], "task-1"),
+        "get_tuple": lambda: saver.get_tuple(config()),
+        "list": lambda: list(saver.list(config())),
+    }
+    return calls[method]
+
+
+def _async_call(saver: FailpointSaver, method: str, base: Any) -> Callable[[], object]:
+    async def collect() -> object:
+        return [item async for item in saver.alist(config())]
+
+    calls: dict[str, Callable[[], Coroutine[Any, Any, object]]] = {
+        "put": lambda: saver.aput(
+            config(), checkpoint(), {"source": "loop", "step": 1}, {"n": "2"}
+        ),
+        "put_writes": lambda: saver.aput_writes(base, [("n", 5)], "task-1"),
+        "get_tuple": lambda: saver.aget_tuple(config()),
+        "list": collect,
+    }
+    call = calls[method]
+    return lambda: asyncio.run(call())
+
+
+def _stored(rig: Rig, method: str) -> bool:
+    """Whether the paused call's write is already in the inner saver."""
+    if method == "put":
+        return len(list(rig.inner.list(config()))) == 2
+    latest = rig.inner.get_tuple(config())
+    assert latest is not None
+    return any(task == "task-1" for task, _, _ in latest.pending_writes or ())
+
+
+@pytest.mark.parametrize("flavor", ["sync", "async"])
+@pytest.mark.parametrize("point", POINTS)
+def test_pause_blocks_exactly_at_its_point(rig: Rig, point: str, flavor: str) -> None:
+    base = rig.inner.put(config(), checkpoint(), {"source": "input", "step": -1}, {"n": "1"})
+    method, position = point.split(".")
+    call = (_sync_call if flavor == "sync" else _async_call)(rig.saver, method, base)
     rig.registry.arm(Arm(point, "pause"))  # type: ignore[arg-type]
-    cp = checkpoint()
-    thread = _put_in_thread(rig.saver, cp)
+    thread = threading.Thread(target=call, daemon=True)
+    thread.start()
     proc, hit_seq = rig.barrier.wait_for_hit()
-    assert thread.is_alive()
-    assert (rig.inner.get_tuple(config()) is not None) is stored_while_paused
-    rig.barrier.release(proc, hit_seq)
-    thread.join(5)
+    try:
+        calls = [e.kind for e in rig.events() if e.kind.startswith("saver.")]
+        # Paused after the call event; a .before pause precedes the inner call, an .after one
+        # follows it and precedes the return event.
+        assert calls == [f"saver.{method}.call"]
+        assert thread.is_alive()
+        if method in {"put", "put_writes"}:
+            assert _stored(rig, method) is (position == "after")
+    finally:
+        # Always release: a thread left parked would keep the interpreter from exiting.
+        rig.barrier.release(proc, hit_seq)
+        thread.join(5)
     assert not thread.is_alive()
-    assert rig.inner.get_tuple(config()) is not None
     kinds = rig.kinds()
     assert kinds[kinds.index("fp.hit") + 1] == "fp.action"
+    assert kinds[-1] == f"saver.{method}.return"
     hit = next(e for e in rig.events() if e.kind == "fp.hit")
     assert hit.fp == point and hit.data == {"action": "pause", "occurrence": 1}
 
@@ -217,6 +262,44 @@ def test_arms_due_on_different_calls_both_fire(rig: Rig) -> None:
     rig.saver.get_tuple(config())
     hits = [e.data["occurrence"] for e in rig.events() if e.kind == "fp.hit"]
     assert hits == [1, 2]
+
+
+def test_list_closes_the_inner_iterator_on_early_exit(rig: Rig) -> None:
+    closed: list[str] = []
+
+    def inner_list(*args: Any, **kwargs: Any) -> Generator[Any]:
+        try:
+            yield from InMemorySaver.list(rig.inner, *args, **kwargs)
+        finally:
+            closed.append("sync")
+
+    async def inner_alist(*args: Any, **kwargs: Any) -> AsyncGenerator[Any]:
+        try:
+            async for item in InMemorySaver.alist(rig.inner, *args, **kwargs):
+                yield item
+        finally:
+            closed.append("async")
+
+    for step in range(3):
+        rig.inner.put(config(), checkpoint(), {"source": "loop", "step": step}, {"n": "1"})
+    rig.inner.list = inner_list  # type: ignore[method-assign]
+    rig.inner.alist = inner_alist  # type: ignore[method-assign]
+    iterator = cast(Generator[Any], rig.saver.list(config()))
+    next(iterator)
+    iterator.close()
+    assert closed == ["sync"]
+
+    async def first_then_close() -> None:
+        items = cast(AsyncGenerator[Any], rig.saver.alist(config()))
+        await anext(items)
+        await items.aclose()
+
+    asyncio.run(first_then_close())
+    assert "async" in closed  # InMemorySaver.alist reads through list, which closes too
+
+
+def test_with_allowlist_keeps_the_wrapper_when_nothing_changes(rig: Rig) -> None:
+    assert rig.saver.with_allowlist([]) is rig.saver
 
 
 def test_failpoints_need_a_history_writer() -> None:
