@@ -33,6 +33,9 @@ def main() -> None:
             seqs = [e.seq for e in result.events]
             assert seqs == list(range(len(seqs))), f"trial {trial}: seq not contiguous"
             assert set(printed) <= set(seqs), f"trial {trial}: acknowledged events lost"
+            assert len(seqs) - len(printed) <= 1, f"trial {trial}: more than one unacknowledged"
+            if sys.platform.startswith("linux"):
+                assert returncode == -9, f"trial {trial}: exit status {returncode}"
             statuses.add(returncode)
             recovered += len(seqs)
             acknowledged += len(printed)
