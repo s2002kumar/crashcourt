@@ -1,14 +1,22 @@
 {
+  "clause_registry_sha256": "6f4b62b19a614eba376d25246b728446dc1e11247029341a2e6e564dcbd1ac65",
   "compose_version": "2.39.4-desktop.1",
+  "docker_kernel": "6.6.87.2-microsoft-standard-WSL2",
   "docker_version": "28.4.0",
-  "generated_at": "2026-09-27T13:44:59+00:00",
+  "generated_at": "2026-10-08T23:17:32+00:00",
   "git_dirty": false,
-  "git_sha": "a5425a1718a9013bc0c174c356ddeb69de9cfb84",
+  "git_sha": "3937bfd950797433fc7334aa8aa9ddee00f8d26a",
+  "image_ids": {
+    "postgres": "sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722",
+    "toxiproxy": "sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e"
+  },
   "images": {
     "postgres": "postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722",
     "toxiproxy": "ghcr.io/shopify/toxiproxy:2.12.0@sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e"
   },
-  "lockfile_sha256": "f071070ba599a2c9ba65365fe8f36bded68b139f591c7daa3994f96d4a208237",
+  "libpq_build_version": "18.4",
+  "libpq_version": "18.4",
+  "lockfile_sha256": "3f4e8bc39f10b175704cecd0e2049cc599a4a4d775114c2d93c4f20867a1d1b7",
   "machine": "AMD64",
   "os_release": "11",
   "os_system": "Windows",
@@ -17,7 +25,10 @@
     "langgraph-checkpoint": "4.2.0",
     "langgraph-checkpoint-postgres": "3.1.2",
     "langgraph-checkpoint-sqlite": "3.1.1",
+    "langgraph-prebuilt": "1.1.0",
+    "langgraph-sdk": "0.4.5",
     "psycopg": "3.3.6",
+    "psycopg-binary": "3.3.6",
     "psycopg-pool": "3.3.3"
   },
   "postgres": {
@@ -28,8 +39,11 @@
     "synchronous_commit": "on",
     "track_commit_timestamp": "on"
   },
+  "psycopg_impl": "binary",
+  "psycopg_wheel": "cp312-cp312-win_amd64",
   "python_implementation": "CPython",
   "python_version": "3.12.13",
+  "runner": "local",
   "schema_version": 1,
   "toxiproxy_version": "2.12.0"
 }
