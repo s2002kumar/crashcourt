@@ -121,7 +121,8 @@ def script_checkpoints() -> list[Checkpoint]:
 
 
 def sync_script(saver: BaseCheckpointSaver[Any], checkpoints: list[Checkpoint]) -> list[Any]:
-    """Every sync method in a fixed order; returns what each call returned."""
+    """The failpoint operations' sync methods (put, put_writes, get_tuple, list) in a fixed
+    order; returns what each call returned."""
     returned: list[Any] = []
     config = THREAD
     for step, checkpoint in enumerate(checkpoints):
@@ -143,3 +144,11 @@ def sync_reads(saver: BaseCheckpointSaver[Any], middle: RunnableConfig) -> list[
         list(saver.list(thread_only, limit=2)),
         list(saver.list(thread_only, before=middle)),
     ]
+
+
+def assert_meaningful(returned: list[Any]) -> None:
+    """Guard against two empty results comparing equal: the script stored and read back."""
+    latest, middle, listed, limited, older = returned[-1]
+    assert latest is not None and middle is not None
+    assert len(latest.pending_writes or ()) == 2 and len(middle.pending_writes or ()) == 2
+    assert [len(listed), len(limited), len(older)] == [3, 2, 1]

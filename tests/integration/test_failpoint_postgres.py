@@ -12,6 +12,7 @@ import pytest
 from crashcourt.probes import DEFAULT_PG_DSN
 
 from ..c4 import (
+    assert_meaningful,
     fresh_postgres,
     fresh_sync_postgres,
     recorded,
@@ -49,5 +50,6 @@ def test_sync_postgres_calls_return_and_store_the_same_through_the_wrapper(tmp_p
         writer(tmp_path / "worker.jsonl", "sync-postgres") as history,
     ):
         through_raw = sync_script(raw, checkpoints)
+        assert_meaningful(through_raw)
         assert sync_script(recorded(inner, history), checkpoints) == through_raw
         assert sync_reads(inner, through_raw[1]) == through_raw[-1]

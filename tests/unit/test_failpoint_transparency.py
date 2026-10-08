@@ -30,7 +30,7 @@ from crashcourt.failpoints.saver import FailpointSaver, wrap
 from crashcourt.history.reader import read_history
 from crashcourt.history.writer import HistoryWriter, RunIdentity
 
-from ..c4 import recorded, script_checkpoints, sync_reads, sync_script, writer
+from ..c4 import assert_meaningful, recorded, script_checkpoints, sync_reads, sync_script, writer
 
 RUN = RunIdentity(batch="DEMO-c4", cell="DEMO-cell", trial=0, seed="s")
 Factory = Callable[[], AbstractAsyncContextManager[BaseCheckpointSaver[Any]]]
@@ -90,12 +90,14 @@ def test_sync_calls_return_and_store_the_same_through_the_wrapper(tmp_path: Path
         writer(tmp_path / "worker.jsonl", "sync") as history,
     ):
         through_raw = sync_script(raw, checkpoints)
+        assert_meaningful(through_raw)
         assert sync_script(recorded(inner, history), checkpoints) == through_raw
         # What the wrapper stored, read without it.
         assert sync_reads(inner, through_raw[1]) == through_raw[-1]
     memory_raw, memory_inner = InMemorySaver(), InMemorySaver()
     with writer(tmp_path / "memory.jsonl", "sync-memory") as history:
         through_raw = sync_script(memory_raw, checkpoints)
+        assert_meaningful(through_raw)
         assert sync_script(recorded(memory_inner, history), checkpoints) == through_raw
         assert sync_reads(memory_inner, through_raw[1]) == through_raw[-1]
     kinds = {e.kind for e in read_history(tmp_path / "worker.jsonl").events}
