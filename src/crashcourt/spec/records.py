@@ -2,23 +2,39 @@
 
 Every record says where it came from (`provenance`: a harness run or a fixture) and carries the
 sha256 of its batch's manifest, so a release build can refuse fixtures and any result that does
-not belong to the batch it names.
+not belong to the batch it names. A fixture's batch id starts with DEMO-, and only a fixture's.
 
 A result records one outcome per invariant. The five verdicts are PASS, VIOLATION, EXPECTED,
-GAP, and INVALID. Two further outcomes are not verdicts and can never read as one:
+GAP, and INVALID. Two further outcomes are not verdicts:
 
 - VIOLATION_CANDIDATE: a guaranteeing clause forbids the anomaly, and it waits for a
   de-harnessed repro and a human review. Only then may it become VIOLATION.
 - NO_ANOMALY_UNSPECIFIED: no anomaly, and no clause covers the scenario. It is never PASS.
 
-The validator enforces what each outcome needs: a VIOLATION cites a clause, its evidence, a
-repro, and a review; a candidate cites a clause and evidence and has no review yet; PASS and
-EXPECTED cite a clause; GAP and NO_ANOMALY_UNSPECIFIED cite none; INVALID gives a reason.
+Outcomes are distinct values; compare them whole, never by prefix (VIOLATION_CANDIDATE starts
+with VIOLATION).
+
+What each outcome needs, enforced when a record is loaded:
+
+| Outcome | clause | evidence | repro | review |
+| --- | --- | --- | --- | --- |
+| PASS | required | optional | none | none |
+| EXPECTED | required | required | optional | none |
+| GAP | none | required | optional | none |
+| VIOLATION_CANDIDATE | required | required | optional | none |
+| VIOLATION | required | required | required | required |
+| NO_ANOMALY_UNSPECIFIED | none | optional | none | none |
+| INVALID | optional | optional | none | none |
+
+INVALID also needs a reason. EXPECTED, GAP, and both kinds of violation describe an anomaly, so
+they cite the evidence for it.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, get_args
+from collections import Counter
+from datetime import date
+from typing import Annotated, Literal, Self, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -39,23 +55,47 @@ Outcome = Literal[
 ]
 VERDICTS: tuple[str, ...] = get_args(Verdict)
 OUTCOMES: tuple[str, ...] = get_args(Outcome)
+FIXTURE_PREFIX = "DEMO-"
 
-Name = Annotated[str, StringConstraints(min_length=1)]
+#: An identifier: no whitespace anywhere.
+Id = Annotated[str, StringConstraints(pattern=r"^\S+$")]
+#: Free text: not empty, and no leading or trailing whitespace.
+Text = Annotated[str, StringConstraints(pattern=r"^\S(?:[\s\S]*\S)?$")]
 Count = Annotated[int, Field(ge=0, strict=True)]
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-IsoDate = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}$")]
+
+_ANOMALY = frozenset({"EXPECTED", "GAP", "VIOLATION_CANDIDATE", "VIOLATION"})
+_NEEDS_CLAUSE = frozenset({"PASS", "EXPECTED", "VIOLATION_CANDIDATE", "VIOLATION"})
+_NO_CLAUSE = frozenset({"GAP", "NO_ANOMALY_UNSPECIFIED"})
+
+
+def _check_provenance(batch: str, provenance: Provenance) -> None:
+    if (provenance == "fixture") != batch.startswith(FIXTURE_PREFIX):
+        raise ValueError(
+            f"batch {batch!r} with provenance {provenance}: a fixture's batch id starts with "
+            f"{FIXTURE_PREFIX}, and only a fixture's"
+        )
 
 
 class BatchRecord(BaseModel):
-    """batch.json: one batch, its provenance, and the manifest it ran under."""
+    """batch.json: one batch, its provenance, and the manifest it ran under.
+
+    A fixture's batch id starts with DEMO-, and only a fixture's. Rules this JSON Schema does not
+    express are enforced when a record is loaded; see crashcourt.spec.records.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     v: Version
-    batch: Name
+    batch: Id
     provenance: Provenance
     #: sha256 of the batch's manifest.json bytes.
     manifest_sha256: Sha256
+
+    @model_validator(mode="after")
+    def _provenance_matches_batch(self) -> Self:
+        _check_provenance(self.batch, self.provenance)
+        return self
 
 
 class Review(BaseModel):
@@ -63,61 +103,81 @@ class Review(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    reviewer: Name
-    reviewed: IsoDate
+    reviewer: Text
+    reviewed: date
 
 
 class InvariantResult(BaseModel):
-    """One invariant's outcome in one trial."""
+    """One invariant's outcome in one trial.
+
+    Each outcome needs some of clause, evidence, repro, review, and reason; the table is in
+    crashcourt.spec.records. Those rules are enforced when a record is loaded and are not
+    expressed in this JSON Schema.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    invariant: Name
+    invariant: Id
     outcome: Outcome
     #: The registered clause the outcome rests on, by id.
-    clause: Name | None = None
+    clause: Id | None = None
     #: References to the evidence: artifact paths, with a JSON pointer where one applies.
-    evidence: tuple[Name, ...] = ()
+    evidence: tuple[Text, ...] = ()
     #: The de-harnessed repro, by id or path.
-    repro: Name | None = None
+    repro: Text | None = None
     review: Review | None = None
     #: Why the trial is INVALID, or a note on any other outcome.
-    reason: str | None = None
+    reason: Text | None = None
 
     @model_validator(mode="after")
-    def _outcome_requirements(self) -> InvariantResult:
+    def _outcome_requirements(self) -> Self:
+        outcome = self.outcome
         problems: list[str] = []
-        needs_clause = {"PASS", "EXPECTED", "VIOLATION", "VIOLATION_CANDIDATE"}
-        if self.outcome in needs_clause and self.clause is None:
-            problems.append("a clause")
-        if self.outcome in {"GAP", "NO_ANOMALY_UNSPECIFIED"} and self.clause is not None:
-            problems.append("no clause (no clause covers the scenario)")
-        if self.outcome in {"VIOLATION", "VIOLATION_CANDIDATE"} and not self.evidence:
-            problems.append("evidence")
-        if self.outcome == "VIOLATION":
-            if self.repro is None:
-                problems.append("a de-harnessed repro")
-            if self.review is None:
-                problems.append("a review")
-        if self.outcome == "VIOLATION_CANDIDATE" and self.review is not None:
-            problems.append("no review yet (a reviewed candidate is a verdict)")
-        if self.outcome == "INVALID" and not self.reason:
-            problems.append("a reason")
+        if outcome in _NEEDS_CLAUSE and self.clause is None:
+            problems.append("needs a clause")
+        if outcome in _NO_CLAUSE and self.clause is not None:
+            problems.append("has no clause (no clause covers the scenario)")
+        if outcome in _ANOMALY and not self.evidence:
+            problems.append("needs evidence of the anomaly")
+        if outcome == "VIOLATION" and self.repro is None:
+            problems.append("needs a de-harnessed repro")
+        if outcome not in _ANOMALY and self.repro is not None:
+            problems.append("has no repro (there is no anomaly to reproduce)")
+        if outcome == "VIOLATION" and self.review is None:
+            problems.append("needs a review")
+        if outcome != "VIOLATION" and self.review is not None:
+            problems.append("has no review (a reviewed candidate is a VIOLATION)")
+        if outcome == "INVALID" and self.reason is None:
+            problems.append("needs a reason")
         if problems:
-            raise ValueError(f"{self.outcome} requires {', '.join(problems)}")
+            raise ValueError(f"{outcome} {'; '.join(problems)}")
         return self
 
 
 class ResultRecord(BaseModel):
-    """result.json: the outcomes of one trial."""
+    """result.json: the outcomes of one trial, one per invariant.
+
+    A fixture's batch id starts with DEMO-, and only a fixture's. What each outcome needs is
+    listed in crashcourt.spec.records. Rules this JSON Schema does not express are enforced when
+    a record is loaded.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     v: Version
-    batch: Name
-    cell: Name
+    batch: Id
+    cell: Id
     trial: Count
     provenance: Provenance
     #: sha256 of the manifest of the batch this result belongs to; must equal the batch's.
     manifest_sha256: Sha256
     results: tuple[InvariantResult, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _one_outcome_per_invariant(self) -> Self:
+        _check_provenance(self.batch, self.provenance)
+        counts = Counter(r.invariant for r in self.results)
+        repeated = sorted(name for name, count in counts.items() if count > 1)
+        if repeated:
+            raise ValueError(f"one outcome per invariant; repeated: {', '.join(repeated)}")
+        return self

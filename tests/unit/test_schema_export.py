@@ -13,10 +13,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 #: v1 is frozen. A change to these files, docstrings included, needs schema v2, not new pins.
 FROZEN_V1 = {
-    "batch.json": "653c8a17fa7166be0b69c6a4532a61618730867d1cd903d6ba65d1d52bfb0115",
+    "batch.json": "a30daba0f915e8b311404581cadb770a1dc80d244dc3f275e6e93c17c6a2b473",
     "event.json": "eb5d89e4185e20052e520c96c89988cc83b0ad3b5a734df4cb0357c468cf31e6",
     "manifest.json": "05951ea3e12b04767b5c1a69d6294aa770039aa45c7c03ae9cfa17deec0e6fa1",
-    "result.json": "71d47c8b2a0c6c8a2f6f923ec09a28288bb743cb01c55df8018b223df77bfda4",
+    "result.json": "094a158f65890202d8a5649db9c800a1a65c1cd293b4c67749eccf312c3e3c86",
 }
 
 

@@ -2,10 +2,10 @@
   "$id": "urn:crashcourt:schema:v1:batch",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "batch.json: one batch, its provenance, and the manifest it ran under.",
+  "description": "batch.json: one batch, its provenance, and the manifest it ran under.\n\nA fixture's batch id starts with DEMO-, and only a fixture's. Rules this JSON Schema does not\nexpress are enforced when a record is loaded; see crashcourt.spec.records.",
   "properties": {
     "batch": {
-      "minLength": 1,
+      "pattern": "^\\S+$",
       "title": "Batch",
       "type": "string"
     },

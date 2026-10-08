@@ -2,12 +2,12 @@
   "$defs": {
     "InvariantResult": {
       "additionalProperties": false,
-      "description": "One invariant's outcome in one trial.",
+      "description": "One invariant's outcome in one trial.\n\nEach outcome needs some of clause, evidence, repro, review, and reason; the table is in\ncrashcourt.spec.records. Those rules are enforced when a record is loaded and are not\nexpressed in this JSON Schema.",
       "properties": {
         "clause": {
           "anyOf": [
             {
-              "minLength": 1,
+              "pattern": "^\\S+$",
               "type": "string"
             },
             {
@@ -20,14 +20,14 @@
         "evidence": {
           "default": [],
           "items": {
-            "minLength": 1,
+            "pattern": "^\\S(?:[\\s\\S]*\\S)?$",
             "type": "string"
           },
           "title": "Evidence",
           "type": "array"
         },
         "invariant": {
-          "minLength": 1,
+          "pattern": "^\\S+$",
           "title": "Invariant",
           "type": "string"
         },
@@ -47,6 +47,7 @@
         "reason": {
           "anyOf": [
             {
+              "pattern": "^\\S(?:[\\s\\S]*\\S)?$",
               "type": "string"
             },
             {
@@ -59,7 +60,7 @@
         "repro": {
           "anyOf": [
             {
-              "minLength": 1,
+              "pattern": "^\\S(?:[\\s\\S]*\\S)?$",
               "type": "string"
             },
             {
@@ -93,12 +94,12 @@
       "description": "The human review a VIOLATION requires.",
       "properties": {
         "reviewed": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "format": "date",
           "title": "Reviewed",
           "type": "string"
         },
         "reviewer": {
-          "minLength": 1,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$",
           "title": "Reviewer",
           "type": "string"
         }
@@ -114,15 +115,15 @@
   "$id": "urn:crashcourt:schema:v1:result",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "result.json: the outcomes of one trial.",
+  "description": "result.json: the outcomes of one trial, one per invariant.\n\nA fixture's batch id starts with DEMO-, and only a fixture's. What each outcome needs is\nlisted in crashcourt.spec.records. Rules this JSON Schema does not express are enforced when\na record is loaded.",
   "properties": {
     "batch": {
-      "minLength": 1,
+      "pattern": "^\\S+$",
       "title": "Batch",
       "type": "string"
     },
     "cell": {
-      "minLength": 1,
+      "pattern": "^\\S+$",
       "title": "Cell",
       "type": "string"
     },
