@@ -29,29 +29,47 @@ def terminate_backends(
 ) -> int:
     """`pg_terminate_backend` every backend with this application_name; returns how many ended.
 
-    Each call waits up to `wait_ms` for its backend to exit, so a backend counts only once it is
-    gone (with no timeout, the function returns true as soon as the signal is sent). The client's
-    next statement fails with AdminShutdown (SQLSTATE 57P01). Ending no backend raises
-    FaultError: the fault did nothing, so the trial cannot count it as injected.
+    One scan signals every matching backend at once, so the fault is a single instant. Then it
+    waits up to `wait_ms` until every signalled backend has left pg_stat_activity (the function
+    itself returns true as soon as the signal is sent, not when the backend exits). The client's
+    next statement fails with AdminShutdown (SQLSTATE 57P01).
+
+    FaultError, so the trial cannot count the fault as injected: no backend matched or could be
+    signalled, or a signalled backend outlived the wait.
     """
     if not application_name:
         raise FaultError("terminate_backends needs an application_name to target")
+    if wait_ms <= 0:
+        raise FaultError("terminate_backends needs a positive wait_ms to see the backends end")
 
     def apply() -> Data:
         with psycopg.connect(admin_dsn, autocommit=True, connect_timeout=5) as conn:
-            # With a timeout, pg_terminate_backend returns true only once the backend has
-            # exited, and false when it is already gone or outlives the wait; count the trues.
-            row = conn.execute(
-                "SELECT count(*) FROM ("
-                " SELECT pg_terminate_backend(pid, %s) AS ended FROM pg_stat_activity"
-                " WHERE application_name = %s AND pid <> pg_backend_pid()"
-                ") AS t WHERE ended",
-                (wait_ms, application_name),
-            ).fetchone()
-        terminated = int(row[0]) if row else 0
-        if terminated == 0:
-            raise FaultError(f"no backend with application_name {application_name!r} ended")
-        return {"terminated": terminated}
+            rows = conn.execute(
+                "SELECT pid, pg_terminate_backend(pid) FROM pg_stat_activity"
+                " WHERE application_name = %s AND pid <> pg_backend_pid()",
+                (application_name,),
+            ).fetchall()
+            signalled = sorted(int(pid) for pid, sent in rows if sent)
+            if not signalled:
+                raise FaultError(
+                    f"no backend with application_name {application_name!r} could be signalled"
+                    f" ({len(rows)} matched)"
+                )
+            deadline = time.monotonic() + wait_ms / 1000
+            alive = signalled
+            while alive and time.monotonic() < deadline:
+                time.sleep(0.01)
+                alive = [
+                    int(pid)
+                    for (pid,) in conn.execute(
+                        "SELECT pid FROM pg_stat_activity WHERE pid = ANY(%s)", (alive,)
+                    ).fetchall()
+                ]
+        if alive:
+            raise FaultError(
+                f"backends {alive} of {signalled} were still running {wait_ms} ms after the signal"
+            )
+        return {"matched": len(rows), "terminated": len(signalled)}
 
     data: Data = {
         "fault": "terminate_backends",

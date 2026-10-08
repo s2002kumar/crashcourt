@@ -10,6 +10,7 @@ import sys
 import uuid
 from pathlib import Path
 
+import psycopg
 import pytest
 
 from crashcourt.faults import db, selftest
@@ -56,3 +57,23 @@ def test_terminating_no_backend_is_a_fault_error(tmp_path: Path) -> None:
         )
     heal = read_history(path).events[-1]
     assert (heal.kind, heal.status) == ("fault.heal", "fail")
+
+
+def test_every_matching_backend_is_terminated_at_once(tmp_path: Path) -> None:
+    dsn = os.environ.get("CRASHCOURT_PG_DSN", DEFAULT_PG_DSN)
+    app = f"victims-{uuid.uuid4().hex[:8]}"
+    victims = [psycopg.connect(dsn, autocommit=True, application_name=app) for _ in range(3)]
+    run = RunIdentity(batch="DEMO-faults", cell="DEMO-cell", trial=0, seed="s")
+    path = tmp_path / "orchestrator.jsonl"
+    try:
+        with HistoryWriter(path, run=run, proc="orchestrator") as history:
+            ended = db.terminate_backends(history, dsn, "terminate-3", application_name=app)
+        for victim in victims:
+            with pytest.raises(psycopg.errors.AdminShutdown):
+                victim.execute("SELECT 1")
+    finally:
+        for victim in victims:
+            victim.close()
+    heal = read_history(path).events[-1]
+    assert ended == 3
+    assert (heal.status, heal.data) == ("ok", {"matched": 3, "terminated": 3})
