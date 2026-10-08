@@ -9,6 +9,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.serde.types import RESUME
 from langgraph.checkpoint.sqlite import SqliteSaver
 
@@ -25,7 +26,21 @@ def lineage(path: Path, thread_id: str) -> dict[str, str | None]:
         )
 
 
+def stored_writes(path: Path, thread_id: str) -> dict[tuple[str, str], object]:
+    """Pending writes as the database file holds them, decoded with the default serializer."""
+    serde = JsonPlusSerializer()
+    with sqlite3.connect(path) as conn:
+        found = conn.execute(
+            "SELECT task_id, channel, type, value FROM writes WHERE thread_id = ?", (thread_id,)
+        ).fetchall()
+    return {
+        (task, channel): serde.loads_typed((kind, value)) for task, channel, kind, value in found
+    }
+
+
 def test_two_sqlite_savers_fork_one_parent(tmp_path: Path) -> None:
+    """The fork langgraph#8796 and the xbstack repro (https://github.com/xbstack/langgraph-same-thread-concurrent-writer-repro)
+    show on Postgres, recorded for SQLite: a replication on the contrast implementation."""
     path = tmp_path / "checkpoints.sqlite"
     thread = new_thread()
     root = checkpoint(0, {"n": 0}, {"n": "1"})
@@ -48,7 +63,7 @@ def test_two_sqlite_savers_fork_one_parent(tmp_path: Path) -> None:
 
 
 def test_sqlite_put_writes_conflict_rules(tmp_path: Path) -> None:
-    """INSERT OR IGNORE for regular writes, INSERT OR REPLACE for an all-special batch."""
+    """INSERT OR IGNORE for regular and mixed batches, INSERT OR REPLACE for an all-special one."""
     path = tmp_path / "checkpoints.sqlite"
     thread = new_thread()
     with SqliteSaver.from_conn_string(str(path)) as a, SqliteSaver.from_conn_string(str(path)) as b:
@@ -57,7 +72,12 @@ def test_sqlite_put_writes_conflict_rules(tmp_path: Path) -> None:
         b.put_writes(saved, [("out", "from b")], "task-regular")
         a.put_writes(saved, [(RESUME, "approve")], "task-special")
         b.put_writes(saved, [(RESUME, "reject")], "task-special")
-        stored = b.get_tuple(saved)
-    assert stored is not None
-    values = {(task, channel): value for task, channel, value in stored.pending_writes or []}
-    assert values == {("task-regular", "out"): "from a", ("task-special", RESUME): "reject"}
+        # A batch mixing regular and special channels is insert-only throughout, as on Postgres.
+        a.put_writes(saved, [("out", 1), (RESUME, "first")], "task-mixed")
+        b.put_writes(saved, [("out", 2), (RESUME, "second")], "task-mixed")
+    assert stored_writes(path, thread) == {
+        ("task-regular", "out"): "from a",
+        ("task-special", RESUME): "reject",
+        ("task-mixed", "out"): 1,
+        ("task-mixed", RESUME): "first",
+    }

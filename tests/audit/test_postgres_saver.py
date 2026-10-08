@@ -17,6 +17,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import ChannelVersions, Checkpoint, CheckpointMetadata
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.serde.types import RESUME
 
 from ._checkpoints import checkpoint, config, metadata, new_thread
@@ -77,8 +78,27 @@ def lineage(dsn: str, thread_id: str) -> dict[str, str | None]:
     )
 
 
+def stored_writes(dsn: str, thread_id: str) -> dict[tuple[str, str], object]:
+    """Pending writes as the database holds them, decoded with the savers' default serializer."""
+    serde = JsonPlusSerializer()
+    found = rows(
+        dsn,
+        "SELECT task_id, channel, type, blob FROM checkpoint_writes WHERE thread_id = %s",
+        thread_id,
+    )
+    return {
+        (task, channel): serde.loads_typed((kind, bytes(blob)))
+        for task, channel, kind, blob in found
+    }
+
+
 def test_two_sync_savers_fork_one_parent(dsn: str) -> None:
-    """put never checks that its parent is still the head, so two writers fork the thread."""
+    """put never checks that its parent is still the head, so two writers fork the thread.
+
+    This replicates, at the saver level, the fork that langgraph#8796 and the xbstack two-process
+    repro show end to end; it is a replication, not a new finding. xbstack's repro:
+    https://github.com/xbstack/langgraph-same-thread-concurrent-writer-repro
+    """
     thread = new_thread()
     root = checkpoint(0, {"n": 0}, {"n": "1"})
     with PostgresSaver.from_conn_string(dsn) as a, PostgresSaver.from_conn_string(dsn) as b:
@@ -101,6 +121,7 @@ def test_two_sync_savers_fork_one_parent(dsn: str) -> None:
 
 
 def test_two_async_savers_fork_one_parent(dsn: str) -> None:
+    """The same fork through AsyncPostgresSaver (replicating langgraph#8796, as above)."""
     thread = new_thread()
     root = checkpoint(0, {"n": 0}, {"n": "1"})
     child_a = checkpoint(1, {"n": 1}, {"n": "2"})
@@ -169,11 +190,15 @@ def test_put_writes_blobs_and_checkpoint_in_one_transaction(dsn: str, mode: str)
 
 @pytest.mark.parametrize("mode", PUTTERS)
 def test_rejected_checkpoint_row_rolls_back_its_blobs(dsn: str, mode: str) -> None:
-    """Postgres rejects a NUL character in JSONB; the blob rows sent before it roll back too."""
+    """Postgres rejects a NUL character in JSONB; the blob rows sent before it roll back too.
+
+    The test expects exactly that rejection (SQLSTATE 22P05), so a dropped connection or any other
+    error cannot pass it.
+    """
     thread = new_thread()
     versions: ChannelVersions = {"items": "1", "note": "1"}
     cp = checkpoint(0, {"items": [1, 2, 3], "note": "nul\x00byte"}, versions)
-    with pytest.raises(psycopg.Error):
+    with pytest.raises(psycopg.errors.UntranslatableCharacter):
         PUTTERS[mode](dsn, config(thread), cp, metadata(0), versions)
     assert rows(dsn, "SELECT count(*) FROM checkpoint_blobs WHERE thread_id = %s", thread) == [(0,)]
     assert rows(dsn, "SELECT count(*) FROM checkpoints WHERE thread_id = %s", thread) == [(0,)]
@@ -191,10 +216,7 @@ def test_put_writes_conflict_rules(dsn: str) -> None:
         # A batch mixing regular and special channels uses the insert-only statement throughout.
         a.put_writes(saved, [("out", 1), (RESUME, "first")], "task-mixed")
         b.put_writes(saved, [("out", 2), (RESUME, "second")], "task-mixed")
-        stored = a.get_tuple(saved)
-    assert stored is not None
-    values = {(task, channel): value for task, channel, value in stored.pending_writes or []}
-    assert values == {
+    assert stored_writes(dsn, thread) == {
         ("task-regular", "out"): "from a",
         ("task-special", RESUME): "reject",
         ("task-mixed", "out"): 1,
