@@ -130,6 +130,8 @@ class _Insert:
         return self
 
     def done_within(self, timeout: float) -> bool:
+        if self.thread.ident is None:  # never started
+            return True
         self.thread.join(timeout)
         return not self.thread.is_alive()
 
@@ -138,6 +140,13 @@ class _Insert:
         with contextlib.suppress(Exception):  # the connection may already be broken
             self.conn.close()
         return self.outcome if done else None
+
+
+def _abandon(targets: Targets, insert: _Insert) -> None:
+    """After a check raised: remove every toxic, so a held or dropped INSERT ends, then close."""
+    with contextlib.suppress(Exception):
+        targets.toxiproxy.reset()
+    insert.finish()
 
 
 def _network_check(
@@ -153,17 +162,17 @@ def _network_check(
     insert = _Insert(targets.proxied_dsn)
     try:
         active = fault()
+        insert.start()
+        if expect_commit_while_waiting:
+            committed_early = _wait_until(lambda: _committed(targets.direct_dsn, insert.key))
+        else:
+            time.sleep(1.0)
+            committed_early = _committed(targets.direct_dsn, insert.key)
+        blocked = insert.thread.is_alive()
+        active.heal()
     except BaseException:
-        insert.conn.close()
+        _abandon(targets, insert)
         raise
-    insert.start()
-    if expect_commit_while_waiting:
-        committed_early = _wait_until(lambda: _committed(targets.direct_dsn, insert.key))
-    else:
-        time.sleep(1.0)
-        committed_early = _committed(targets.direct_dsn, insert.key)
-    blocked = insert.thread.is_alive()
-    active.heal()
     outcome = insert.finish()
     committed = _committed(targets.direct_dsn, insert.key)
     client_ok = outcome == "ok"
@@ -246,31 +255,35 @@ def _hold_guard_check(targets: Targets, history: HistoryWriter, trial: int) -> C
     """
     targets.toxiproxy.reset()
     insert = _Insert(targets.proxied_dsn)
-    targets.toxiproxy.add_toxic(
-        POSTGRES_PROXY, Toxic(HOLD_TOXIC, "latency", "downstream", {"latency": HOLD_MS})
-    )
-    insert.start()
-    committed = _wait_until(lambda: _committed(targets.direct_dsn, insert.key))
-    held = insert.thread.is_alive()
-    refused = False
     try:
-        toxic_fault(
-            history,
-            targets.toxiproxy,
-            f"guard-{trial}",
-            "latency",
-            Toxic("guard", "latency", "upstream", {"latency": 1}),
-            POSTGRES_PROXY,
+        targets.toxiproxy.add_toxic(
+            POSTGRES_PROXY, Toxic(HOLD_TOXIC, "latency", "downstream", {"latency": HOLD_MS})
         )
-    except ToxiproxyError:
-        refused = True
-    targets.toxiproxy.add_toxic(
-        POSTGRES_PROXY, Toxic("raw-up", "latency", "upstream", {"latency": 1})
-    )
-    upstream_add_released = insert.done_within(1.0)
-    targets.toxiproxy.add_toxic(
-        POSTGRES_PROXY, Toxic("raw-down", "latency", "downstream", {"latency": 1})
-    )
+        insert.start()
+        committed = _wait_until(lambda: _committed(targets.direct_dsn, insert.key))
+        held = insert.thread.is_alive()
+        refused = False
+        try:
+            toxic_fault(
+                history,
+                targets.toxiproxy,
+                f"guard-{trial}",
+                "latency",
+                Toxic("guard", "latency", "upstream", {"latency": 1}),
+                POSTGRES_PROXY,
+            )
+        except ToxiproxyError:
+            refused = True
+        targets.toxiproxy.add_toxic(
+            POSTGRES_PROXY, Toxic("raw-up", "latency", "upstream", {"latency": 1})
+        )
+        upstream_add_released = insert.done_within(1.0)
+        targets.toxiproxy.add_toxic(
+            POSTGRES_PROXY, Toxic("raw-down", "latency", "downstream", {"latency": 1})
+        )
+    except BaseException:
+        _abandon(targets, insert)
+        raise
     downstream_add_released = insert.finish(timeout=2.0) == "ok"
     targets.toxiproxy.reset()
     ok = committed and held and refused and not upstream_add_released and downstream_add_released
@@ -324,9 +337,9 @@ def _restart_check(targets: Targets, history: HistoryWriter, trial: int) -> Chec
     finally:
         held.close()
     survived = _committed(targets.direct_dsn, key)
-    # On Linux, fast shutdown ends open connections with 57P01. Through Docker Desktop's
-    # networking on Windows the client sees a socket abort instead.
-    ended_cleanly = sys.platform == "win32" or "57P01" in outcome
+    # On Linux, fast shutdown ends open connections with 57P01. Through Docker Desktop's VM
+    # networking (Windows, macOS) the client can see a socket abort instead.
+    ended_cleanly = not sys.platform.startswith("linux") or "57P01" in outcome
     ok = survived and outcome != "ok" and ended_cleanly
     return Check(
         "restart_database",
@@ -512,6 +525,8 @@ def prepare(direct_dsn: str, proxied_dsn: str, toxiproxy_url: str, root: Path) -
     require_local_dsn(proxied_dsn)
     targets = Targets(direct_dsn, proxied_dsn, ToxiproxyClient(toxiproxy_url), root)
     ensure_postgres_proxy(targets.toxiproxy)
+    # A run killed mid-check can leave a toxic behind (a 24-hour hold, say); clear it first.
+    targets.toxiproxy.reset()
     with psycopg.connect(proxied_dsn, autocommit=True, connect_timeout=5) as conn:
         require_local_connection(conn)
     with psycopg.connect(direct_dsn, autocommit=True) as conn:
