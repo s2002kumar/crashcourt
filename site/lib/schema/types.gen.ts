@@ -8,6 +8,10 @@ export interface BatchRecord {
   batch: string;
   manifest_sha256: string;
   provenance: "run" | "fixture";
+  /**
+   * Content hash of the validated scenario the batch ran: sha256 of the frozen scenario model's canonical JSON (crashcourt.spec.content), not of the YAML bytes. Equivalent YAML hashes the same; any change of meaning changes it. T-07's loader produces it; a fixture carries the hash of its demonstration scenario.
+   */
+  scenario_sha256: string;
   v: 1;
 }
 
@@ -115,6 +119,14 @@ export interface Manifest {
   python_version: string;
   runner: string;
   schema_version?: 1;
+  /**
+   * The effect sink's monotonic clock minus this host's, measured by doctor at the midpoint of a /health request; null when no sink was checked. Recorded, never used to order events; a canonical benchmark batch refuses one beyond its threshold.
+   */
+  sink_clock_offset_ns?: number | null;
+  /**
+   * sha256 of the locked project specification the code was built against, from spec-provenance.json. Provenance only: the specification is private, and the hash identifies it without making it public or a run reproducible from it.
+   */
+  spec_sha256: string;
   toxiproxy_version: string;
 }
 

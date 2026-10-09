@@ -19,20 +19,12 @@ const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const SAMPLE = path.join(REPO, "research/evidence/t-04/sample");
 
 const historyFiles = readdirSync(SAMPLE).filter((f) => f.endsWith(".jsonl"));
-// T-01's reference manifest was recorded before the clause registry existed, so it lacks
-// clause_registry_sha256, which v1 requires; it stays as the record of T-01's environment.
-const PRE_V1 = new Set(["t-01"]);
-const manifestFiles = readdirSync(path.join(REPO, "research/evidence"))
-  .filter((d) => !PRE_V1.has(d))
-  .map((d) => path.join(REPO, "research/evidence", d, "manifest-local.json"))
-  .filter((f) => {
-    try {
-      readFileSync(f);
-      return true;
-    } catch {
-      return false;
-    }
-  });
+// The reference manifest CI compares against is the one recorded under the current v1; earlier
+// tasks' references predate fields v1 requires and stay as records of their environments.
+const workflow = readFileSync(path.join(REPO, ".github/workflows/ci.yml"), "utf8");
+const compared = /--compare\s+(\S+)/.exec(workflow)?.[1];
+if (!compared) throw new Error("ci.yml names no --compare reference");
+const manifestFiles = [path.join(REPO, compared)];
 
 const firstLine = readFileSync(path.join(SAMPLE, "merged.jsonl"), "utf8").split("\n")[0]!;
 const goodEvent = JSON.parse(firstLine) as Record<string, unknown>;
@@ -135,8 +127,7 @@ describe("events", () => {
 });
 
 describe("manifests", () => {
-  test("every committed reference manifest validates", () => {
-    assert.ok(manifestFiles.length >= 1, "at least the T-02 reference");
+  test("the reference manifest CI compares against validates", () => {
     for (const f of manifestFiles) parseManifest(readFileSync(f, "utf8"), f);
   });
 
@@ -173,7 +164,14 @@ describe("manifests", () => {
 });
 
 const DIGEST = "a".repeat(64);
-const goodBatch = { v: 1, batch: "DEMO-b", provenance: "fixture", manifest_sha256: DIGEST };
+const SCENARIO = "b".repeat(64);
+const goodBatch = {
+  v: 1,
+  batch: "DEMO-b",
+  provenance: "fixture",
+  manifest_sha256: DIGEST,
+  scenario_sha256: SCENARIO,
+};
 const goodResult = {
   v: 1,
   batch: "DEMO-b",

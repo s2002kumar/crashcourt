@@ -16,9 +16,16 @@ export const batchSchema: Record<string, unknown> = {
     batch: { pattern: "^\\S+$", title: "Batch", type: "string" },
     manifest_sha256: { pattern: "^[0-9a-f]{64}$", title: "Manifest Sha256", type: "string" },
     provenance: { enum: ["run", "fixture"], title: "Provenance", type: "string" },
+    scenario_sha256: {
+      description:
+        "Content hash of the validated scenario the batch ran: sha256 of the frozen scenario model's canonical JSON (crashcourt.spec.content), not of the YAML bytes. Equivalent YAML hashes the same; any change of meaning changes it. T-07's loader produces it; a fixture carries the hash of its demonstration scenario.",
+      pattern: "^[0-9a-f]{64}$",
+      title: "Scenario Sha256",
+      type: "string",
+    },
     v: { const: 1, title: "V", type: "integer" },
   },
-  required: ["v", "batch", "provenance", "manifest_sha256"],
+  required: ["v", "batch", "provenance", "manifest_sha256", "scenario_sha256"],
   then: { properties: { batch: { pattern: "^DEMO-", type: "string" } }, type: "object" },
   title: "BatchRecord",
   type: "object",
@@ -169,6 +176,19 @@ export const manifestSchema: Record<string, unknown> = {
     python_version: { title: "Python Version", type: "string" },
     runner: { title: "Runner", type: "string" },
     schema_version: { const: 1, default: 1, title: "Schema Version", type: "integer" },
+    sink_clock_offset_ns: {
+      anyOf: [{ type: "integer" }, { type: "null" }],
+      default: null,
+      description:
+        "The effect sink's monotonic clock minus this host's, measured by doctor at the midpoint of a /health request; null when no sink was checked. Recorded, never used to order events; a canonical benchmark batch refuses one beyond its threshold.",
+      title: "Sink Clock Offset Ns",
+    },
+    spec_sha256: {
+      description:
+        "sha256 of the locked project specification the code was built against, from spec-provenance.json. Provenance only: the specification is private, and the hash identifies it without making it public or a run reproducible from it.",
+      title: "Spec Sha256",
+      type: "string",
+    },
     toxiproxy_version: { title: "Toxiproxy Version", type: "string" },
   },
   required: [
@@ -183,6 +203,7 @@ export const manifestSchema: Record<string, unknown> = {
     "runner",
     "lockfile_sha256",
     "clause_registry_sha256",
+    "spec_sha256",
     "packages",
     "psycopg_impl",
     "psycopg_wheel",
