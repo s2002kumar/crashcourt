@@ -39,6 +39,13 @@
 
 Decision: PASS. GO: the target is sufficiently evidenced and technically interesting to continue studying.
 
+- The storage-level fork is reproduced: tests/audit/ shows two saver instances writing children of one parent on
+  Postgres, with the sync, sync-with-pipeline, and async savers. That replicates #8796 and the xbstack repro; it is a
+  control, not a new finding.
+- The six ambiguous-commit windows (AW1 to AW6) are located in code at the pinned tags, so the lost-acknowledgment,
+  connection-reset, and database-restart cells have real targets. That is why experimentation continues.
+- The functional-API ordering under `sync` (reading R1) remains a private hypothesis to measure, not a public finding.
+
 This is not a novelty claim, and it is not permission to report anything upstream.
 
 Conditions:
