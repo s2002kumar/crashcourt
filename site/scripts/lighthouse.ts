@@ -1,6 +1,8 @@
 // Runs Lighthouse (default mobile profile, simulated throttling) against the static export and asserts
-// the spec's targets: performance at least 90 on /, and accessibility 100 on every route. The overview
-// runs three times and is judged on its median performance score. Reports go to .lighthouse/.
+// the targets: performance at least 90 on /, and accessibility 100 on every exported route, including the
+// hidden /compare stub. The overview runs three times and is judged on its median performance score. The
+// browser is the Chromium that `npx playwright install chromium` pinned for @playwright/test, not whatever
+// Chrome the machine has. Reports go to .lighthouse/.
 //
 //   npm run build && npm run lighthouse
 
@@ -8,6 +10,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { chromium } from "@playwright/test";
 import * as chromeLauncher from "chrome-launcher";
 import lighthouse from "lighthouse";
 
@@ -28,6 +31,7 @@ const TARGETS: readonly {
   { page: "/trials/none/none/", runs: 1, accessibility: 1 },
   { page: "/lineage/none/none/", runs: 1, accessibility: 1 },
   { page: "/findings/none/", runs: 1, accessibility: 1 },
+  { page: "/compare/none/", runs: 1, accessibility: 1 },
   { page: "/methodology/", runs: 1, accessibility: 1 },
 ];
 
@@ -35,7 +39,10 @@ const median = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floo
 
 mkdirSync(REPORTS, { recursive: true });
 const server = await serve(PORT);
-const chrome = await chromeLauncher.launch({ chromeFlags: ["--headless=new", "--no-sandbox"] });
+const chrome = await chromeLauncher.launch({
+  chromePath: chromium.executablePath(),
+  chromeFlags: ["--headless=new", "--no-sandbox"],
+});
 const failures: string[] = [];
 const summary: Record<string, unknown>[] = [];
 try {
