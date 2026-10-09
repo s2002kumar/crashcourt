@@ -1,4 +1,4 @@
-// The seven experiences of the evidence explorer (spec section 17), in the order a reader meets them.
+// The seven experiences of the evidence explorer in the order a reader meets them.
 
 export interface Experience {
   readonly name: string;

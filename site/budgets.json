@@ -1,5 +1,5 @@
 {
-  "rule": "Each limit is the measured size plus 5%, rounded up to a whole kB, and never above the spec's target where one exists (/ initial 150 kB; lineage total 300 kB). Change a limit only with a new measurement recorded in BUDGETS.md.",
+  "rule": "Each limit is the measured size plus 5%, rounded up to a whole kB, and never above the target where one exists (/ initial 150 kB; lineage total 300 kB). Change a limit only with a new measurement recorded in BUDGETS.md.",
   "unit": "kB of gzip (level 9, per file, summed; 1 kB = 1000 bytes)",
   "routes": {
     "/": { "initial": 146 },

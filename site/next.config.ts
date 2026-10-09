@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-// A static export: no server, no API routes, no runtime data fetching (spec section 17, rule 1).
+// A static export: no server, no API routes, no runtime data fetching.
 const config: NextConfig = {
   output: "export",
   trailingSlash: true,

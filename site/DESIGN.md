@@ -115,9 +115,10 @@ Drawn as SVG (`components/glyphs.tsx`) so they are identical on every platform, 
 - A skip link is the first stop on every page; every focusable element shows a 2px ring (tested on every
   route by tabbing through it).
 - `?` opens a list of keys; pages with timelines and grids will add their own.
-- Every visualization will have a synchronized table or text equivalent (spec section 17, rule 4); the
+- Every visualization will have a synchronized table or text equivalent; the
   timeline frame already names its lanes.
-- axe reports no violations at any impact on every route in both themes; Lighthouse accessibility is 100.
+- axe reports no serious or critical violations on every route in both themes, which is what CI enforces;
+  Lighthouse accessibility is 100 on every exported route.
 
 ## Never
 

@@ -5,7 +5,7 @@
 //                                                 route totals plus per-library attribution
 //
 // Per route:
-//   initial  the JavaScript the exported HTML loads (what the spec's "initial JavaScript" means)
+//   initial  the JavaScript the exported HTML loads (what the budgets call "initial JavaScript")
 //   total    initial plus the route's own lazy chunks (React Flow on the lineage route)
 //   loaded   every script the browser fetched once the page settled; this also counts chunks of
 //            linked routes that the router fetches ahead of a click, which total leaves out
@@ -78,7 +78,7 @@ const LIBRARIES: readonly (readonly string[])[] = [
   ["@xyflow/react"],
 ];
 
-// Spec section 17 targets, in kB.
+// The budget targets, in kB.
 const SPEC_TARGETS: Record<string, number> = {
   "/ initial": 150,
   "/lineage/[trial]/[thread] total": 300,
@@ -302,7 +302,7 @@ async function main(): Promise<void> {
     console.log(`${pattern.padEnd(28)}${cols}`);
   }
 
-  // The rule in budgets.json: measured plus 5%, rounded up to a whole kB, capped at the spec's target.
+  // The rule in budgets.json: measured plus 5%, rounded up to a whole kB, capped at the target.
   const budgets = JSON.parse(readFileSync(path.join(SITE, "budgets.json"), "utf8")) as {
     routes: Record<string, Record<string, number>>;
   };

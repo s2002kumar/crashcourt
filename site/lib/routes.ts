@@ -1,5 +1,6 @@
-// Static export needs at least one concrete page per dynamic route. Until artifacts exist for a route,
-// it renders a single empty-state page at this segment instead of inventing ids.
+// Static export needs at least one concrete page per dynamic route. The pages pass no ids yet, so each
+// dynamic route exports a single empty-state page at this segment instead of inventing ids; F-02 passes
+// the ids it reads from validated artifacts.
 
 export const EMPTY_SEGMENT = "none";
 
