@@ -234,6 +234,13 @@ without waiting, and the first wait is after the first tick and `after_tick()` (
 These are readings, backed by one in-process experiment against `InMemorySaver`; they are to be measured with the
 pinned savers, not findings.
 
+**Reading R1, kept for its own experiment cell.** A functional-API `@entrypoint` run with `durability="sync"` executes
+user code before its input checkpoint is known to be durable. The cell to measure it: an entrypoint whose first
+statement records an effect in the ledger, with a failpoint that kills the worker after that effect and before the
+input checkpoint's put commits; afterwards, compare the ledger with the stored checkpoints and see what a resume does.
+Until T-10's frozen checker and a standalone reproduction say otherwise, R1 is a hypothesis, not a bug or a
+violation, and it is not reported upstream.
+
 A finished node's writes are durable only when their background `put_writes` commits, and nothing waits for that
 before the next tick. `invoke` returns only after the executor exits, which waits for every background write
 (pregel/_executor.py:106-107), but streamed chunks arrive before that. #8039 reports this ordering under `sync`:
@@ -309,5 +316,4 @@ Gate question: are the transaction boundaries and ambiguous-commit windows locat
 - Nothing found removes the network-fault cells. AW1 to AW3 are the targets for the lost-acknowledgment and
   connection-reset faults.
 
-**Evidence decision: supports PASS.** The gate note is mine to write (research/gates/g0-note.md); G0 has not passed
-until it exists.
+**G0: GO** (research/gates/g0-note.md, 2026-10-09). Not a novelty claim; reading R1 stays private until measured.
