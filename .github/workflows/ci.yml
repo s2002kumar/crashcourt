@@ -67,7 +67,7 @@ jobs:
             fault-selftest-ci.md
             runs/
   site:
-    # Tier 1 for the evidence explorer (spec sections 17 and 20): schema sync, the verdict guard,
+    # Tier 1 for the evidence explorer: schema sync, the verdict guard,
     # types, unit tests, the static export, budgets, browser tests with axe, and Lighthouse.
     runs-on: ubuntu-24.04
     timeout-minutes: 25

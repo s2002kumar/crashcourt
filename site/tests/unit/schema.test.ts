@@ -256,6 +256,7 @@ describe("records", () => {
 
   test("a date names a real calendar day", () => {
     assert.ok(isDate("2024-02-29"));
+    assert.ok(isDate("0050-01-01"), "years below 100 are real years, as Pydantic writes them");
     for (const bad of ["2023-02-29", "2026-13-01", "2026-1-01", "26-01-01", "2026-01-01T00:00"]) {
       assert.equal(isDate(bad), false, bad);
     }

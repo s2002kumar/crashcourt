@@ -14,26 +14,24 @@ import { chromium } from "@playwright/test";
 import * as chromeLauncher from "chrome-launcher";
 import lighthouse from "lighthouse";
 
+import { ROUTES } from "../tests/e2e/routes.ts";
 import { serve } from "./serve.ts";
 
 const SITE = fileURLToPath(new URL("..", import.meta.url));
 const REPORTS = path.join(SITE, ".lighthouse");
 const PORT = 4176;
 
+/** Every route the browser tests visit (one list, so neither can miss a page the other covers). */
 const TARGETS: readonly {
   page: string;
   runs: number;
   performance?: number;
   accessibility: number;
-}[] = [
-  { page: "/", runs: 3, performance: 0.9, accessibility: 1 },
-  { page: "/matrix/", runs: 1, accessibility: 1 },
-  { page: "/trials/none/none/", runs: 1, accessibility: 1 },
-  { page: "/lineage/none/none/", runs: 1, accessibility: 1 },
-  { page: "/findings/none/", runs: 1, accessibility: 1 },
-  { page: "/compare/none/", runs: 1, accessibility: 1 },
-  { page: "/methodology/", runs: 1, accessibility: 1 },
-];
+}[] = ROUTES.map(({ path: page }) =>
+  page === "/"
+    ? { page, runs: 3, performance: 0.9, accessibility: 1 }
+    : { page, runs: 1, accessibility: 1 },
+);
 
 const median = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
 

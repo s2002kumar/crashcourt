@@ -1,7 +1,7 @@
 // Fixes the router's segment prefetch files after a static export on Windows.
 //
-// Filed upstream as vercel/next.js#85374 (the Windows report is vercel/next.js#92339); the fix is open
-// in vercel/next.js#99058. Delete this script once a Next.js release carries the fix.
+// Filed upstream as vercel/next.js#85374 (vercel/next.js#92339 was closed as its duplicate); the fix
+// is open in vercel/next.js#99058. Delete this script once a Next.js release carries the fix.
 //
 // Next 16.3.6 names each prefetch file from a path.relative() result and replaces only "/" with "."
 // (export/index.js, collectSegmentPaths). On Windows the path uses "\", so `matrix\__PAGE__` is written

@@ -31,7 +31,8 @@ export function isDate(text: string): boolean {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
   if (!m) return false;
   const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const parsed = new Date(Date.UTC(year, month - 1, day));
+  const parsed = new Date(0);
+  parsed.setUTCFullYear(year, month - 1, day); // Date.UTC would read years 0-99 as 1900-1999
   return (
     parsed.getUTCFullYear() === year &&
     parsed.getUTCMonth() === month - 1 &&

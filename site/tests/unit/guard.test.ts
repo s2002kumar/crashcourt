@@ -28,6 +28,11 @@ describe("guard-verdicts", () => {
     ["an import of the type", `import type { Verdict } from "@/lib/tokens";`],
     ["indexing into the list", "const v = VERDICTS[3];"],
     ["a JSON value", `{ "outcome": ${q("VIOLATION")} }`],
+    ["a candidate promoted", `if (r.outcome === ${q("VIOLATION_CANDIDATE")}) return badge;`],
+    ["no anomaly read as a pass", `r.outcome === ${q("NO_ANOMALY_UNSPECIFIED", "'")} ? a : b`],
+    ["indexing into the legend", "const v = verdictLegend()[3]!.verdict;"],
+    ["a type picked from the props", 'let v: VerdictProp["verdict"];'],
+    ["a CSS selector", `[data-outcome=${q("INVALID")}] { display: none; }`],
   ];
   for (const [what, source] of planted) {
     test(`catches ${what}`, () => {
@@ -53,8 +58,10 @@ describe("guard-verdicts", () => {
     test(`allows: ${source}`, () => assert.deepEqual(scan(source, "app/page.tsx"), []));
   }
 
-  test("cannot see a name built at run time, which is why review backs it up", () => {
+  test("cannot see a name built at run time or picked by its token, which is why review backs it up", () => {
     assert.deepEqual(scan(`const v = "VIOL" + "ATION";`, "app/page.tsx"), []);
+    const byGlyph = `verdictLegend().find(({ token }) => token.glyph === "cross")`;
+    assert.deepEqual(scan(byGlyph, "app/page.tsx"), []);
   });
 
   test("scans every source file, .json included; skips tests, generated schemas, fixtures", () => {
@@ -65,7 +72,11 @@ describe("guard-verdicts", () => {
       "lib/x.cts": "let v: Verdict;",
       "tests/unit/x.test.ts": `const v = ${q("GAP")};`,
       "lib/schema/types.gen.ts": `export type Outcome = ${q("PASS")} | ${q("GAP")};`,
+      "lib/schema/outcomes.gen.ts": `export const PASSING = ${q("PASS")};`,
       "fixtures/b/result.json": `{ "outcome": ${q("PASS")} }`,
+      "components/fixtures/demo.tsx": `const v = ${q("VIOLATION")};`,
+      "app/tests/page.tsx": `const v = ${q("GAP")};`,
+      "styles/x.css": `[data-v=${q("PASS")}] {}`,
       "lib/tokens.ts": `const VERDICTS = [${q("PASS")}] as const;`,
     };
     try {
@@ -74,7 +85,15 @@ describe("guard-verdicts", () => {
         writeFileSync(path.join(site, name), content);
       }
       const flagged = [...new Set(scanSite(site).map((f) => f.file))].sort();
-      assert.deepEqual(flagged, ["app/data.json", "lib/x.cts", "scripts/tool.mts"]);
+      assert.deepEqual(flagged, [
+        "app/data.json",
+        "app/tests/page.tsx",
+        "components/fixtures/demo.tsx",
+        "lib/schema/outcomes.gen.ts",
+        "lib/x.cts",
+        "scripts/tool.mts",
+        "styles/x.css",
+      ]);
     } finally {
       rmSync(site, { recursive: true });
     }

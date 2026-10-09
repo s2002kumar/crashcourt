@@ -1,10 +1,12 @@
 // Presentation tokens for verdicts, actors, and faults: glyph, label, and CSS color variable.
 //
-// This is the only site file that spells a verdict name, holds the list of verdicts, or names the
-// Verdict type. Other code gets a verdict from a validated artifact and renders it through
-// `verdictToken`, or lists the vocabulary through `verdictLegend`. scripts/guard-verdicts.ts fails the
-// build when a quoted verdict name, the list, or the type appears anywhere else. It reads text, so it
-// cannot see a name built at run time; it is a tripwire that review backs up, not a proof.
+// Apart from the schema modules generated from schemas/v1, this is the only site source file that
+// spells a verdict name, holds the list of verdicts, or names the Verdict type. Other code gets a verdict
+// from a validated artifact and renders it through `verdictToken`, or lists the vocabulary through
+// `verdictLegend`. scripts/guard-verdicts.ts fails the build on any of those elsewhere; its header says
+// what it cannot see. Tokens for the two outcomes that are not verdicts (a violation candidate, and no
+// anomaly with no clause) come with the pages that render results (F-02), so neither can borrow a
+// verdict's look.
 
 const VERDICTS = ["PASS", "EXPECTED", "GAP", "VIOLATION", "INVALID"] as const;
 export type Verdict = (typeof VERDICTS)[number];
