@@ -1,8 +1,8 @@
 """Control C4: run the official suite, and a fixed sync script, on a raw and a wrapped saver.
 
 The wrapped saver records the way a trial does: a history writer and an empty failpoint registry.
-`langgraph-checkpoint-conformance` is a dev dependency, so this helper lives with the tests; the
-T-06 evidence script imports it too.
+`langgraph-checkpoint-conformance` is installed with the harness, since its version is in every
+manifest; this helper lives with the tests, and the T-06 evidence script imports it too.
 """
 
 from __future__ import annotations
