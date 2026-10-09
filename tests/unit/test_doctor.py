@@ -242,9 +242,13 @@ def test_unreachable_sink_fails() -> None:
     ("health", "problem"),
     [
         ({**GOOD_SINK, "test_hooks": True}, "a test hook is armed"),
-        ({**GOOD_SINK, "ledger_version": 2}, "ledger version 2, expected 1"),
+        ({**GOOD_SINK, "ledger_version": 1}, "ledger version 1, expected 2"),
         ({**GOOD_SINK, "status": "degraded"}, "status degraded"),
         ({**GOOD_SINK, "source_sha256": "a" * 64}, "serving source aaaaaaaaaaaa, the checkout is"),
+        (
+            {**GOOD_SINK, "resume_error": "written by ledger version 1"},
+            "could not resume its open trial",
+        ),
         ({k: v for k, v in GOOD_SINK.items() if k != "source_sha256"}, "serving source None"),
     ],
 )

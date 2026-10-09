@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from crashcourt.doctor import DriverInfo
+from crashcourt.history.writer import host_monotonic_ns
 from crashcourt.manifest import parse_uv_lock, sha256_file
 from crashcourt.sink.source import source_sha256
 
@@ -206,16 +207,24 @@ class SystemProbes:
         return str(data)
 
     def sink_health(self) -> Mapping[str, object]:
+        """/health, plus `clock_offset_ns`: the sink's monotonic clock minus this host's, taken at
+        the midpoint of the request. It is near zero only when both share a kernel."""
         url = self.sink_url.rstrip("/") + "/health"
+        before = host_monotonic_ns()
         with urllib.request.urlopen(url, timeout=5) as response:
             data: Any = json.loads(response.read().decode())
+        after = host_monotonic_ns()
         if not isinstance(data, dict):
             raise ValueError(f"unexpected /health body: {data!r}")
-        return cast("dict[str, object]", data)
+        health = cast("dict[str, object]", data)
+        sink_clock = health.get("mono_ns")
+        if isinstance(sink_clock, int):
+            health["clock_offset_ns"] = sink_clock - (before + after) // 2
+        return health
 
     def sink_source_sha256(self) -> str:
         """The source the sink should be serving: this checkout's crashcourt package."""
-        return source_sha256(self.root / "src" / "crashcourt")
+        return source_sha256(self.root, self.root / "src" / "crashcourt")
 
     def harness_base_images(self) -> Sequence[str] | None:
         path = self.root / "Dockerfile.harness"

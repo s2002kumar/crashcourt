@@ -180,18 +180,22 @@ def run_doctor(probes: Probes) -> DoctorReport:
             )
         if sink.get("test_hooks") is not False:
             problems.append("a test hook is armed")
+        if sink.get("resume_error"):
+            problems.append(f"could not resume its open trial: {sink.get('resume_error')}")
         expected = probes.sink_source_sha256()
         if sink.get("source_sha256") != expected:
             problems.append(
                 f"serving source {str(sink.get('source_sha256'))[:12]}, "
                 f"the checkout is {expected[:12]}"
             )
+        offset = sink.get("clock_offset_ns")
+        clock = f", clock offset {offset / 1e9:+.1f} s" if isinstance(offset, int) else ""
         checks.append(
             _check(
                 "effect sink",
                 not problems,
                 f"version {sink.get('version')}, ledger v{sink.get('ledger_version')}, "
-                f"source {expected[:12]}"
+                f"source {expected[:12]}{clock}"
                 if not problems
                 else "; ".join(problems),
                 "Rebuild and restart the sink: `docker compose up -d --wait --build sink`.",

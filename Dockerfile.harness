@@ -8,12 +8,15 @@ ENV UV_LINK_MODE=copy \
     PYTHONUNBUFFERED=1
 WORKDIR /app
 
-# Dependencies first, from the lockfile only, so code changes reuse this layer.
-COPY pyproject.toml uv.lock README.md ./
+# Dependencies first, from the lockfile only, so code changes reuse this layer. .python-version makes uv
+# install the pinned interpreter (pyproject.toml allows only uv-managed Pythons), not the newest one.
+COPY pyproject.toml uv.lock .python-version README.md Dockerfile.harness ./
 RUN uv sync --locked --no-dev --no-install-project
 COPY src ./src
 RUN uv sync --locked --no-dev --no-editable
 
-ENV CRASHCOURT_SINK_DATA=/data
+# The sink hashes its build inputs from here (crashcourt.sink.source); doctor compares the hash.
+ENV CRASHCOURT_SINK_DATA=/data \
+    CRASHCOURT_SOURCE_ROOT=/app
 EXPOSE 8000
 CMD ["/opt/venv/bin/uvicorn", "--factory", "crashcourt.sink.app:from_env", "--host", "0.0.0.0", "--port", "8000"]

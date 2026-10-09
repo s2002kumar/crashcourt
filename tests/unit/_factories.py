@@ -39,7 +39,7 @@ GOOD_SINK = {
     "status": "ok",
     "version": "0.0.1",
     "source_sha256": SINK_SOURCE,
-    "ledger_version": 1,
+    "ledger_version": 2,
     "trial": None,
     "test_hooks": False,
 }
