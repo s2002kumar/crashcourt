@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import signal
+import sys
 import threading
 from collections.abc import AsyncGenerator, Callable, Coroutine, Generator
 from pathlib import Path
@@ -96,6 +98,7 @@ def test_inner_exceptions_are_recorded_and_reraised(rig: Rig) -> None:
         rig.saver.put_writes(config(), [("n", 1)], "task-1")  # no checkpoint_id in config
     assert rig.kinds() == ["saver.put_writes.call", "saver.put_writes.raise"]
     assert rig.events()[-1].status == "fail" and "KeyError" in (rig.events()[-1].error or "")
+    assert rig.events()[-1].data["stage"] == "inner"
 
 
 def _put_in_thread(saver: FailpointSaver, cp: Checkpoint) -> threading.Thread:
@@ -271,7 +274,7 @@ def test_two_arms_due_on_one_call_are_a_spec_error(rig: Rig) -> None:
     assert (hit.kind, hit.status) == ("fp.hit", "fail")
     assert raised.kind == "saver.get_tuple.raise"
     assert not rig.registry.armed  # neither arm is left waiting for a call that will not come
-    assert len(rig.registry.collided) == 2
+    assert len(rig.registry.failed) == 2
 
 
 def test_arms_due_on_different_calls_both_fire(rig: Rig) -> None:
@@ -363,7 +366,7 @@ def test_invalid_arms_are_rejected(kwargs: dict[str, Any]) -> None:
 def test_a_signal_the_host_lacks_fails_the_hit(rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delattr(signal, "SIGQUIT", raising=False)  # Windows has no SIGQUIT anyway
     rig.registry.arm(Arm("get_tuple.before", "signal", signal="SIGQUIT"))
-    with pytest.raises(FailpointError, match="not available"):
+    with pytest.raises(FailpointError, match="cannot be sent to a thread on this host"):
         rig.saver.get_tuple(config())
     assert [(e.kind, e.status) for e in rig.events()][-2:] == [
         ("fp.hit", "fail"),
@@ -378,4 +381,46 @@ def test_a_failpoint_error_after_the_inner_call_is_recorded_as_a_raise(rig: Rig)
     with operation("op-1"), pytest.raises(FailpointError):
         rig.saver.put(config(), checkpoint(), {"source": "loop", "step": 0}, {"n": "1"})
     assert rig.kinds()[-2:] == ["fp.hit", "saver.put.raise"]
+    assert rig.events()[-1].data["stage"] == "after"  # so a checker knows the write is stored
     assert rig.inner.get_tuple(config()) is not None  # the write itself went through
+
+
+def test_an_inner_list_that_raises_at_once_is_recorded(rig: Rig) -> None:
+    def broken(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("cursor refused")
+
+    rig.inner.list = broken  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError):
+        list(rig.saver.list(config()))
+    raised = rig.events()[-1]
+    assert (raised.kind, raised.data["stage"]) == ("saver.list.raise", "inner")
+
+
+def test_an_arm_that_could_not_act_is_listed_as_failed(tmp_path: Path) -> None:
+    with HistoryWriter(tmp_path / "w.jsonl", run=RUN, proc="w") as history:
+        registry = FailpointRegistry("w")
+        arm = Arm("get_tuple.before", "pause")
+        registry.arm(arm)
+        saver = wrap(InMemorySaver(), history=history, registry=registry)  # no barrier
+        with pytest.raises(FailpointError):
+            saver.get_tuple(config())
+    assert registry.failed == (arm,)
+    assert read_history(tmp_path / "w.jsonl").events[-1].data["stage"] == "before"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="pthread_kill needs a POSIX host")
+def test_a_signal_goes_to_the_calling_thread(rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
+    sent: list[tuple[int, int]] = []
+    monkeypatch.setattr(signal, "pthread_kill", lambda ident, number: sent.append((ident, number)))
+    monkeypatch.setattr(os, "kill", lambda *args: pytest.fail("signalled the whole process"))
+    rig.registry.arm(Arm("get_tuple.before", "signal", signal="SIGQUIT"))
+    caller: list[int] = []
+
+    def call() -> None:
+        caller.append(threading.get_ident())
+        rig.saver.get_tuple(config())
+
+    worker = threading.Thread(target=call)
+    worker.start()
+    worker.join(5)
+    assert sent == [(caller[0], int(signal.Signals["SIGQUIT"]))]

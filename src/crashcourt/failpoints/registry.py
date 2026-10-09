@@ -30,10 +30,12 @@ POINTS: tuple[str, ...] = get_args(Point)
 Action = Literal["none", "pause", "exit", "signal"]
 ACTIONS: tuple[str, ...] = get_args(Action)
 
-#: Signals a worker may send itself at a failpoint (POSIX names; workers run on Linux). Only
-#: signals that act at once: SIGKILL and SIGSTOP cannot be caught, and the others end the process
-#: by default. A signal Python handles (SIGINT, or SIGTERM once a worker installs a handler)
-#: would run its handler later, on the main thread, so the action would not happen at the point.
+#: Signals a worker may send itself at a failpoint (POSIX names; workers run on Linux). The saver
+#: sends them to the calling thread, so they are delivered before the call can go on, and only
+#: signals whose action then happens at once: SIGKILL and SIGSTOP cannot be caught, and the others
+#: end the process by default (faulthandler, which pytest enables, ends it too after printing). A
+#: signal Python handles (SIGINT, or SIGTERM once a worker installs a handler) runs its handler
+#: later on the main thread, so the action would not happen at the point.
 Signal = Literal["SIGKILL", "SIGSTOP", "SIGQUIT", "SIGABRT", "SIGSEGV"]
 SIGNALS: tuple[str, ...] = get_args(Signal)
 
@@ -95,7 +97,7 @@ class FailpointRegistry:
         self._arms: list[Arm] = []
         self._counts: dict[int, int] = {}
         self._fired: set[int] = set()
-        self._collided: set[int] = set()
+        self._failed: set[int] = set()
 
     def arm(self, arm: Arm) -> None:
         with self._lock:
@@ -107,7 +109,7 @@ class FailpointRegistry:
             self._arms.clear()
             self._counts.clear()
             self._fired.clear()
-            self._collided.clear()
+            self._failed.clear()
 
     @property
     def armed(self) -> bool:
@@ -116,10 +118,16 @@ class FailpointRegistry:
             return len(self._fired) < len(self._arms)
 
     @property
-    def collided(self) -> tuple[Arm, ...]:
-        """Arms retired because another arm was due on the same call; they never acted."""
+    def failed(self) -> tuple[Arm, ...]:
+        """Arms that were due but never acted: retired by a collision, or unable to act (a pause
+        with no barrier, a signal the host cannot send). Each failure is also a FailpointError."""
         with self._lock:
-            return tuple(self._arms[i] for i in sorted(self._collided))
+            return tuple(self._arms[i] for i in sorted(self._failed))
+
+    def failed_to_act(self, arm: Arm) -> None:
+        """Record that `arm` was due but could not act."""
+        with self._lock:
+            self._failed.update(i for i, a in enumerate(self._arms) if a is arm)
 
     def check(self, point: str, op_id: str | None, thread_id: str | None) -> Firing | None:
         """Count this call against every matching arm; return the one that fires now, if any.
@@ -136,7 +144,7 @@ class FailpointRegistry:
                     due.append(index)
             self._fired.update(due)
             if len(due) > 1:
-                self._collided.update(due)
+                self._failed.update(due)
                 arms = "; ".join(repr(self._arms[i]) for i in due)
                 raise FailpointError(f"{len(due)} arms fire on one {point} call: {arms}")
             if not due:

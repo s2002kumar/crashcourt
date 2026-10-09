@@ -20,8 +20,10 @@ import asyncio
 import functools
 import os
 import signal
+import sys
+import threading
 from collections.abc import AsyncIterator, Collection, Iterator, Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
@@ -94,9 +96,16 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
             return None
         return self.history.emit(kind, op_id=current_op(), **{**fields, **extra})
 
-    def _raise(self, op: str, fields: Fields, exc: BaseException) -> None:
+    def _raise(self, op: str, fields: Fields, exc: BaseException, stage: str) -> None:
+        """`saver.<op>.raise`, with data.stage saying what raised: the before failpoint, the inner
+        call, or the after failpoint. After `after`, the inner call's write is already stored."""
         kind: EventKind = f"saver.{op}.raise"  # type: ignore[assignment]
-        self._emit(kind, fields, status="fail", error=f"{type(exc).__name__}: {exc}")
+        data: dict[str, JsonValue] = {
+            **cast("dict[str, JsonValue]", fields.get("data") or {}),
+            "stage": stage,
+        }
+        error = f"{type(exc).__name__}: {exc}"
+        self._emit(kind, {**fields, "data": data}, status="fail", error=error)
 
     # -- failpoints --------------------------------------------------------------------------
 
@@ -104,14 +113,17 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
         if self.registry is None:
             return None
         hit_fields = {k: v for k, v in fields.items() if k != "data"}
+        firing: Firing | None = None
         try:
             firing = self.registry.check(point, current_op(), fields.get("thread_id"))
             if firing is not None and firing.arm.action == "pause" and self.barrier is None:
                 raise FailpointError(f"{point} is armed to pause but the saver has no barrier")
             wanted = firing.arm.signal if firing is not None else None
-            if wanted is not None and not hasattr(signal, wanted):
-                raise FailpointError(f"{wanted} is not available on this host")
+            if wanted is not None and (sys.platform == "win32" or not hasattr(signal, wanted)):
+                raise FailpointError(f"{wanted} cannot be sent to a thread on this host")
         except FailpointError as exc:
+            if firing is not None:
+                self.registry.failed_to_act(firing.arm)
             self._emit("fp.hit", hit_fields, fp=point, status="fail", error=str(exc))
             raise
         if firing is None:
@@ -129,8 +141,11 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
         self._emit("fp.action", {"thread_id": hit.thread_id}, fp=hit.fp, data=data)
         if arm.action == "exit":
             os._exit(1 if arm.exit_code is None else arm.exit_code)
-        if arm.action == "signal":
-            os.kill(os.getpid(), int(getattr(signal, str(arm.signal))))
+        if arm.action == "signal" and sys.platform != "win32":
+            # To this thread, not the process: a signal for the calling thread is delivered before
+            # pthread_kill returns. Sent to the process, it can land on another thread and the call
+            # here goes on; LangGraph runs saver calls on its background executor's threads.
+            signal.pthread_kill(threading.get_ident(), int(getattr(signal, str(arm.signal))))
 
     def _fire(self, point: str, fields: Fields) -> None:
         found = self._check(point, fields)
@@ -185,12 +200,15 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
     ) -> RunnableConfig:
         fields = self._put_fields(config, checkpoint, metadata, new_versions)
         self._emit("saver.put.call", fields)
+        stage = "before"
         try:
             self._fire("put.before", fields)
+            stage = "inner"
             result = self.inner.put(config, checkpoint, metadata, new_versions)
+            stage = "after"
             self._fire("put.after", fields)
         except BaseException as exc:
-            self._raise("put", fields, exc)
+            self._raise("put", fields, exc, stage)
             raise
         self._emit("saver.put.return", {**fields, "data": {}}, status="ok")
         return result
@@ -204,12 +222,15 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
     ) -> RunnableConfig:
         fields = self._put_fields(config, checkpoint, metadata, new_versions)
         self._emit("saver.put.call", fields)
+        stage = "before"
         try:
             await self._afire("put.before", fields)
+            stage = "inner"
             result = await self.inner.aput(config, checkpoint, metadata, new_versions)
+            stage = "after"
             await self._afire("put.after", fields)
         except BaseException as exc:
-            self._raise("put", fields, exc)
+            self._raise("put", fields, exc, stage)
             raise
         self._emit("saver.put.return", {**fields, "data": {}}, status="ok")
         return result
@@ -233,12 +254,15 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
     ) -> None:
         fields = self._writes_fields(config, writes, task_id, task_path)
         self._emit("saver.put_writes.call", fields)
+        stage = "before"
         try:
             self._fire("put_writes.before", fields)
+            stage = "inner"
             self.inner.put_writes(config, writes, task_id, task_path)
+            stage = "after"
             self._fire("put_writes.after", fields)
         except BaseException as exc:
-            self._raise("put_writes", fields, exc)
+            self._raise("put_writes", fields, exc, stage)
             raise
         self._emit("saver.put_writes.return", {**fields, "data": {}}, status="ok")
 
@@ -251,24 +275,30 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
     ) -> None:
         fields = self._writes_fields(config, writes, task_id, task_path)
         self._emit("saver.put_writes.call", fields)
+        stage = "before"
         try:
             await self._afire("put_writes.before", fields)
+            stage = "inner"
             await self.inner.aput_writes(config, writes, task_id, task_path)
+            stage = "after"
             await self._afire("put_writes.after", fields)
         except BaseException as exc:
-            self._raise("put_writes", fields, exc)
+            self._raise("put_writes", fields, exc, stage)
             raise
         self._emit("saver.put_writes.return", {**fields, "data": {}}, status="ok")
 
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         fields = _config_fields(config)
         self._emit("saver.get_tuple.call", fields)
+        stage = "before"
         try:
             self._fire("get_tuple.before", fields)
+            stage = "inner"
             result = self.inner.get_tuple(config)
+            stage = "after"
             self._fire("get_tuple.after", fields)
         except BaseException as exc:
-            self._raise("get_tuple", fields, exc)
+            self._raise("get_tuple", fields, exc, stage)
             raise
         self._emit("saver.get_tuple.return", _tuple_fields(result, fields), status="ok")
         return result
@@ -276,12 +306,15 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         fields = _config_fields(config)
         self._emit("saver.get_tuple.call", fields)
+        stage = "before"
         try:
             await self._afire("get_tuple.before", fields)
+            stage = "inner"
             result = await self.inner.aget_tuple(config)
+            stage = "after"
             await self._afire("get_tuple.after", fields)
         except BaseException as exc:
-            self._raise("get_tuple", fields, exc)
+            self._raise("get_tuple", fields, exc, stage)
             raise
         self._emit("saver.get_tuple.return", _tuple_fields(result, fields), status="ok")
         return result
@@ -312,22 +345,29 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
         self._emit("saver.list.call", fields)
         count = 0
         items: Iterator[CheckpointTuple] | None = None
+        stage = "before"
         try:
             self._fire("list.before", fields)
+            stage = "inner"
             items = self.inner.list(config, filter=filter, before=before, limit=limit)
             for item in items:
                 count += 1
                 yield item
+            stage = "after"
             self._fire("list.after", fields)
         except GeneratorExit:
-            # Close the inner iterator too, so a saver holding a cursor releases it now.
-            close = getattr(items, "close", None)
-            if close is not None:
-                close()
-            self._emit("saver.list.return", {**fields, "data": {"items": count, "complete": False}})
+            # Close the inner iterator too, so a saver holding a cursor releases it now; the
+            # call is recorded as ended early even if closing fails.
+            try:
+                close = getattr(items, "close", None)
+                if close is not None:
+                    close()
+            finally:
+                data = {"items": count, "complete": False}
+                self._emit("saver.list.return", {**fields, "data": data})
             raise
         except BaseException as exc:
-            self._raise("list", fields, exc)
+            self._raise("list", fields, exc, stage)
             raise
         data = {"items": count, "complete": True}
         self._emit("saver.list.return", {**fields, "data": data}, status="ok")
@@ -344,21 +384,27 @@ class FailpointSaver(BaseCheckpointSaver[Any]):
         self._emit("saver.list.call", fields)
         count = 0
         items: AsyncIterator[CheckpointTuple] | None = None
+        stage = "before"
         try:
             await self._afire("list.before", fields)
+            stage = "inner"
             items = self.inner.alist(config, filter=filter, before=before, limit=limit)
             async for item in items:
                 count += 1
                 yield item
+            stage = "after"
             await self._afire("list.after", fields)
         except GeneratorExit:
-            aclose = getattr(items, "aclose", None)
-            if aclose is not None:
-                await aclose()
-            self._emit("saver.list.return", {**fields, "data": {"items": count, "complete": False}})
+            try:
+                aclose = getattr(items, "aclose", None)
+                if aclose is not None:
+                    await aclose()
+            finally:
+                data = {"items": count, "complete": False}
+                self._emit("saver.list.return", {**fields, "data": data})
             raise
         except BaseException as exc:
-            self._raise("list", fields, exc)
+            self._raise("list", fields, exc, stage)
             raise
         data = {"items": count, "complete": True}
         self._emit("saver.list.return", {**fields, "data": data}, status="ok")
