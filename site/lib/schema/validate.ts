@@ -116,11 +116,7 @@ export function parseManifest(text: string, file: string): Manifest {
   return value;
 }
 
-/**
- * Parses and validates a batch record. The JSON Schema checks its shape; the rules it cannot express
- * (a fixture's batch id starts with DEMO-, and only a fixture's) are enforced by the harness that
- * writes it, and F-02's release guard reads provenance.
- */
+/** Parses and validates a batch record, including that only a fixture's batch id starts with DEMO-. */
 export function parseBatch(text: string, file: string): BatchRecord {
   const value = parseJson(text, file);
   if (!checkBatch(value)) throw new ArtifactError(file, undefined, describe(checkBatch.errors));
@@ -128,11 +124,21 @@ export function parseBatch(text: string, file: string): BatchRecord {
 }
 
 /**
- * Parses and validates a trial's result record. What each outcome needs (a clause, evidence, a repro,
- * a review) is enforced by the harness that writes it; the site only renders the outcome it carries.
+ * Parses and validates a trial's result record: what each outcome needs (a clause, evidence, a repro,
+ * a review) and the DEMO- rule are in the schema; one outcome per invariant is checked here. That a
+ * result's manifest hash matches its batch's is a cross-file check, left to the release guard (F-02).
  */
 export function parseResult(text: string, file: string): ResultRecord {
   const value = parseJson(text, file);
   if (!checkResult(value)) throw new ArtifactError(file, undefined, describe(checkResult.errors));
+  // The one rule of the outcome table JSON Schema cannot express: one outcome per invariant.
+  const seen = new Set<string>();
+  const repeated = new Set<string>();
+  for (const { invariant } of value.results) (seen.has(invariant) ? repeated : seen).add(invariant);
+  if (repeated.size > 0) {
+    throw new ArtifactError(file, undefined, [
+      `one outcome per invariant; repeated: ${[...repeated].sort().join(", ")}`,
+    ]);
+  }
   return value;
 }

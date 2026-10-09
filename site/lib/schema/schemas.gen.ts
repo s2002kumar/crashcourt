@@ -5,7 +5,13 @@ export const batchSchema: Record<string, unknown> = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   additionalProperties: false,
   description:
-    "batch.json: one batch, its provenance, and the manifest it ran under.\n\nA fixture's batch id starts with DEMO-, and only a fixture's. Rules this JSON Schema does not\nexpress are enforced when a record is loaded; see crashcourt.spec.records.",
+    "batch.json: one batch, its provenance, and the manifest it ran under.\n\nA fixture's batch id starts with DEMO-, and only a fixture's.",
+  else: { properties: { batch: { not: { pattern: "^DEMO-", type: "string" } } }, type: "object" },
+  if: {
+    properties: { provenance: { const: "fixture" } },
+    required: ["provenance"],
+    type: "object",
+  },
   properties: {
     batch: { pattern: "^\\S+$", title: "Batch", type: "string" },
     manifest_sha256: { pattern: "^[0-9a-f]{64}$", title: "Manifest Sha256", type: "string" },
@@ -13,6 +19,7 @@ export const batchSchema: Record<string, unknown> = {
     v: { const: 1, title: "V", type: "integer" },
   },
   required: ["v", "batch", "provenance", "manifest_sha256"],
+  then: { properties: { batch: { pattern: "^DEMO-", type: "string" } }, type: "object" },
   title: "BatchRecord",
   type: "object",
 };
@@ -198,8 +205,97 @@ export const resultSchema: Record<string, unknown> = {
   $defs: {
     InvariantResult: {
       additionalProperties: false,
+      allOf: [
+        {
+          if: {
+            properties: {
+              outcome: { enum: ["EXPECTED", "PASS", "VIOLATION", "VIOLATION_CANDIDATE"] },
+            },
+            required: ["outcome"],
+            type: "object",
+          },
+          then: {
+            properties: { clause: { type: "string" } },
+            required: ["clause"],
+            type: "object",
+          },
+        },
+        {
+          if: {
+            properties: { outcome: { enum: ["GAP", "NO_ANOMALY_UNSPECIFIED"] } },
+            required: ["outcome"],
+            type: "object",
+          },
+          then: { properties: { clause: { type: "null" } }, type: "object" },
+        },
+        {
+          if: {
+            properties: {
+              outcome: { enum: ["EXPECTED", "GAP", "VIOLATION", "VIOLATION_CANDIDATE"] },
+            },
+            required: ["outcome"],
+            type: "object",
+          },
+          then: {
+            properties: { evidence: { minItems: 1, type: "array" } },
+            required: ["evidence"],
+            type: "object",
+          },
+        },
+        {
+          if: {
+            properties: { outcome: { enum: ["VIOLATION"] } },
+            required: ["outcome"],
+            type: "object",
+          },
+          then: {
+            properties: { repro: { type: "string" }, review: { type: "object" } },
+            required: ["repro", "review"],
+            type: "object",
+          },
+        },
+        {
+          if: {
+            properties: { outcome: { enum: ["INVALID", "NO_ANOMALY_UNSPECIFIED", "PASS"] } },
+            required: ["outcome"],
+            type: "object",
+          },
+          then: { properties: { repro: { type: "null" } }, type: "object" },
+        },
+        {
+          if: {
+            properties: {
+              outcome: {
+                enum: [
+                  "EXPECTED",
+                  "GAP",
+                  "INVALID",
+                  "NO_ANOMALY_UNSPECIFIED",
+                  "PASS",
+                  "VIOLATION_CANDIDATE",
+                ],
+              },
+            },
+            required: ["outcome"],
+            type: "object",
+          },
+          then: { properties: { review: { type: "null" } }, type: "object" },
+        },
+        {
+          if: {
+            properties: { outcome: { enum: ["INVALID"] } },
+            required: ["outcome"],
+            type: "object",
+          },
+          then: {
+            properties: { reason: { type: "string" } },
+            required: ["reason"],
+            type: "object",
+          },
+        },
+      ],
       description:
-        "One invariant's outcome in one trial.\n\nEach outcome needs some of clause, evidence, repro, review, and reason; the table is in\ncrashcourt.spec.records. Those rules are enforced when a record is loaded and are not\nexpressed in this JSON Schema.",
+        "One invariant's outcome in one trial.\n\nEach outcome needs some of clause, evidence, repro, review, and reason; the table is in\ncrashcourt.spec.records, and the rules are under allOf here.",
       properties: {
         clause: {
           anyOf: [{ pattern: "^\\S+$", type: "string" }, { type: "null" }],
@@ -258,7 +354,13 @@ export const resultSchema: Record<string, unknown> = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   additionalProperties: false,
   description:
-    "result.json: the outcomes of one trial, one per invariant.\n\nA fixture's batch id starts with DEMO-, and only a fixture's. What each outcome needs is\nlisted in crashcourt.spec.records. Rules this JSON Schema does not express are enforced when\na record is loaded.",
+    "result.json: the outcomes of one trial, one per invariant.\n\nA fixture's batch id starts with DEMO-, and only a fixture's. Two rules are checked when\nrecords are loaded and are not in this JSON Schema: one outcome per invariant, and a\nmanifest hash equal to the batch's.",
+  else: { properties: { batch: { not: { pattern: "^DEMO-", type: "string" } } }, type: "object" },
+  if: {
+    properties: { provenance: { const: "fixture" } },
+    required: ["provenance"],
+    type: "object",
+  },
   properties: {
     batch: { pattern: "^\\S+$", title: "Batch", type: "string" },
     cell: { pattern: "^\\S+$", title: "Cell", type: "string" },
@@ -274,6 +376,7 @@ export const resultSchema: Record<string, unknown> = {
     v: { const: 1, title: "V", type: "integer" },
   },
   required: ["v", "batch", "cell", "trial", "provenance", "manifest_sha256", "results"],
+  then: { properties: { batch: { pattern: "^DEMO-", type: "string" } }, type: "object" },
   title: "ResultRecord",
   type: "object",
 };

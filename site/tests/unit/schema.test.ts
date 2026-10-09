@@ -314,3 +314,25 @@ describe("artifact tree", () => {
     }
   });
 });
+
+interface RecordCase {
+  readonly name: string;
+  readonly kind: "batch" | "result";
+  readonly valid: boolean;
+  readonly record: unknown;
+}
+const SHARED = JSON.parse(readFileSync(path.join(REPO, "tests/data/records-v1.json"), "utf8")) as {
+  cases: RecordCase[];
+};
+
+describe("records decided as the harness's models decide them (tests/data/records-v1.json)", () => {
+  test("the shared cases are there", () => assert.ok(SHARED.cases.length >= 30));
+  for (const c of SHARED.cases) {
+    test(`${c.valid ? "accepts" : "rejects"}: ${c.name}`, () => {
+      const parse = c.kind === "batch" ? parseBatch : parseResult;
+      const run = (): unknown => parse(JSON.stringify(c.record), `${c.kind}.json`);
+      if (c.valid) run();
+      else assert.throws(run, ArtifactError);
+    });
+  }
+});

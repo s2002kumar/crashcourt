@@ -2,8 +2,7 @@
 /**
  * batch.json: one batch, its provenance, and the manifest it ran under.
  *
- * A fixture's batch id starts with DEMO-, and only a fixture's. Rules this JSON Schema does not
- * express are enforced when a record is loaded; see crashcourt.spec.records.
+ * A fixture's batch id starts with DEMO-, and only a fixture's.
  */
 export interface BatchRecord {
   batch: string;
@@ -119,6 +118,13 @@ export interface Manifest {
   toxiproxy_version: string;
 }
 
+/**
+ * One invariant's outcome in one trial.
+ *
+ * Each outcome needs some of clause, evidence, repro, review, and reason; the table is in
+ * crashcourt.spec.records, and the rules are under allOf here.
+ */
+export type InvariantResult = InvariantResult1 & InvariantResult1;
 export type Clause = string | null;
 export type Evidence = string[];
 export type Invariant = string;
@@ -138,9 +144,9 @@ export type Reviewer = string;
 /**
  * result.json: the outcomes of one trial, one per invariant.
  *
- * A fixture's batch id starts with DEMO-, and only a fixture's. What each outcome needs is
- * listed in crashcourt.spec.records. Rules this JSON Schema does not express are enforced when
- * a record is loaded.
+ * A fixture's batch id starts with DEMO-, and only a fixture's. Two rules are checked when
+ * records are loaded and are not in this JSON Schema: one outcome per invariant, and a
+ * manifest hash equal to the batch's.
  */
 export interface ResultRecord {
   batch: string;
@@ -154,14 +160,7 @@ export interface ResultRecord {
   trial: number;
   v: 1;
 }
-/**
- * One invariant's outcome in one trial.
- *
- * Each outcome needs some of clause, evidence, repro, review, and reason; the table is in
- * crashcourt.spec.records. Those rules are enforced when a record is loaded and are not
- * expressed in this JSON Schema.
- */
-export interface InvariantResult {
+export interface InvariantResult1 {
   clause?: Clause;
   evidence?: Evidence;
   invariant: Invariant;
