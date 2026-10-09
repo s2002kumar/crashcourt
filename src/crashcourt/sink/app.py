@@ -4,15 +4,22 @@
 
 | Endpoint | Does |
 | --- | --- |
-| GET /health | liveness, version, source hash, the open trial, and whether a test hook is armed |
+| GET /health | liveness, version, source hash, clock, open trial, and whether a test hook is on |
 | POST /trials | open, or reopen after a restart, the ledger for one trial |
 | POST /effects | append one effect (never deduplicated); answers only after the commit |
 | POST /attempts/next | increment and return an attempt counter |
+| GET /ledger | every row of the trial's ledger |
+| GET /ledger/verify | recompute the trial's hash chain |
 
-POST /effects and POST /attempts/next name the trial they belong to and get 409 unless it is the
-open one, so a late request from a previous trial's worker cannot land in the next trial's ledger.
-| GET /ledger | every row of the open trial's ledger |
-| GET /ledger/verify | recompute the hash chain |
+Every request but /health and POST /trials names the trial it is for (in the body, or as batch,
+cell, trial, and seed query parameters) and gets 409 unless that trial is open, so a late request
+from a previous trial's worker cannot land in the next trial's ledger, and a reader cannot take one
+trial's rows for another's. POST /trials answers 409 for a ledger file that belongs to another
+trial or ledger version, and leaves the open trial as it was.
+
+/health reports the sink's monotonic clock (`mono_ns`). The ledger stamps rows with it, and the
+merge breaks ties with it, so it is comparable with the workers' clocks only when they share a
+kernel: on Linux, not between a Windows host and a Docker Desktop container.
 
 `CRASHCOURT_SINK_DATA` is the ledger directory. `CRASHCOURT_SINK_TEST_EXIT_AFTER_COMMIT=N` is a
 test hook only: the process exits right after committing its Nth effect, before answering, so a
@@ -24,17 +31,19 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from crashcourt import __version__
-from crashcourt.sink.ledger import LEDGER_VERSION, EffectRequest, Ledger, TrialId
-from crashcourt.sink.source import source_sha256
+from crashcourt.history.writer import host_monotonic_ns
+from crashcourt.sink.ledger import LEDGER_VERSION, EffectRequest, Ledger, LedgerConflict, TrialId
+from crashcourt.sink.source import build_root, source_sha256
 
 EXIT_HOOK_ENV = "CRASHCOURT_SINK_TEST_EXIT_AFTER_COMMIT"
 
@@ -74,6 +83,12 @@ def _write_atomically(path: Path, data: bytes) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+    if sys.platform != "win32":  # POSIX: make the rename itself durable
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
 
 class SinkState:
@@ -84,39 +99,59 @@ class SinkState:
         self.exit_after_commit = exit_after_commit
         self.commits = 0
         self.ledger: Ledger | None = None
+        #: Why the trial in current.json could not be resumed at start, if it could not.
+        self.resume_error: str | None = None
         self._lock = threading.Lock()
         root.mkdir(parents=True, exist_ok=True)
         current = root / "current.json"
         if current.exists():
-            self.open(TrialId(**json.loads(current.read_text(encoding="utf-8"))))
+            try:
+                self.open(TrialId(**json.loads(current.read_text(encoding="utf-8"))))
+            except HTTPException as exc:  # a file from another ledger version or trial
+                self.resume_error = str(exc.detail)
 
     def open(self, trial: TrialId) -> Ledger:
         with self._lock:
             if self.ledger is not None and self.ledger.trial == trial:
                 return self.ledger
+            # Open the new ledger before closing the old one, so a refused file leaves the open
+            # trial working.
+            try:
+                ledger = Ledger(trial.path(self.root), trial)
+            except LedgerConflict as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            data = json.dumps(trial.__dict__, sort_keys=True).encode("utf-8")
+            try:
+                _write_atomically(self.root / "current.json", data)
+            except BaseException:
+                ledger.close()
+                raise
             if self.ledger is not None:
                 self.ledger.close()
-            self.ledger = Ledger(trial.path(self.root), trial)
-            data = json.dumps(trial.__dict__, sort_keys=True).encode("utf-8")
-            _write_atomically(self.root / "current.json", data)
-            return self.ledger
+            self.ledger = ledger
+            self.resume_error = None
+            return ledger
 
-    def require(self, trial: TrialRequest | None = None) -> Ledger:
-        """The open ledger; with `trial`, only if that is the trial it belongs to."""
-        if self.ledger is None:
+    def require(self, trial: TrialRequest) -> Ledger:
+        """The open ledger, if it belongs to `trial`."""
+        with self._lock:
+            ledger = self.ledger
+        if ledger is None:
             raise HTTPException(status_code=409, detail="no trial is open; POST /trials first")
-        if trial is not None and TrialId(**trial.model_dump()) != self.ledger.trial:
+        if TrialId(**trial.model_dump()) != ledger.trial:
             raise HTTPException(
                 status_code=409,
                 detail=f"request for trial {trial.model_dump()}, "
-                f"but the open trial is {self.ledger.trial.__dict__}",
+                f"but the open trial is {ledger.trial.__dict__}",
             )
-        return self.ledger
+        return ledger
 
 
-def create_app(root: Path, *, exit_after_commit: int | None = None) -> FastAPI:
+def create_app(
+    root: Path, *, exit_after_commit: int | None = None, source_root: Path | None = None
+) -> FastAPI:
     state = SinkState(root, exit_after_commit)
-    source = source_sha256()
+    source = source_sha256(source_root)
     app = FastAPI(title="Crashcourt effect sink", version=__version__)
 
     @app.get("/health")
@@ -126,8 +161,10 @@ def create_app(root: Path, *, exit_after_commit: int | None = None) -> FastAPI:
             "status": "ok",
             "version": __version__,
             "source_sha256": source,
+            "mono_ns": host_monotonic_ns(),
             "ledger_version": LEDGER_VERSION,
             "trial": trial,
+            "resume_error": state.resume_error,
             "test_hooks": state.exit_after_commit is not None,
         }
 
@@ -153,14 +190,20 @@ def create_app(root: Path, *, exit_after_commit: int | None = None) -> FastAPI:
         return {"attempt": state.require(request.trial).next_attempt(request.key)}
 
     @app.get("/ledger")
-    def ledger_rows() -> dict[str, Any]:
-        ledger = state.require()
+    def ledger_rows(trial: Annotated[TrialRequest, Query()]) -> dict[str, Any]:
+        ledger = state.require(trial)
         return {"trial": ledger.trial.__dict__, "rows": ledger.rows()}
 
     @app.get("/ledger/verify")
-    def verify() -> dict[str, Any]:
-        result = state.require().verify()
-        return {"ok": result.ok, "rows": result.rows, "first_bad": result.first_bad}
+    def verify(trial: Annotated[TrialRequest, Query()]) -> dict[str, Any]:
+        ledger = state.require(trial)
+        result = ledger.verify()
+        return {
+            "trial": ledger.trial.__dict__,
+            "ok": result.ok,
+            "rows": result.rows,
+            "first_bad": result.first_bad,
+        }
 
     return app
 
@@ -168,4 +211,4 @@ def create_app(root: Path, *, exit_after_commit: int | None = None) -> FastAPI:
 def from_env() -> FastAPI:
     hook = os.environ.get(EXIT_HOOK_ENV)
     root = Path(os.environ.get("CRASHCOURT_SINK_DATA", "sink-data"))
-    return create_app(root, exit_after_commit=int(hook) if hook else None)
+    return create_app(root, exit_after_commit=int(hook) if hook else None, source_root=build_root())

@@ -6,8 +6,10 @@ the sink's `sink_seq`, so the merger can order request, `sink.append`, and respo
 
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, cast
 
@@ -18,7 +20,20 @@ DEFAULT_URL = "http://127.0.0.1:8480"
 
 
 class SinkError(Exception):
-    """The sink did not confirm the request; the effect's outcome is unknown to the caller."""
+    """The sink did not confirm the request.
+
+    `status` is the HTTP status when the sink answered with an error. A 4xx answer means the sink
+    refused the request, so it did not apply it; with no answer (refused, reset, timed out, cut off
+    mid-body), the outcome is unknown and only the ledger can say.
+    """
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+    @property
+    def refused(self) -> bool:
+        return self.status is not None and 400 <= self.status < 500
 
 
 class SinkClient:
@@ -36,8 +51,9 @@ class SinkClient:
                 return cast(dict[str, Any], json.loads(response.read().decode("utf-8")))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace").strip()
-            raise SinkError(f"{method} {path}: HTTP {exc.code} {detail}") from exc
-        except OSError as exc:  # refused, reset, timed out: the outcome is unknown
+            raise SinkError(f"{method} {path}: HTTP {exc.code} {detail}", exc.code) from exc
+        # Refused, reset, timed out, or cut off mid-answer: the outcome is unknown.
+        except (OSError, http.client.HTTPException, ValueError) as exc:
             raise SinkError(f"{method} {path}: {type(exc).__name__}: {exc}") from exc
 
     def health(self) -> dict[str, Any]:
@@ -56,11 +72,21 @@ class SinkClient:
         body = {"trial": trial.__dict__, "key": key}
         return int(self._call("POST", "/attempts/next", body)["attempt"])
 
-    def ledger(self) -> list[dict[str, Any]]:
-        return cast(list[dict[str, Any]], self._call("GET", "/ledger")["rows"])
+    def _read(self, path: str, trial: TrialId) -> dict[str, Any]:
+        query = urllib.parse.urlencode(trial.__dict__)
+        answer = self._call("GET", f"{path}?{query}")
+        if answer.get("trial") != trial.__dict__:
+            raise SinkError(f"GET {path}: answered for trial {answer.get('trial')}, not {trial}")
+        return answer
 
-    def verify(self) -> dict[str, Any]:
-        return self._call("GET", "/ledger/verify")
+    def ledger(self, trial: TrialId) -> list[dict[str, Any]]:
+        """Every row of `trial`'s ledger; the sink answers 409 if another trial is open."""
+        return cast(list[dict[str, Any]], self._read("/ledger", trial)["rows"])
+
+    def verify(self, trial: TrialId) -> dict[str, Any]:
+        """The hash-chain check of `trial`'s ledger."""
+        answer = self._read("/ledger/verify", trial)
+        return {k: answer[k] for k in ("ok", "rows", "first_bad")}
 
 
 def trial_of(history: HistoryWriter) -> TrialId:
@@ -75,8 +101,9 @@ def record_effect(history: HistoryWriter, client: SinkClient, effect: EffectRequ
     to this worker's events by that name. The trial is the writer's too, and the sink refuses
     the effect if a different trial is open.
 
-    If the sink does not answer, `effect.response` records the failure and SinkError propagates:
-    the effect may or may not be in the ledger, which only the ledger can say.
+    If the sink refuses the request (a 4xx answer), `effect.response` has status fail: the effect
+    was not applied. If it does not answer, the status is info: the effect may or may not be in
+    the ledger, which only the ledger can say. Either way SinkError propagates.
     """
     if (effect.worker, effect.pid) != (history.proc, history.pid):
         raise ValueError(
@@ -97,7 +124,8 @@ def record_effect(history: HistoryWriter, client: SinkClient, effect: EffectRequ
     try:
         answer = client.post_effect(trial_of(history), effect)
     except SinkError as exc:
-        history.emit("effect.response", **fields, status="info", error=str(exc))
+        status = "fail" if exc.refused else "info"
+        history.emit("effect.response", **fields, status=status, error=str(exc))
         raise
     history.emit("effect.response", **fields, status="ok", data={"sink_seq": answer["sink_seq"]})
     return int(answer["sink_seq"])

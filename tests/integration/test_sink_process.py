@@ -96,11 +96,11 @@ def test_the_commit_happens_before_the_answer(tmp_path: Path) -> None:
         assert process.wait(10) == 70  # it died after committing, before answering
     with sink_process(root) as (_, client):  # restarted over the same data
         assert client.health()["trial"] == TRIAL.__dict__
-        rows = client.ledger()
+        rows = client.ledger(TRIAL)
         assert [(r["effect_key"], r["op_id"], r["attempt"]) for r in rows] == [
             ("charge:order-17", "op-7", 1)
         ]
-        assert client.verify() == {"ok": True, "rows": 1, "first_bad": None}
+        assert client.verify(TRIAL) == {"ok": True, "rows": 1, "first_bad": None}
     events = read_history(history_path).events
     assert [(e.kind, e.status) for e in events] == [
         ("effect.request", None),
@@ -120,6 +120,6 @@ def test_a_restart_keeps_the_ledger_and_the_counters(tmp_path: Path) -> None:
         with sink_process(root) as (_, client):
             assert record_effect(history, client, EFFECT) == 2
             assert client.next_attempt(TRIAL, "t3/execute/0") == 2
-            assert client.verify()["ok"] is True
+            assert client.verify(TRIAL)["ok"] is True
     responses = [e for e in read_history(history_path).events if e.kind == "effect.response"]
     assert [e.data["sink_seq"] for e in responses] == [1, 2]

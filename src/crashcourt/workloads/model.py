@@ -46,6 +46,10 @@ class ScriptedModel:
     def call(
         self, next_attempt: Callable[[str], int], *, thread_id: str, node: str, turn: int
     ) -> AIMessage:
-        """Take the next attempt number from the sink's counter, then respond."""
+        """Take the next attempt number from the sink's counter, then respond.
+
+        `next_attempt` maps a counter key to its next value: `Ledger.next_attempt`, or the sink
+        client bound to the trial, `functools.partial(client.next_attempt, trial)`.
+        """
         attempt = next_attempt(attempt_key(thread_id, node, turn))
         return self.respond(thread_id=thread_id, node=node, turn=turn, attempt=attempt)
