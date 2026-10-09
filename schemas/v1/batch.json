@@ -44,6 +44,12 @@
       "title": "Provenance",
       "type": "string"
     },
+    "scenario_sha256": {
+      "description": "Content hash of the validated scenario the batch ran: sha256 of the frozen scenario model's canonical JSON (crashcourt.spec.content), not of the YAML bytes. Equivalent YAML hashes the same; any change of meaning changes it. T-07's loader produces it; a fixture carries the hash of its demonstration scenario.",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Scenario Sha256",
+      "type": "string"
+    },
     "v": {
       "const": 1,
       "title": "V",
@@ -54,7 +60,8 @@
     "v",
     "batch",
     "provenance",
-    "manifest_sha256"
+    "manifest_sha256",
+    "scenario_sha256"
   ],
   "then": {
     "properties": {

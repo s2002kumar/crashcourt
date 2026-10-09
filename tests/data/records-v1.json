@@ -904,7 +904,8 @@
         "v": 1,
         "batch": "b-1",
         "provenance": "fixture",
-        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scenario_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     },
     {
@@ -941,7 +942,8 @@
         "v": 1,
         "batch": "DEMO-b",
         "provenance": "run",
-        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scenario_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     },
     {
@@ -953,7 +955,8 @@
         "v": 1,
         "batch": "DEMO-b",
         "provenance": "fixture",
-        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scenario_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     },
     {
@@ -965,7 +968,72 @@
         "v": 1,
         "batch": "b-2026-10-09",
         "provenance": "run",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scenario_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    {
+      "name": "batch: without a scenario hash",
+      "kind": "batch",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "provenance": "fixture",
         "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "batch: a malformed scenario hash 'ABC'",
+      "kind": "batch",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scenario_sha256": "ABC"
+      }
+    },
+    {
+      "name": "batch: a malformed scenario hash 'BBBBBB'",
+      "kind": "batch",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scenario_sha256": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+      }
+    },
+    {
+      "name": "batch: a malformed scenario hash 'bbbbbb'",
+      "kind": "batch",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scenario_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    {
+      "name": "batch: a malformed scenario hash ''",
+      "kind": "batch",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scenario_sha256": ""
       }
     },
     {

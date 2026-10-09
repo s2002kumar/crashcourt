@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from crashcourt.spec.records import OUTCOMES, VERDICTS, BatchRecord, InvariantResult, ResultRecord
 
 DIGEST = "a" * 64
+SCENARIO = "b" * 64
 EVIDENCE = ["trials/17/merged.jsonl#/41"]
 REVIEW = {"reviewer": "maintainer", "reviewed": "2026-10-08"}
 CONFIRMED: dict[str, Any] = {
@@ -117,7 +118,9 @@ def result(**changes: Any) -> dict[str, Any]:
 
 
 def test_records_carry_provenance_and_the_manifest_hash() -> None:
-    batch = BatchRecord(v=1, batch="b-1", provenance="run", manifest_sha256=DIGEST)
+    batch = BatchRecord(
+        v=1, batch="b-1", provenance="run", manifest_sha256=DIGEST, scenario_sha256=SCENARIO
+    )
     fixture = ResultRecord.model_validate(result(batch="DEMO-b-1", provenance="fixture"))
     assert (batch.provenance, fixture.provenance) == ("run", "fixture")
     assert fixture.manifest_sha256 == batch.manifest_sha256
@@ -125,7 +128,13 @@ def test_records_carry_provenance_and_the_manifest_hash() -> None:
 
 @pytest.mark.parametrize(("batch", "provenance"), [("DEMO-b-1", "run"), ("b-1", "fixture")])
 def test_only_fixtures_have_demo_batch_ids(batch: str, provenance: str) -> None:
-    record = {"v": 1, "batch": batch, "provenance": provenance, "manifest_sha256": DIGEST}
+    record = {
+        "v": 1,
+        "batch": batch,
+        "provenance": provenance,
+        "manifest_sha256": DIGEST,
+        "scenario_sha256": SCENARIO,
+    }
     with pytest.raises(ValidationError, match="DEMO-"):
         BatchRecord.model_validate(record)
     with pytest.raises(ValidationError, match="DEMO-"):
@@ -162,6 +171,31 @@ def test_one_outcome_per_invariant() -> None:
 def test_malformed_results_are_rejected(changes: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         ResultRecord.model_validate(result(**changes))
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"scenario_sha256": None},
+        {"scenario_sha256": "ABC"},
+        {"scenario_sha256": "B" * 64},
+        {"scenario_sha256": "b" * 63},
+    ],
+)
+def test_a_batch_needs_a_well_formed_scenario_hash(changes: dict[str, Any]) -> None:
+    good: dict[str, Any] = {
+        "v": 1,
+        "batch": "b-1",
+        "provenance": "run",
+        "manifest_sha256": DIGEST,
+        "scenario_sha256": SCENARIO,
+    }
+    BatchRecord.model_validate(good)
+    record = {**good, **changes}
+    if changes["scenario_sha256"] is None:
+        del record["scenario_sha256"]
+    with pytest.raises(ValidationError, match="scenario_sha256"):
+        BatchRecord.model_validate(record)
 
 
 CASES = json.loads(

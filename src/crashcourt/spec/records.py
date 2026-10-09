@@ -3,6 +3,9 @@
 Every record says where it came from (`provenance`: a harness run or a fixture) and carries the
 sha256 of its batch's manifest, so a release build can refuse fixtures and any result that does
 not belong to the batch it names. A fixture's batch id starts with DEMO-, and only a fixture's.
+A batch also names the scenario it ran, by the content hash of the validated scenario model
+(crashcourt.spec.content), so two batches of the same scenario can be told from two batches of
+scenarios that merely look alike.
 
 A result records one outcome per invariant. The five verdicts are PASS, VIOLATION, EXPECTED,
 GAP, and INVALID. Two further outcomes are not verdicts:
@@ -147,6 +150,14 @@ class BatchRecord(BaseModel):
     provenance: Provenance
     #: sha256 of the batch's manifest.json bytes.
     manifest_sha256: Sha256
+    scenario_sha256: Sha256 = Field(
+        description=(
+            "Content hash of the validated scenario the batch ran: sha256 of the frozen scenario "
+            "model's canonical JSON (crashcourt.spec.content), not of the YAML bytes. Equivalent "
+            "YAML hashes the same; any change of meaning changes it. T-07's loader produces it; "
+            "a fixture carries the hash of its demonstration scenario."
+        )
+    )
 
     @model_validator(mode="after")
     def _provenance_matches_batch(self) -> Self:
