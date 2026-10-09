@@ -85,10 +85,14 @@ def stop(history: HistoryWriter, process: Process, fault_id: str) -> ActiveFault
         return {}
 
     def heal() -> Data:
-        if process.poll() is not None:
-            return {"exited": process.returncode}
-        _send(process, "SIGCONT")
-        return {"signal": "SIGCONT"}
+        if process.poll() is None:
+            try:
+                _send(process, "SIGCONT")
+                return {"signal": "SIGCONT"}
+            except FaultError:
+                if process.poll() is None:  # still running: the SIGCONT itself failed
+                    raise
+        return {"exited": process.returncode}
 
     data: Data = {"fault": "stop", "signal": "SIGSTOP", "pid": process.pid}
     return inject(history, fault_id, data, apply, heal)

@@ -50,24 +50,31 @@ def terminate_backends(
                 (application_name,),
             ).fetchall()
             signalled = sorted(int(pid) for pid, sent in rows if sent)
+            seen: Data = {"matched": len(rows), "signalled": len(signalled)}
             if not signalled:
                 raise FaultError(
                     f"no backend with application_name {application_name!r} could be signalled"
-                    f" ({len(rows)} matched)"
+                    f" ({len(rows)} matched)",
+                    {**seen, "terminated": 0},
                 )
             deadline = time.monotonic() + wait_ms / 1000
             alive = signalled
             while alive and time.monotonic() < deadline:
                 time.sleep(0.01)
+                # The application_name too, so a pid the server reused for a new backend
+                # does not count as one that outlived the signal.
                 alive = [
                     int(pid)
                     for (pid,) in conn.execute(
-                        "SELECT pid FROM pg_stat_activity WHERE pid = ANY(%s)", (alive,)
+                        "SELECT pid FROM pg_stat_activity"
+                        " WHERE pid = ANY(%s) AND application_name = %s",
+                        (alive, application_name),
                     ).fetchall()
                 ]
         if alive:
             raise FaultError(
-                f"backends {alive} of {signalled} were still running {wait_ms} ms after the signal"
+                f"backends {alive} of {signalled} were still running {wait_ms} ms after the signal",
+                {**seen, "terminated": len(signalled) - len(alive), "still_running": len(alive)},
             )
         return {"matched": len(rows), "terminated": len(signalled)}
 

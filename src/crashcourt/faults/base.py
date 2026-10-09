@@ -22,7 +22,14 @@ Data = dict[str, JsonValue]
 
 
 class FaultError(Exception):
-    """A fault could not be injected or healed as requested; the trial is INVALID."""
+    """A fault could not be injected or healed as requested; the trial is INVALID.
+
+    `observed` is what the attempt saw before it failed; the failed `fault.heal` records it.
+    """
+
+    def __init__(self, message: str, observed: Data | None = None) -> None:
+        super().__init__(message)
+        self.observed: Data = dict(observed or {})
 
 
 class ActiveFault:
@@ -55,8 +62,9 @@ class ActiveFault:
                 result = self._heal() if self._heal is not None else None
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
-                _close(self.history, self.fault_id, self.observed, error)
-                raise FaultError(f"healing {self.fault_id} failed: {error}") from exc
+                seen = {**self.observed, **_observed(exc)}
+                _close(self.history, self.fault_id, seen, error)
+                raise FaultError(f"healing {self.fault_id} failed: {error}", seen) from exc
             _close(self.history, self.fault_id, {**self.observed, **(result or {})})
 
     def __enter__(self) -> Self:
@@ -69,6 +77,10 @@ class ActiveFault:
         traceback: TracebackType | None,
     ) -> None:
         self.heal()
+
+
+def _observed(exc: Exception) -> Data:
+    return exc.observed if isinstance(exc, FaultError) else {}
 
 
 def _close(history: HistoryWriter, fault_id: str, data: Data, error: str | None = None) -> None:
@@ -89,8 +101,8 @@ def inject(
         observed = apply() or {}
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
-        _close(history, fault_id, {}, error)
-        raise FaultError(f"injecting {fault_id} failed: {error}") from exc
+        _close(history, fault_id, _observed(exc), error)
+        raise FaultError(f"injecting {fault_id} failed: {error}", _observed(exc)) from exc
     return ActiveFault(history, fault_id, observed, heal)
 
 

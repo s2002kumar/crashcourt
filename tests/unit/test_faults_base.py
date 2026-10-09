@@ -87,3 +87,14 @@ def test_instant_fault_heals_at_once_with_what_it_observed(tmp_path: Path) -> No
         ("fault.heal", "f-5", {"returncode": -9}),
     ]
     assert heal_status(tmp_path) == ("ok", None)
+
+
+def test_a_failed_fault_keeps_what_it_observed(tmp_path: Path) -> None:
+    def apply() -> None:
+        raise FaultError("one backend outlived the wait", {"matched": 3, "terminated": 2})
+
+    with history(tmp_path) as h, pytest.raises(FaultError) as raised:
+        inject(h, "f-6", {}, apply)
+    assert raised.value.observed == {"matched": 3, "terminated": 2}
+    assert kinds(tmp_path)[-1] == ("fault.heal", "f-6", {"matched": 3, "terminated": 2})
+    assert heal_status(tmp_path) == ("fail", "FaultError: one backend outlived the wait")
