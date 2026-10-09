@@ -198,7 +198,13 @@ def run_doctor(probes: Probes) -> DoctorReport:
                 f"source {expected[:12]}{clock}"
                 if not problems
                 else "; ".join(problems),
-                "Rebuild and restart the sink: `docker compose up -d --wait --build sink`.",
+                (
+                    "The sink-data volume holds a ledger this sink cannot resume (named above). "
+                    "Archive that file, then open a new trial or remove the volume "
+                    "(`docker compose rm -sf sink && docker volume rm crashcourt_sink-data`)."
+                )
+                if sink.get("resume_error")
+                else "Rebuild and restart the sink: `docker compose up -d --wait --build sink`.",
             )
         )
 

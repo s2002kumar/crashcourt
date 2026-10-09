@@ -265,3 +265,11 @@ def test_unpinned_or_missing_harness_base_fails() -> None:
     fails = failed(FakeProbes(bases=["ghcr.io/astral-sh/uv:0.12.1"]))
     assert "Dockerfile.harness FROM ghcr.io/astral-sh/uv:0.12.1" in fails["images pinned by digest"]
     assert "Dockerfile.harness" in failed(FakeProbes(bases=None))["images pinned by digest"]
+
+
+def test_a_sink_that_could_not_resume_gets_its_own_remedy() -> None:
+    from crashcourt.doctor import run_doctor as doctor
+
+    health = {**GOOD_SINK, "resume_error": "written by ledger version 1"}
+    [check] = [c for c in doctor(FakeProbes(sink=health)).failures if c.name == "effect sink"]
+    assert "Archive that file" in check.remedy and "docker volume rm" in check.remedy
