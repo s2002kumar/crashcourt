@@ -227,3 +227,74 @@ def test_a_trial_that_cannot_be_resumed_leaves_the_sink_up_with_no_trial(tmp_pat
     assert health["trial"] is None and "ledger version 1" in health["resume_error"]
     second.post("/trials", json={**TRIAL, "trial": 2})
     assert second.get("/health").json()["resume_error"] is None
+
+
+def _serve(answer: bytes, status: int = 200) -> tuple[Any, str]:
+    import http.server
+    import threading
+
+    class Fixed(http.server.BaseHTTPRequestHandler):
+        def _reply(self) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(answer)
+
+        def do_GET(self) -> None:
+            self._reply()
+
+        def do_POST(self) -> None:
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            self._reply()
+
+        def log_message(self, format: str, *args: Any) -> None:
+            return None
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Fixed)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+@pytest.mark.parametrize("answer", [b"{}", b"[1]", b'{"sink_seq": "x"}', b'{"sink_seq": 0}'])
+def test_an_answer_without_a_row_is_an_unknown_outcome(tmp_path: Path, answer: bytes) -> None:
+    from crashcourt.history.reader import read_history
+    from crashcourt.history.writer import HistoryWriter, RunIdentity
+    from crashcourt.sink.client import SinkClient, SinkError, record_effect
+    from crashcourt.sink.ledger import EffectRequest
+
+    server, url = _serve(answer)
+    run = RunIdentity("DEMO-b", "DEMO-c", 1, "s")
+    path = tmp_path / "w.jsonl"
+    try:
+        with (
+            HistoryWriter(path, run=run, proc="worker-1", pid=4242) as history,
+            pytest.raises(SinkError),
+        ):
+            record_effect(history, SinkClient(url), EffectRequest(**effect()))
+    finally:
+        server.shutdown()
+        server.server_close()
+    events = read_history(path).events
+    assert [(e.kind, e.status) for e in events] == [
+        ("effect.request", None),
+        ("effect.response", "info"),
+    ]
+
+
+def test_the_client_ignores_proxy_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    from crashcourt.sink.client import SinkClient
+
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")  # nothing listens there
+    monkeypatch.setenv("NO_PROXY", "")
+    server, url = _serve(b'{"status": "ok"}')
+    try:
+        assert SinkClient(url).health() == {"status": "ok"}
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("name", ["..", ".hidden", "a/b", "a\\b", ""])
+def test_batch_and_cell_ids_cannot_leave_the_data_directory(client: TestClient, name: str) -> None:
+    assert client.post("/trials", json={**TRIAL, "batch": name}).status_code == 422
+    assert client.post("/trials", json={**TRIAL, "cell": name}).status_code == 422

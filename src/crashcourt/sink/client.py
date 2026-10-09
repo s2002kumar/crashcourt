@@ -40,6 +40,9 @@ class SinkClient:
     def __init__(self, url: str = DEFAULT_URL, timeout: float = 10.0) -> None:
         self.url = url.rstrip("/")
         self.timeout = timeout
+        # Straight to the sink, never through a proxy from the environment: nothing may sit
+        # between a worker and the oracle, or a 4xx would no longer mean the sink refused.
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     def _call(self, method: str, path: str, body: object | None = None) -> dict[str, Any]:
         data = None if body is None else json.dumps(body).encode("utf-8")
@@ -47,14 +50,20 @@ class SinkClient:
             self.url + path, data=data, method=method, headers={"Content-Type": "application/json"}
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return cast(dict[str, Any], json.loads(response.read().decode("utf-8")))
+            with self._opener.open(request, timeout=self.timeout) as response:
+                answer: object = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", "replace").strip()
+            try:
+                detail = exc.read().decode("utf-8", "replace").strip()
+            except (OSError, http.client.HTTPException):  # an error answer cut off: still a refusal
+                detail = "(body cut off)"
             raise SinkError(f"{method} {path}: HTTP {exc.code} {detail}", exc.code) from exc
         # Refused, reset, timed out, or cut off mid-answer: the outcome is unknown.
         except (OSError, http.client.HTTPException, ValueError) as exc:
             raise SinkError(f"{method} {path}: {type(exc).__name__}: {exc}") from exc
+        if not isinstance(answer, dict):
+            raise SinkError(f"{method} {path}: answered {type(answer).__name__}, not an object")
+        return cast(dict[str, Any], answer)
 
     def health(self) -> dict[str, Any]:
         return self._call("GET", "/health")
@@ -64,9 +73,13 @@ class SinkClient:
 
     def post_effect(self, trial: TrialId, effect: EffectRequest) -> dict[str, Any]:
         """Append one effect to `trial`'s ledger; the sink answers 409 if another is open."""
-        return self._call(
+        answer = self._call(
             "POST", "/effects", {"trial": trial.__dict__, "effect": effect.model_dump()}
         )
+        row = answer.get("sink_seq")
+        if not (isinstance(row, int) and not isinstance(row, bool) and row >= 1):
+            raise SinkError(f"POST /effects: answered without a ledger row: {answer!r}")
+        return answer
 
     def next_attempt(self, trial: TrialId, key: str) -> int:
         body = {"trial": trial.__dict__, "key": key}

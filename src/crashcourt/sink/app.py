@@ -18,8 +18,9 @@ trial's rows for another's. POST /trials answers 409 for a ledger file that belo
 trial or ledger version, and leaves the open trial as it was.
 
 /health reports the sink's monotonic clock (`mono_ns`). The ledger stamps rows with it, and the
-merge breaks ties with it, so it is comparable with the workers' clocks only when they share a
-kernel: on Linux, not between a Windows host and a Docker Desktop container.
+merge breaks ties with it, so it is comparable with the workers' clocks only when the sink and the
+workers share a kernel: not between a host and a Docker Desktop VM (Windows, macOS). Doctor shows
+the offset; nothing here fails on it.
 
 `CRASHCOURT_SINK_DATA` is the ledger directory. `CRASHCOURT_SINK_TEST_EXIT_AFTER_COMMIT=N` is a
 test hook only: the process exits right after committing its Nth effect, before answering, so a
@@ -38,7 +39,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from crashcourt import __version__
 from crashcourt.history.writer import host_monotonic_ns
@@ -48,11 +49,15 @@ from crashcourt.sink.source import build_root, source_sha256
 EXIT_HOOK_ENV = "CRASHCOURT_SINK_TEST_EXIT_AFTER_COMMIT"
 
 
+#: A batch or cell id: it names a directory, so no separators, no leading dot, no "..".
+PathId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")]
+
+
 class TrialRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    batch: str = Field(min_length=1)
-    cell: str = Field(min_length=1)
+    batch: PathId
+    cell: PathId
     trial: int = Field(ge=0)
     seed: str
 
