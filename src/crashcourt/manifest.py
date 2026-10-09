@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from crashcourt.spec.events import Version
 
@@ -99,6 +99,13 @@ class Manifest(BaseModel):
     lockfile_sha256: str
     #: The clause registry's version (crashcourt.clauses.registry_sha256); verdicts cite its files.
     clause_registry_sha256: str
+    spec_sha256: str = Field(
+        description=(
+            "sha256 of the locked project specification the code was built against, from "
+            "spec-provenance.json. Provenance only: the specification is private, and the hash "
+            "identifies it without making it public or a run reproducible from it."
+        )
+    )
     packages: dict[str, str]
     psycopg_impl: str
     #: The wheel tags of the installed psycopg-binary; the binary implementation's libpq comes
@@ -118,6 +125,14 @@ class Manifest(BaseModel):
     image_ids: dict[str, str]
     postgres: dict[str, str]
     toxiproxy_version: str
+    sink_clock_offset_ns: int | None = Field(
+        default=None,
+        description=(
+            "The effect sink's monotonic clock minus this host's, measured by doctor at the "
+            "midpoint of a /health request; null when no sink was checked. Recorded, never used "
+            "to order events; a canonical benchmark batch refuses one beyond its threshold."
+        ),
+    )
     schema_version: Version = SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -153,6 +168,7 @@ class Manifest(BaseModel):
 _FIELD_TYPES: dict[str, str] = {
     "git_dirty": "bool",
     "schema_version": "int",
+    "sink_clock_offset_ns": "int or null",
     "packages": "map",
     "images": "map",
     "image_ids": "map",
@@ -166,6 +182,8 @@ def _has_field_type(name: str, value: object) -> bool:
         return isinstance(value, bool)
     if kind == "int":
         return type(value) is int
+    if kind == "int or null":
+        return value is None or type(value) is int
     if kind == "map":
         if not isinstance(value, dict):
             return False
@@ -184,6 +202,8 @@ def validate_manifest(m: Manifest) -> list[str]:
     if not SHA256_HEX.fullmatch(m.clause_registry_sha256):
         digest = m.clause_registry_sha256 or "missing"
         problems.append(f"clause_registry_sha256 is not a sha256 digest: {digest}")
+    if not SHA256_HEX.fullmatch(m.spec_sha256):
+        problems.append(f"spec_sha256 is not a sha256 digest: {m.spec_sha256 or 'missing'}")
     for name in _TEXT_FIELDS:
         if not getattr(m, name):
             problems.append(f"{name} is missing")
@@ -255,6 +275,7 @@ def pinned_view(m: Manifest) -> dict[str, Any]:
         "python_implementation": m.python_implementation,
         "lockfile_sha256": m.lockfile_sha256,
         "clause_registry_sha256": m.clause_registry_sha256,
+        "spec_sha256": m.spec_sha256,
         "packages": dict(sorted(m.packages.items())),
         "psycopg_impl": m.psycopg_impl,
         "libpq_major": libpq_major(m.libpq_version),

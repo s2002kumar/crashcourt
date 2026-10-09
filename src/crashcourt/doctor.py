@@ -77,6 +77,7 @@ class Probes(Protocol):
     def locked_versions(self) -> Mapping[str, str] | None: ...
     def lockfile_sha256(self) -> str | None: ...
     def clause_registry(self) -> tuple[int, str]: ...
+    def spec_provenance(self) -> tuple[str, bool | None]: ...
     def python_pin(self) -> str | None: ...
     def driver_info(self) -> DriverInfo: ...
     def git_state(self) -> tuple[str | None, bool]: ...
@@ -201,6 +202,33 @@ def run_doctor(probes: Probes) -> DoctorReport:
             )
         )
 
+    spec_digest = ""
+    try:
+        spec_digest, verified = probes.spec_provenance()
+    except Exception as exc:  # noqa: BLE001 - a missing or broken record is a failed check
+        checks.append(
+            _check(
+                "spec provenance",
+                False,
+                f"{type(exc).__name__}: {exc}",
+                "Restore spec-provenance.json (`git checkout -- spec-provenance.json`).",
+            )
+        )
+    else:
+        checks.append(
+            _check(
+                "spec provenance",
+                verified is not False,
+                f"sha256 {spec_digest[:12]}, "
+                + {
+                    True: "matches the local copy of the spec",
+                    None: "the spec itself is not in this checkout",
+                    False: "the local copy of the spec does not match it",
+                }[verified],
+                "The spec changed: update spec-provenance.json only when it is locked again.",
+            )
+        )
+
     py_version, py_impl = probes.python_info()
     try:
         pin = probes.python_pin()
@@ -272,6 +300,7 @@ def run_doctor(probes: Probes) -> DoctorReport:
             runner=probes.runner(),
             lockfile_sha256=_lockfile_sha256(probes),
             clause_registry_sha256=registry_digest,
+            spec_sha256=spec_digest,
             packages={d: installed.get(d) or "" for d in PINNED_DISTRIBUTIONS},
             psycopg_impl=driver.impl,
             psycopg_wheel=driver.wheel,

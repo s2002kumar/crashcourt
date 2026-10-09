@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FROZEN_V1 = {
     "batch.json": "37b889b16c1ed6f289be92314946a774c83aa18c5dbbbaf5ff52f38c3023cf67",
     "event.json": "eb5d89e4185e20052e520c96c89988cc83b0ad3b5a734df4cb0357c468cf31e6",
-    "manifest.json": "05951ea3e12b04767b5c1a69d6294aa770039aa45c7c03ae9cfa17deec0e6fa1",
+    "manifest.json": "b73bffa6382df7e7f62cc5ac80bf93cca248872b3d255aa06a226d81055d9e5c",
     "result.json": "87d2c4f97b19c726dfb8f7db8af9b2cebecdfdc689959aa384508eb7983bf26f",
 }
 

@@ -1,0 +1,8 @@
+{
+  "file": "SPEC.md",
+  "version": "1.1",
+  "locked": "2026-09-27",
+  "bytes": 150261,
+  "sha256": "c6560f855c0bf80d9d1b18cd1407157dd619d84bc7e2b14dd7e1591f3cb45258",
+  "note": "The project specification is private. This sha256 identifies the exact version the code was built against, and every manifest records it. It is provenance only: it does not make the specification public, or a run reproducible from it by anyone without the file."
+}

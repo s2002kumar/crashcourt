@@ -30,6 +30,7 @@ GOOD_RUNNING = {"postgres": ID_PG, "toxiproxy": ID_TOXI}
 LINUX_WHEEL = "cp312-cp312-manylinux2014_x86_64,cp312-cp312-manylinux_2_17_x86_64"
 WINDOWS_WHEEL = "cp312-cp312-win_amd64"
 REGISTRY_SHA = "e" * 64
+SPEC_SHA = "c" * 64
 GOOD_DRIVER = DriverInfo(
     impl="binary", libpq=180006, libpq_build=180006, cancel_safe=True, wheel=LINUX_WHEEL
 )
@@ -48,6 +49,7 @@ def make_manifest(**changes: object) -> Manifest:
         runner="local",
         lockfile_sha256="f" * 64,
         clause_registry_sha256=REGISTRY_SHA,
+        spec_sha256=SPEC_SHA,
         packages=dict(GOOD_VERSIONS),
         psycopg_impl="binary",
         psycopg_wheel=LINUX_WHEEL,
@@ -87,6 +89,7 @@ class FakeProbes:
     )
     lock_sha: str | Exception | None = "f" * 64
     registry: tuple[int, str] | Exception = (9, REGISTRY_SHA)
+    spec: tuple[str, bool | None] | Exception = (SPEC_SHA, None)
     pin: str | Exception | None = "3.12.7"
     driver: DriverInfo | Exception = GOOD_DRIVER
     git: tuple[str | None, bool] = ("0" * 40, False)
@@ -150,6 +153,11 @@ class FakeProbes:
         if isinstance(self.registry, Exception):
             raise self.registry
         return self.registry
+
+    def spec_provenance(self) -> tuple[str, bool | None]:
+        if isinstance(self.spec, Exception):
+            raise self.spec
+        return self.spec
 
     def python_pin(self) -> str | None:
         if isinstance(self.pin, Exception):

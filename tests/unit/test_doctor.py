@@ -217,3 +217,14 @@ def test_manifest_records_the_clause_registry_version() -> None:
     report = run_doctor(FakeProbes(registry=(9, "1" * 64)))
     assert report.manifest is not None
     assert report.manifest.clause_registry_sha256 == "1" * 64
+
+
+def test_spec_provenance_is_recorded_and_checked_where_the_spec_is_present() -> None:
+    from ._factories import SPEC_SHA
+
+    report = run_doctor(FakeProbes(spec=(SPEC_SHA, None)))
+    assert report.manifest is not None and report.manifest.spec_sha256 == SPEC_SHA
+    assert run_doctor(FakeProbes(spec=(SPEC_SHA, True))).ok
+    assert "does not match" in failed(FakeProbes(spec=(SPEC_SHA, False)))["spec provenance"]
+    broken = failed(FakeProbes(spec=FileNotFoundError("spec-provenance.json")))
+    assert broken["spec provenance"] == "FileNotFoundError: spec-provenance.json"

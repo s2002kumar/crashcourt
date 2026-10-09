@@ -6,6 +6,7 @@ points CI at it; older references stay as the record of their task's environment
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -37,6 +38,8 @@ def test_reference_matches_the_lockfile_and_clause_registry_in_the_repository() 
     )
     assert manifest.lockfile_sha256 == sha256_file(REPO / "uv.lock"), rerecord
     assert manifest.clause_registry_sha256 == registry_sha256(REPO / "clauses"), rerecord
+    spec = json.loads((REPO / "spec-provenance.json").read_text(encoding="utf-8"))
+    assert manifest.spec_sha256 == spec["sha256"], rerecord
 
 
 def test_reference_manifest_round_trips_byte_for_byte() -> None:
