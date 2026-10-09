@@ -9,7 +9,7 @@ import pytest
 import yaml
 from pydantic import BaseModel, ConfigDict
 
-from crashcourt.spec.content import canonical_json, content_sha256
+from crashcourt.spec.content import NotCanonical, canonical_json, content_sha256
 
 
 class Fault(BaseModel):
@@ -118,3 +118,42 @@ def test_the_canonical_form_is_sorted_compact_json_of_the_values() -> None:
     text = canonical_json(load(BASE))
     assert text.startswith('{"durability":"sync","faults":[{"at":"put.after","kind":"kill"')
     assert " " not in text and "\n" not in text
+
+
+def test_a_fixed_scenario_has_a_fixed_digest() -> None:
+    # Pins the canonical form itself: a serializer change that altered it would show up here,
+    # not only as a different hash for every recorded batch.
+    assert (
+        content_sha256(load(BASE))
+        == "f19ad192ea0a6c507a85f17f345b8fc295cfe2c7fe368e28df5bbc299fddd514"
+    )
+
+
+class WithSet(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    tags: frozenset[str]
+
+
+class Nested(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    inner: list[WithSet] | None = None
+
+
+class WithFloat(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    ratio: float
+
+
+@pytest.mark.parametrize("model", [WithSet(tags=frozenset({"a", "b"})), Nested()])
+def test_a_model_holding_a_set_is_refused(model: BaseModel) -> None:
+    with pytest.raises(NotCanonical, match="holds a set"):
+        content_sha256(model)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_a_non_finite_number_is_refused(value: float) -> None:
+    with pytest.raises(NotCanonical, match="non-finite"):
+        content_sha256(WithFloat(ratio=value))
