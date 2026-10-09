@@ -170,7 +170,7 @@ def test_meta_is_written_once_and_kept(tmp_path: Path) -> None:
     with sqlite3.connect(path) as conn:
         meta = dict(conn.execute("SELECT key, value FROM meta").fetchall())
     assert meta == {
-        "ledger_version": "1",
+        "ledger_version": "2",
         "batch": "DEMO-b",
         "cell": "DEMO-c",
         "trial": "3",
@@ -182,3 +182,25 @@ def test_a_ledger_that_cannot_use_wal_is_refused() -> None:
     # SQLite keeps an in-memory database's journal in memory and answers "memory" to WAL.
     with pytest.raises(ValueError, match="journal_mode is memory, not wal"):
         Ledger(Path(":memory:"), TRIAL)
+
+
+def test_a_file_from_another_ledger_version_is_refused(tmp_path: Path) -> None:
+    from crashcourt.sink.ledger import LedgerConflict
+
+    path = TRIAL.path(tmp_path)
+    Ledger(path, TRIAL).close()
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE meta SET value = '1' WHERE key = 'ledger_version'")
+    with pytest.raises(
+        LedgerConflict, match="written by ledger version 1; this sink writes version 2"
+    ):
+        Ledger(path, TRIAL)
+
+
+def test_a_file_for_another_seed_is_refused(tmp_path: Path) -> None:
+    from crashcourt.sink.ledger import LedgerConflict
+
+    path = TRIAL.path(tmp_path)
+    Ledger(path, TRIAL).close()
+    with pytest.raises(LedgerConflict, match="another trial"):
+        Ledger(path, TrialId(TRIAL.batch, TRIAL.cell, TRIAL.trial, "s2"))

@@ -24,7 +24,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from crashcourt.history.writer import RunIdentity, host_monotonic_ns
 from crashcourt.spec.events import SCHEMA_VERSION, Event
 
-LEDGER_VERSION = 1
+#: 2: logical_op, pid, thread_id, and node are required (NOT NULL); version 1 allowed nulls.
+LEDGER_VERSION = 2
 GENESIS = "0" * 64
 
 SCHEMA = """
@@ -86,6 +87,10 @@ class EffectRequest(BaseModel):
     payload_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class LedgerConflict(ValueError):
+    """The file belongs to another trial, or was written by another ledger version."""
+
+
 @dataclass(frozen=True)
 class TrialId:
     batch: str
@@ -120,32 +125,48 @@ class Ledger:
         self.trial = trial
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
+        try:
+            self._prepare(path, trial)
+        except BaseException:
+            self._conn.close()
+            raise
+
+    def _prepare(self, path: Path, trial: TrialId) -> None:
         # SQLite answers with the mode it is in; a file that cannot use WAL keeps another one.
         mode = str(self._conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower()
         if mode != "wal":
-            self._conn.close()
             raise ValueError(f"{path}: journal_mode is {mode}, not wal")
         self._conn.execute("PRAGMA synchronous=FULL")
-        self._conn.executescript(SCHEMA)
         wanted = {
             "ledger_version": str(LEDGER_VERSION),
             **{k: str(v) for k, v in asdict(trial).items()},
         }
         # Read and write meta in one transaction, so a crash cannot leave it half written and
-        # two openers cannot both decide it is empty.
+        # two openers cannot both decide it is empty. The tables are created only for a new file:
+        # an existing one keeps the schema of the version that wrote it, which the check refuses.
         self._conn.execute("BEGIN IMMEDIATE")
         try:
-            meta = dict(self._conn.execute("SELECT key, value FROM meta").fetchall())
+            exists = self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'"
+            ).fetchone()
+            meta = (
+                dict(self._conn.execute("SELECT key, value FROM meta").fetchall()) if exists else {}
+            )
             if not meta:
+                for statement in filter(str.strip, SCHEMA.split(";")):
+                    self._conn.execute(statement)
                 self._conn.executemany("INSERT INTO meta VALUES (?, ?)", wanted.items())
             self._conn.execute("COMMIT")
         except BaseException:
             self._conn.execute("ROLLBACK")
-            self._conn.close()
             raise
+        if meta and meta.get("ledger_version") != wanted["ledger_version"]:
+            raise LedgerConflict(
+                f"{path} was written by ledger version {meta.get('ledger_version')}; "
+                f"this sink writes version {LEDGER_VERSION}"
+            )
         if meta and meta != wanted:
-            self._conn.close()
-            raise ValueError(f"{path} belongs to another trial: {meta}")
+            raise LedgerConflict(f"{path} belongs to another trial: {meta}")
 
     def close(self) -> None:
         with self._lock:
