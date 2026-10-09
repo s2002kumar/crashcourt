@@ -12,7 +12,7 @@ Run it with `docker compose up -d --wait && uv run crashcourt faults selftest --
 
 ## Result on Linux CI
 
-From CI run [37857300421](https://github.com/s2002kumar/crashcourt/actions/runs/37857300421) (ubuntu-24.04), artifact
+From CI run [37875936339](https://github.com/s2002kumar/crashcourt/actions/runs/37875936339) (ubuntu-24.04), artifact
 `doctor-evidence/fault-selftest-ci.md`, verbatim:
 
 Trials passed: 20 of 20 (a trial passes when no check fails). Skipped: none. Not run: none.
@@ -22,12 +22,12 @@ Trials passed: 20 of 20 (a trial passes when no check fails). Skipped: none. Not
 | downstream_drop_is_lost_ack | 20 | 0 | 0 | committed_while_client_waited=True, client_blocked_until_heal=True, client_after_heal=OperationalError: consuming input failed: server closed the connection unexpectedly, committed_final=True |
 | upstream_drop_never_reaches_server | 20 | 0 | 0 | committed_while_client_waited=False, client_blocked_until_heal=True, client_after_heal=OperationalError: consuming input failed: server closed the connection unexpectedly, committed_final=False |
 | downstream_hold_is_delayed_ack | 20 | 0 | 0 | committed_while_client_waited=True, client_blocked_until_heal=True, client_after_heal=ok, committed_final=True |
-| downstream_latency_delays_response | 20 | 0 | 0 | latency_ms=200, client=ok, elapsed_ms=201.8, committed=True |
+| downstream_latency_delays_response | 20 | 0 | 0 | latency_ms=200, client=ok, elapsed_ms=201.0, committed=True |
 | reset_downstream_after_commit | 20 | 0 | 0 | client=OperationalError: consuming input failed: server closed the connection unexpectedly, committed=True |
 | reset_upstream_before_execute | 20 | 0 | 0 | client=OperationalError: consuming input failed: server closed the connection unexpectedly, committed=False |
 | new_toxic_on_held_stream_releases_hold | 20 | 0 | 0 | api_refused_second_toxic=True, upstream_add_released_hold=False, downstream_add_released_hold=True |
 | terminate_backend | 20 | 0 | 0 | terminated=1, client_next_query=AdminShutdown [57P01]: terminating connection due to administrator command |
-| restart_database | 20 | 0 | 0 | acked_row_survived=True, open_connection=AdminShutdown [57P01]: terminating connection due to administrator command, container=ed26d059dd30, restart_s=0.365, ready_s=0.113 |
+| restart_database | 20 | 0 | 0 | acked_row_survived=True, open_connection=AdminShutdown [57P01]: terminating connection due to administrator command, container=e4053d569a91, restart_s=0.272, ready_s=0.108 |
 | signals | 20 | 0 | 0 | advanced_while_stopped=0, resumed=True, sigterm_returncode=-15, sigkill_returncode=-9 |
 | inject_heal_pairs | 20 | 0 | 0 | injects=11, heals=11, failed_heals=0 |
 
