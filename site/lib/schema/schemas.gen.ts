@@ -1,4 +1,22 @@
 // Generated from schemas/v1 by scripts/gen-schema.ts. Do not edit; run `npm run gen:schema`.
+/** schemas/v1/batch.json */
+export const batchSchema: Record<string, unknown> = {
+  $id: "urn:crashcourt:schema:v1:batch",
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  additionalProperties: false,
+  description:
+    "batch.json: one batch, its provenance, and the manifest it ran under.\n\nA fixture's batch id starts with DEMO-, and only a fixture's. Rules this JSON Schema does not\nexpress are enforced when a record is loaded; see crashcourt.spec.records.",
+  properties: {
+    batch: { pattern: "^\\S+$", title: "Batch", type: "string" },
+    manifest_sha256: { pattern: "^[0-9a-f]{64}$", title: "Manifest Sha256", type: "string" },
+    provenance: { enum: ["run", "fixture"], title: "Provenance", type: "string" },
+    v: { const: 1, title: "V", type: "integer" },
+  },
+  required: ["v", "batch", "provenance", "manifest_sha256"],
+  title: "BatchRecord",
+  type: "object",
+};
+
 /** schemas/v1/event.json */
 export const eventSchema: Record<string, unknown> = {
   $defs: { JsonValue: {} },
@@ -121,20 +139,28 @@ export const manifestSchema: Record<string, unknown> = {
   additionalProperties: false,
   description: "Schema v1. The JSON form is sorted, two-space indented, and ends with a newline.",
   properties: {
+    clause_registry_sha256: { title: "Clause Registry Sha256", type: "string" },
     compose_version: { title: "Compose Version", type: "string" },
+    docker_kernel: { title: "Docker Kernel", type: "string" },
     docker_version: { title: "Docker Version", type: "string" },
     generated_at: { title: "Generated At", type: "string" },
     git_dirty: { title: "Git Dirty", type: "boolean" },
     git_sha: { title: "Git Sha", type: "string" },
+    image_ids: { additionalProperties: { type: "string" }, title: "Image Ids", type: "object" },
     images: { additionalProperties: { type: "string" }, title: "Images", type: "object" },
+    libpq_build_version: { title: "Libpq Build Version", type: "string" },
+    libpq_version: { title: "Libpq Version", type: "string" },
     lockfile_sha256: { title: "Lockfile Sha256", type: "string" },
     machine: { title: "Machine", type: "string" },
     os_release: { title: "Os Release", type: "string" },
     os_system: { title: "Os System", type: "string" },
     packages: { additionalProperties: { type: "string" }, title: "Packages", type: "object" },
     postgres: { additionalProperties: { type: "string" }, title: "Postgres", type: "object" },
+    psycopg_impl: { title: "Psycopg Impl", type: "string" },
+    psycopg_wheel: { title: "Psycopg Wheel", type: "string" },
     python_implementation: { title: "Python Implementation", type: "string" },
     python_version: { title: "Python Version", type: "string" },
+    runner: { title: "Runner", type: "string" },
     schema_version: { const: 1, default: 1, title: "Schema Version", type: "integer" },
     toxiproxy_version: { title: "Toxiproxy Version", type: "string" },
   },
@@ -147,14 +173,107 @@ export const manifestSchema: Record<string, unknown> = {
     "os_system",
     "os_release",
     "machine",
+    "runner",
     "lockfile_sha256",
+    "clause_registry_sha256",
     "packages",
+    "psycopg_impl",
+    "psycopg_wheel",
+    "libpq_version",
+    "libpq_build_version",
     "docker_version",
+    "docker_kernel",
     "compose_version",
     "images",
+    "image_ids",
     "postgres",
     "toxiproxy_version",
   ],
   title: "Manifest",
+  type: "object",
+};
+
+/** schemas/v1/result.json */
+export const resultSchema: Record<string, unknown> = {
+  $defs: {
+    InvariantResult: {
+      additionalProperties: false,
+      description:
+        "One invariant's outcome in one trial.\n\nEach outcome needs some of clause, evidence, repro, review, and reason; the table is in\ncrashcourt.spec.records. Those rules are enforced when a record is loaded and are not\nexpressed in this JSON Schema.",
+      properties: {
+        clause: {
+          anyOf: [{ pattern: "^\\S+$", type: "string" }, { type: "null" }],
+          default: null,
+          title: "Clause",
+        },
+        evidence: {
+          default: [],
+          items: { pattern: "^\\S(?:[\\s\\S]*\\S)?$", type: "string" },
+          title: "Evidence",
+          type: "array",
+        },
+        invariant: { pattern: "^\\S+$", title: "Invariant", type: "string" },
+        outcome: {
+          enum: [
+            "PASS",
+            "VIOLATION",
+            "EXPECTED",
+            "GAP",
+            "INVALID",
+            "VIOLATION_CANDIDATE",
+            "NO_ANOMALY_UNSPECIFIED",
+          ],
+          title: "Outcome",
+          type: "string",
+        },
+        reason: {
+          anyOf: [{ pattern: "^\\S(?:[\\s\\S]*\\S)?$", type: "string" }, { type: "null" }],
+          default: null,
+          title: "Reason",
+        },
+        repro: {
+          anyOf: [{ pattern: "^\\S(?:[\\s\\S]*\\S)?$", type: "string" }, { type: "null" }],
+          default: null,
+          title: "Repro",
+        },
+        review: { anyOf: [{ $ref: "#/$defs/Review" }, { type: "null" }], default: null },
+      },
+      required: ["invariant", "outcome"],
+      title: "InvariantResult",
+      type: "object",
+    },
+    Review: {
+      additionalProperties: false,
+      description: "The human review a VIOLATION requires.",
+      properties: {
+        reviewed: { format: "date", title: "Reviewed", type: "string" },
+        reviewer: { pattern: "^\\S(?:[\\s\\S]*\\S)?$", title: "Reviewer", type: "string" },
+      },
+      required: ["reviewer", "reviewed"],
+      title: "Review",
+      type: "object",
+    },
+  },
+  $id: "urn:crashcourt:schema:v1:result",
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  additionalProperties: false,
+  description:
+    "result.json: the outcomes of one trial, one per invariant.\n\nA fixture's batch id starts with DEMO-, and only a fixture's. What each outcome needs is\nlisted in crashcourt.spec.records. Rules this JSON Schema does not express are enforced when\na record is loaded.",
+  properties: {
+    batch: { pattern: "^\\S+$", title: "Batch", type: "string" },
+    cell: { pattern: "^\\S+$", title: "Cell", type: "string" },
+    manifest_sha256: { pattern: "^[0-9a-f]{64}$", title: "Manifest Sha256", type: "string" },
+    provenance: { enum: ["run", "fixture"], title: "Provenance", type: "string" },
+    results: {
+      items: { $ref: "#/$defs/InvariantResult" },
+      minItems: 1,
+      title: "Results",
+      type: "array",
+    },
+    trial: { minimum: 0, title: "Trial", type: "integer" },
+    v: { const: 1, title: "V", type: "integer" },
+  },
+  required: ["v", "batch", "cell", "trial", "provenance", "manifest_sha256", "results"],
+  title: "ResultRecord",
   type: "object",
 };

@@ -10,8 +10,10 @@ import { compile, type JSONSchema } from "json-schema-to-typescript";
 import { format, resolveConfig } from "prettier";
 
 const SCHEMAS = [
+  { file: "batch.json", type: "BatchRecord", constName: "batchSchema" },
   { file: "event.json", type: "Event", constName: "eventSchema" },
   { file: "manifest.json", type: "Manifest", constName: "manifestSchema" },
+  { file: "result.json", type: "ResultRecord", constName: "resultSchema" },
 ] as const;
 
 const SOURCE = new URL("../../schemas/v1/", import.meta.url);

@@ -3,8 +3,8 @@
 
 import Ajv2020, { type ErrorObject } from "ajv/dist/2020.js";
 
-import { eventSchema, manifestSchema } from "./schemas.gen.ts";
-import type { Event, Manifest } from "./types.gen.ts";
+import { batchSchema, eventSchema, manifestSchema, resultSchema } from "./schemas.gen.ts";
+import type { BatchRecord, Event, Manifest, ResultRecord } from "./types.gen.ts";
 
 /**
  * An event as the site holds it. The nanosecond clocks are exact bigints: wall_ns is about 1.8e18,
@@ -26,9 +26,25 @@ export class ArtifactError extends Error {
   }
 }
 
+/** JSON Schema's "date" (RFC 3339 full-date): YYYY-MM-DD naming a real calendar day. */
+export function isDate(text: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!m) return false;
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
 const ajv = new Ajv2020({ allErrors: true, strict: true });
+ajv.addFormat("date", { type: "string", validate: isDate });
 const checkEvent = ajv.compile<Event>(eventSchema);
 const checkManifest = ajv.compile<Manifest>(manifestSchema);
+const checkBatch = ajv.compile<BatchRecord>(batchSchema);
+const checkResult = ajv.compile<ResultRecord>(resultSchema);
 
 function describe(errors: readonly ErrorObject[] | null | undefined): string[] {
   return (errors ?? []).map((e) => {
@@ -96,5 +112,26 @@ export function parseManifest(text: string, file: string): Manifest {
   const value = parseJson(text, file);
   if (!checkManifest(value))
     throw new ArtifactError(file, undefined, describe(checkManifest.errors));
+  return value;
+}
+
+/**
+ * Parses and validates a batch record. The JSON Schema checks its shape; the rules it cannot express
+ * (a fixture's batch id starts with DEMO-, and only a fixture's) are enforced by the harness that
+ * writes it, and F-02's release guard reads provenance.
+ */
+export function parseBatch(text: string, file: string): BatchRecord {
+  const value = parseJson(text, file);
+  if (!checkBatch(value)) throw new ArtifactError(file, undefined, describe(checkBatch.errors));
+  return value;
+}
+
+/**
+ * Parses and validates a trial's result record. What each outcome needs (a clause, evidence, a repro,
+ * a review) is enforced by the harness that writes it; the site only renders the outcome it carries.
+ */
+export function parseResult(text: string, file: string): ResultRecord {
+  const value = parseJson(text, file);
+  if (!checkResult(value)) throw new ArtifactError(file, undefined, describe(checkResult.errors));
   return value;
 }

@@ -9,9 +9,10 @@ if (root === null) {
   );
 } else {
   try {
-    const { files, events, manifests } = validateArtifactTree(root);
+    const { files, events, manifests, batches, results } = validateArtifactTree(root);
     console.log(
-      `validate-artifacts: ${files} files in ${root}: ${events} events, ${manifests} manifests, all valid`,
+      `validate-artifacts: ${files} files in ${root}: ${events} events, ${manifests} manifests, ` +
+        `${batches} batches, ${results} results, all valid`,
     );
   } catch (e) {
     console.error(`validate-artifacts: ${root}\n${(e as Error).message}`);

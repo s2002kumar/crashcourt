@@ -6,13 +6,24 @@ import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { validateArtifactTree } from "../../lib/artifacts.ts";
-import { ArtifactError, parseEvents, parseManifest } from "../../lib/schema/validate.ts";
+import {
+  ArtifactError,
+  isDate,
+  parseBatch,
+  parseEvents,
+  parseManifest,
+  parseResult,
+} from "../../lib/schema/validate.ts";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const SAMPLE = path.join(REPO, "research/evidence/t-04/sample");
 
 const historyFiles = readdirSync(SAMPLE).filter((f) => f.endsWith(".jsonl"));
+// T-01's reference manifest was recorded before the clause registry existed, so it lacks
+// clause_registry_sha256, which v1 requires; it stays as the record of T-01's environment.
+const PRE_V1 = new Set(["t-01"]);
 const manifestFiles = readdirSync(path.join(REPO, "research/evidence"))
+  .filter((d) => !PRE_V1.has(d))
   .map((d) => path.join(REPO, "research/evidence", d, "manifest-local.json"))
   .filter((f) => {
     try {
@@ -62,6 +73,12 @@ describe("events", () => {
       '"wall_ns":1790000000123456789',
     );
     assert.equal(parseEvents(big, "x")[0]!.wall_ns, 1790000000123456789n);
+    // A monotonic clock past 2^53 (a host up for about 104 days) must come back exact too.
+    const late = eventLine((e) => (e.mono_ns = 0)).replace(
+      '"mono_ns":0',
+      '"mono_ns":9007199254740993',
+    );
+    assert.equal(parseEvents(late, "x")[0]!.mono_ns, 9007199254740993n);
   });
 
   const malformed: [string, string, RegExp][] = [
@@ -119,7 +136,7 @@ describe("events", () => {
 
 describe("manifests", () => {
   test("every committed reference manifest validates", () => {
-    assert.ok(manifestFiles.length >= 2);
+    assert.ok(manifestFiles.length >= 1, "at least the T-02 reference");
     for (const f of manifestFiles) parseManifest(readFileSync(f, "utf8"), f);
   });
 
@@ -155,6 +172,96 @@ describe("manifests", () => {
   }
 });
 
+const DIGEST = "a".repeat(64);
+const goodBatch = { v: 1, batch: "DEMO-b", provenance: "fixture", manifest_sha256: DIGEST };
+const goodResult = {
+  v: 1,
+  batch: "DEMO-b",
+  cell: "DEMO-c",
+  trial: 0,
+  provenance: "fixture",
+  manifest_sha256: DIGEST,
+  results: [
+    { invariant: "I1", outcome: "NO_ANOMALY_UNSPECIFIED" },
+    {
+      invariant: "I2",
+      outcome: "VIOLATION_CANDIDATE",
+      clause: "LG-DUR-SYNC",
+      evidence: ["trials/0/merged.jsonl#/41"],
+    },
+    {
+      invariant: "I3",
+      outcome: "VIOLATION",
+      clause: "LG-DUR-SYNC",
+      evidence: ["trials/0/merged.jsonl#/41"],
+      repro: "repros/F-0001",
+      review: { reviewer: "maintainer", reviewed: "2026-10-08" },
+    },
+  ],
+};
+
+describe("records", () => {
+  test("a batch and a result with every outcome shape validate", () => {
+    assert.equal(parseBatch(JSON.stringify(goodBatch), "batch.json").provenance, "fixture");
+    const result = parseResult(JSON.stringify(goodResult), "result.json");
+    assert.deepEqual(
+      result.results.map((r) => r.outcome),
+      goodResult.results.map((r) => r.outcome),
+    );
+  });
+
+  const badBatches: [string, Record<string, unknown>, RegExp][] = [
+    ["provenance is unknown", { ...goodBatch, provenance: "demo" }, /\/provenance/],
+    [
+      "the manifest hash is not sha256",
+      { ...goodBatch, manifest_sha256: "ABC" },
+      /manifest_sha256/,
+    ],
+    ["a key is not in the schema", { ...goodBatch, note: "x" }, /additional properties 'note'/],
+    ["the batch id has whitespace", { ...goodBatch, batch: "b 1" }, /\/batch must match pattern/],
+  ];
+  for (const [what, value, pattern] of badBatches) {
+    test(`rejects a batch where ${what}`, () =>
+      rejects(() => parseBatch(JSON.stringify(value), "batch.json"), pattern));
+  }
+
+  const result = (change: (r: Record<string, unknown>) => void): string => {
+    const r = structuredClone(goodResult) as unknown as Record<string, unknown>;
+    change(r);
+    return JSON.stringify(r);
+  };
+  const first = (r: Record<string, unknown>): Record<string, unknown> =>
+    (r.results as Record<string, unknown>[])[0]!;
+  const badResults: [string, string, RegExp][] = [
+    ["there are no outcomes", result((r) => (r.results = [])), /\/results must NOT have fewer/],
+    [
+      "an outcome is not one of the seven",
+      result((r) => (first(r).outcome = "MAYBE")),
+      /\/results\/0\/outcome must be equal to one of the allowed values/,
+    ],
+    [
+      "a review date is not a real day",
+      result((r) => {
+        const last = (r.results as Record<string, unknown>[])[2]!;
+        last.review = { reviewer: "maintainer", reviewed: "2026-02-30" };
+      }),
+      /\/results\/2\/review\/reviewed must match format "date"/,
+    ],
+    ["the trial is negative", result((r) => (r.trial = -1)), /\/trial must be >= 0/],
+  ];
+  for (const [what, text, pattern] of badResults) {
+    test(`rejects a result where ${what}`, () =>
+      rejects(() => parseResult(text, "result.json"), pattern));
+  }
+
+  test("a date names a real calendar day", () => {
+    assert.ok(isDate("2024-02-29"));
+    for (const bad of ["2023-02-29", "2026-13-01", "2026-1-01", "26-01-01", "2026-01-01T00:00"]) {
+      assert.equal(isDate(bad), false, bad);
+    }
+  });
+});
+
 describe("artifact tree", () => {
   function tree(files: Record<string, string>): string {
     const root = mkdtempSync(path.join(tmpdir(), "cc-artifacts-"));
@@ -169,9 +276,17 @@ describe("artifact tree", () => {
     const root = tree({
       "b/manifest.json": JSON.stringify(goodManifest),
       "b/cell/0/worker-1.jsonl": `${firstLine}\n${firstLine}\n`,
+      "b/batch.json": JSON.stringify(goodBatch),
+      "b/cell/0/result.json": JSON.stringify(goodResult),
     });
     try {
-      assert.deepEqual(validateArtifactTree(root), { files: 2, events: 2, manifests: 1 });
+      assert.deepEqual(validateArtifactTree(root), {
+        files: 4,
+        events: 2,
+        manifests: 1,
+        batches: 1,
+        results: 1,
+      });
     } finally {
       rmSync(root, { recursive: true });
     }
