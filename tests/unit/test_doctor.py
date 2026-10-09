@@ -273,3 +273,11 @@ def test_a_sink_that_could_not_resume_gets_its_own_remedy() -> None:
     health = {**GOOD_SINK, "resume_error": "written by ledger version 1"}
     [check] = [c for c in doctor(FakeProbes(sink=health)).failures if c.name == "effect sink"]
     assert "Archive that file" in check.remedy and "docker volume rm" in check.remedy
+
+
+def test_the_manifest_records_the_sink_clock_offset() -> None:
+    report = run_doctor(FakeProbes(sink={**GOOD_SINK, "clock_offset_ns": -830_700_000_000}))
+    assert report.manifest is not None
+    assert report.manifest.sink_clock_offset_ns == -830_700_000_000
+    without = run_doctor(FakeProbes(sink=dict(GOOD_SINK)))
+    assert without.manifest is not None and without.manifest.sink_clock_offset_ns is None

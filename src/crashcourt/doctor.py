@@ -159,6 +159,7 @@ def run_doctor(probes: Probes) -> DoctorReport:
     else:
         checks.append(_check("toxiproxy api", True, f"version {toxiproxy}", ""))
 
+    sink_offset: int | None = None
     try:
         sink = dict(probes.sink_health())
     except Exception as exc:  # noqa: BLE001
@@ -189,6 +190,8 @@ def run_doctor(probes: Probes) -> DoctorReport:
                 f"the checkout is {expected[:12]}"
             )
         offset = sink.get("clock_offset_ns")
+        if isinstance(offset, int):
+            sink_offset = offset  # recorded in the manifest, never compared or used to order
         clock = f", clock offset {offset / 1e9:+.1f} s" if isinstance(offset, int) else ""
         checks.append(
             _check(
@@ -371,6 +374,7 @@ def run_doctor(probes: Probes) -> DoctorReport:
             image_ids={s: running[s][0] for s in REQUIRED_SERVICES},
             postgres=pg,
             toxiproxy_version=toxiproxy or "",
+            sink_clock_offset_ns=sink_offset,
         )
         problems = validate_manifest(candidate)
         checks.append(
