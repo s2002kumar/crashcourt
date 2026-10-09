@@ -1,6 +1,6 @@
 """Write a demonstration ledger dump from the compose sink (T-08 evidence). Not a result.
 
-Opens trial DEMO-t08/DEMO-ledger/1 on the sink at 127.0.0.1:8480, records a charge twice (the
+Opens trial DEMO-t08/DEMO-ledger/2 on the sink at 127.0.0.1:8480, records a charge twice (the
 same effect key, attempts 1 and 2) and one refund, takes two attempt numbers, then writes every
 ledger row and the chain verification to ledger-dump.json next to this file.
 
@@ -18,7 +18,7 @@ from crashcourt.sink.client import SinkClient
 from crashcourt.sink.ledger import EffectRequest, TrialId
 
 HERE = Path(__file__).resolve().parent
-TRIAL = TrialId("DEMO-t08", "DEMO-ledger", 1, "0")
+TRIAL = TrialId("DEMO-t08", "DEMO-ledger", 2, "0")
 
 
 def effect(key: str, attempt: int, payload: bytes) -> EffectRequest:
@@ -51,8 +51,8 @@ def main() -> None:
         "note": "Demonstration data (DEMO-), not a result.",
         "attempts_returned": attempts,
         "sink_seqs_returned": seqs,
-        "rows": client.ledger(),
-        "verify": client.verify(),
+        "rows": client.ledger(TRIAL),
+        "verify": client.verify(TRIAL),
     }
     (HERE / "ledger-dump.json").write_bytes((json.dumps(dump, indent=2) + "\n").encode())
     print(json.dumps(dump["verify"]))
