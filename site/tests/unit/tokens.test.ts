@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 
-import { ACTORS, VERDICTS } from "../../lib/tokens.ts";
+import { ACTORS, verdictLegend } from "../../lib/tokens.ts";
 import {
   VISIONS,
   contrast,
@@ -65,7 +65,7 @@ const SEPARATION: Record<"verdict" | "actor", Record<Vision, number>> = {
   actor: { normal: 20, protanopia: 9, deuteranopia: 9, tritanopia: 9 },
 };
 
-const verdictVars = VERDICTS.map((v) => `verdict-${v.toLowerCase()}`);
+const verdictVars = verdictLegend().map(({ verdict }) => `verdict-${verdict.toLowerCase()}`);
 const actorVars = ACTORS.map((a) => `actor-${a}`);
 
 describe("tokens.css", () => {

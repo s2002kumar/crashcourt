@@ -1,12 +1,12 @@
 import { VerdictGlyph } from "@/components/glyphs";
-import type { Verdict } from "@/lib/tokens";
-import { VERDICTS, verdictToken } from "@/lib/tokens";
+import type { VerdictProp } from "@/lib/tokens";
+import { verdictLegend, verdictToken } from "@/lib/tokens";
 
 /**
  * A verdict as the site shows it everywhere: glyph, label, and color together. The color goes on the
  * glyph, the edge, and a light tint; the label stays in ink so it reads at full contrast.
  */
-export function VerdictBadge({ verdict }: { verdict: Verdict }) {
+export function VerdictBadge({ verdict }: VerdictProp) {
   const token = verdictToken(verdict);
   return (
     <span
@@ -26,12 +26,12 @@ export function VerdictBadge({ verdict }: { verdict: Verdict }) {
 export function VerdictLegend() {
   return (
     <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-1">
-      {VERDICTS.map((v) => (
-        <div key={v} className="grid gap-1">
+      {verdictLegend().map(({ verdict, token }) => (
+        <div key={verdict} className="grid gap-1">
           <dt>
-            <VerdictBadge verdict={v} />
+            <VerdictBadge verdict={verdict} />
           </dt>
-          <dd className="text-sm text-ink-muted">{verdictToken(v).meaning}</dd>
+          <dd className="text-sm text-ink-muted">{token.meaning}</dd>
         </div>
       ))}
     </dl>

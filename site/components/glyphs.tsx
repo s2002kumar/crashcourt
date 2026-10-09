@@ -1,7 +1,7 @@
 // Glyphs for verdicts, faults, and actors. They are drawn as SVG rather than typed as Unicode so they look
 // the same on every platform and font. Each is decorative (aria-hidden); a text label always sits beside it.
 
-import type { Actor, FaultMark, Verdict, VerdictGlyphName } from "@/lib/tokens";
+import type { Actor, FaultMark, VerdictGlyphName, VerdictProp } from "@/lib/tokens";
 import { actorToken, verdictToken } from "@/lib/tokens";
 
 interface GlyphProps {
@@ -22,7 +22,7 @@ const VERDICT_PATHS: Record<VerdictGlyphName, React.ReactNode> = {
   ),
 };
 
-export function VerdictGlyph({ verdict, size = 16, className }: GlyphProps & { verdict: Verdict }) {
+export function VerdictGlyph({ verdict, size = 16, className }: GlyphProps & VerdictProp) {
   const token = verdictToken(verdict);
   return (
     <svg

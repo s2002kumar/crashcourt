@@ -3,7 +3,7 @@ import Link from "next/link";
 import { EmptyState, Panel, Readout } from "@/components/panel";
 import { VerdictBadge } from "@/components/verdict";
 import { EXPERIENCES } from "@/lib/experiences";
-import { VERDICTS } from "@/lib/tokens";
+import { verdictLegend } from "@/lib/tokens";
 
 const NAMEPLATE: readonly [label: string, value: string][] = [
   ["Status", "Pre-results"],
@@ -48,13 +48,13 @@ export default function OverviewPage() {
           <Readout label="Controls passing" value={null} />
         </dl>
         <dl
-          aria-label="Verdict counts"
+          aria-label="Counts by verdict"
           className="mt-6 grid grid-cols-2 gap-x-5 gap-y-4 border-t border-rule pt-5 sm:grid-cols-3 lg:grid-cols-5"
         >
-          {VERDICTS.map((v) => (
-            <div key={v} className="grid justify-items-start gap-2">
+          {verdictLegend().map(({ verdict }) => (
+            <div key={verdict} className="grid justify-items-start gap-2">
               <dt>
-                <VerdictBadge verdict={v} />
+                <VerdictBadge verdict={verdict} />
               </dt>
               <dd className="readout text-lg">
                 <span aria-hidden="true" className="text-ink-faint">

@@ -1,11 +1,18 @@
 // Presentation tokens for verdicts, actors, and faults: glyph, label, and CSS color variable.
 //
-// This is the only file in the site that may spell a verdict name. Everything else receives a verdict
-// from a validated artifact and passes it through `verdictToken`; scripts/guard-verdicts.ts fails the
-// build if a verdict name appears anywhere else, so the site cannot decide a verdict on its own.
+// This is the only site file that spells a verdict name, holds the list of verdicts, or names the
+// Verdict type. Other code gets a verdict from a validated artifact and renders it through
+// `verdictToken`, or lists the vocabulary through `verdictLegend`. scripts/guard-verdicts.ts fails the
+// build when a quoted verdict name, the list, or the type appears anywhere else. It reads text, so it
+// cannot see a name built at run time; it is a tripwire that review backs up, not a proof.
 
-export const VERDICTS = ["PASS", "EXPECTED", "GAP", "VIOLATION", "INVALID"] as const;
+const VERDICTS = ["PASS", "EXPECTED", "GAP", "VIOLATION", "INVALID"] as const;
 export type Verdict = (typeof VERDICTS)[number];
+
+/** Props for a component that renders one verdict it was given. */
+export interface VerdictProp {
+  readonly verdict: Verdict;
+}
 
 export type VerdictGlyphName = "check" | "tilde" | "diamond" | "cross" | "empty";
 
@@ -59,6 +66,11 @@ const VERDICT_TOKENS: Readonly<Record<Verdict, VerdictToken>> = {
 
 export function verdictToken(verdict: Verdict): VerdictToken {
   return VERDICT_TOKENS[verdict];
+}
+
+/** Every verdict with its token, in display order: the vocabulary, never a result. */
+export function verdictLegend(): readonly (VerdictProp & { readonly token: VerdictToken })[] {
+  return VERDICTS.map((verdict) => ({ verdict, token: VERDICT_TOKENS[verdict] }));
 }
 
 export const ACTORS = ["client", "worker-a", "worker-b", "database", "sink"] as const;
