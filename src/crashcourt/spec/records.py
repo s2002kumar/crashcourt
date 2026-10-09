@@ -28,13 +28,18 @@ What each outcome needs, enforced when a record is loaded:
 
 INVALID also needs a reason. EXPECTED, GAP, and both kinds of violation describe an anomaly, so
 they cite the evidence for it.
+
+The JSON Schemas carry these rules too (`if`/`then` under `allOf`), so a reader that validates
+with JSON Schema alone, the evidence explorer for one, rejects what the models reject. Two rules
+are left to the models: one outcome per invariant, and a result's manifest hash matching its
+batch's. tests/data/records-v1.json holds cases both must agree on.
 """
 
 from __future__ import annotations
 
 from collections import Counter
 from datetime import date
-from typing import Annotated, Literal, Self, get_args
+from typing import Annotated, Any, Literal, Self, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -69,6 +74,58 @@ _NEEDS_CLAUSE = frozenset({"PASS", "EXPECTED", "VIOLATION_CANDIDATE", "VIOLATION
 _NO_CLAUSE = frozenset({"GAP", "NO_ANOMALY_UNSPECIFIED"})
 
 
+def _when(outcomes: frozenset[str], then: dict[str, Any]) -> dict[str, Any]:
+    """A JSON Schema rule: for these outcomes, the object must also match `then`."""
+    return {
+        "if": {
+            "type": "object",
+            "properties": {"outcome": {"enum": sorted(outcomes)}},
+            "required": ["outcome"],
+        },
+        "then": {"type": "object", **then},
+    }
+
+
+def _outcome_rules(schema: dict[str, Any]) -> None:
+    """The outcome table, in JSON Schema. Absent and null are the same to the models."""
+    string = {"type": "string"}
+    null = {"type": "null"}
+    no_anomaly = frozenset(OUTCOMES) - _ANOMALY
+    schema["allOf"] = [
+        _when(_NEEDS_CLAUSE, {"required": ["clause"], "properties": {"clause": string}}),
+        _when(_NO_CLAUSE, {"properties": {"clause": null}}),
+        _when(
+            _ANOMALY,
+            {
+                "required": ["evidence"],
+                "properties": {"evidence": {"type": "array", "minItems": 1}},
+            },
+        ),
+        _when(
+            frozenset({"VIOLATION"}),
+            {
+                "required": ["repro", "review"],
+                "properties": {"repro": string, "review": {"type": "object"}},
+            },
+        ),
+        _when(no_anomaly, {"properties": {"repro": null}}),
+        _when(frozenset(OUTCOMES) - {"VIOLATION"}, {"properties": {"review": null}}),
+        _when(frozenset({"INVALID"}), {"required": ["reason"], "properties": {"reason": string}}),
+    ]
+
+
+def _provenance_rule(schema: dict[str, Any]) -> None:
+    """In JSON Schema: a fixture's batch id starts with DEMO-, and only a fixture's."""
+    demo = {"type": "string", "pattern": f"^{FIXTURE_PREFIX}"}
+    schema["if"] = {
+        "type": "object",
+        "properties": {"provenance": {"const": "fixture"}},
+        "required": ["provenance"],
+    }
+    schema["then"] = {"type": "object", "properties": {"batch": demo}}
+    schema["else"] = {"type": "object", "properties": {"batch": {"not": demo}}}
+
+
 def _check_provenance(batch: str, provenance: Provenance) -> None:
     if (provenance == "fixture") != batch.startswith(FIXTURE_PREFIX):
         raise ValueError(
@@ -80,11 +137,10 @@ def _check_provenance(batch: str, provenance: Provenance) -> None:
 class BatchRecord(BaseModel):
     """batch.json: one batch, its provenance, and the manifest it ran under.
 
-    A fixture's batch id starts with DEMO-, and only a fixture's. Rules this JSON Schema does not
-    express are enforced when a record is loaded; see crashcourt.spec.records.
+    A fixture's batch id starts with DEMO-, and only a fixture's.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=_provenance_rule)
 
     v: Version
     batch: Id
@@ -111,11 +167,10 @@ class InvariantResult(BaseModel):
     """One invariant's outcome in one trial.
 
     Each outcome needs some of clause, evidence, repro, review, and reason; the table is in
-    crashcourt.spec.records. Those rules are enforced when a record is loaded and are not
-    expressed in this JSON Schema.
+    crashcourt.spec.records, and the rules are under allOf here.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=_outcome_rules)
 
     invariant: Id
     outcome: Outcome
@@ -157,12 +212,12 @@ class InvariantResult(BaseModel):
 class ResultRecord(BaseModel):
     """result.json: the outcomes of one trial, one per invariant.
 
-    A fixture's batch id starts with DEMO-, and only a fixture's. What each outcome needs is
-    listed in crashcourt.spec.records. Rules this JSON Schema does not express are enforced when
-    a record is loaded.
+    A fixture's batch id starts with DEMO-, and only a fixture's. Two rules are checked when
+    records are loaded and are not in this JSON Schema: one outcome per invariant, and a
+    manifest hash equal to the batch's.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=_provenance_rule)
 
     v: Version
     batch: Id

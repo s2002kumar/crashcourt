@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -160,3 +162,19 @@ def test_one_outcome_per_invariant() -> None:
 def test_malformed_results_are_rejected(changes: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         ResultRecord.model_validate(result(**changes))
+
+
+CASES = json.loads(
+    (Path(__file__).resolve().parents[1] / "data" / "records-v1.json").read_text(encoding="utf-8")
+)["cases"]
+
+
+@pytest.mark.parametrize("case", CASES, ids=[c["name"] for c in CASES])
+def test_the_models_decide_each_shared_case_as_recorded(case: dict[str, Any]) -> None:
+    # The evidence explorer checks the same cases against the JSON Schemas (site tests).
+    model = BatchRecord if case["kind"] == "batch" else ResultRecord
+    if case["valid"]:
+        model.model_validate(case["record"])
+    else:
+        with pytest.raises(ValidationError):
+            model.model_validate(case["record"])

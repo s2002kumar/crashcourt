@@ -1,0 +1,1006 @@
+{
+  "note": "v1 batch and result records. `valid` is what the models decide; where `schema` is true, the JSON Schemas in schemas/v1 must decide the same. Generated once from the models; edit by hand.",
+  "cases": [
+    {
+      "name": "every outcome with what it needs, nulls written out",
+      "kind": "result",
+      "valid": true,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "PASS",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          },
+          {
+            "invariant": "I2",
+            "outcome": "EXPECTED",
+            "clause": "LG-DUR-ASYNC",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": "repros/E-1",
+            "review": null,
+            "reason": null
+          },
+          {
+            "invariant": "I3",
+            "outcome": "GAP",
+            "clause": null,
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": null,
+            "review": null,
+            "reason": null
+          },
+          {
+            "invariant": "I4",
+            "outcome": "VIOLATION_CANDIDATE",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": null,
+            "review": null,
+            "reason": null
+          },
+          {
+            "invariant": "I5",
+            "outcome": "VIOLATION",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": "repros/F-1",
+            "review": {
+              "reviewer": "maintainer",
+              "reviewed": "2026-10-08"
+            },
+            "reason": null
+          },
+          {
+            "invariant": "I6",
+            "outcome": "NO_ANOMALY_UNSPECIFIED",
+            "clause": null,
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          },
+          {
+            "invariant": "I7",
+            "outcome": "INVALID",
+            "clause": null,
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": "control C1 failed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PASS with what it needs",
+      "kind": "result",
+      "valid": true,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "PASS",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "EXPECTED with what it needs",
+      "kind": "result",
+      "valid": true,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "EXPECTED",
+            "clause": "LG-DUR-ASYNC",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": "repros/E-1",
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "GAP with what it needs",
+      "kind": "result",
+      "valid": true,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "GAP",
+            "clause": null,
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "VIOLATION_CANDIDATE with what it needs",
+      "kind": "result",
+      "valid": true,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "VIOLATION_CANDIDATE",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "VIOLATION with what it needs",
+      "kind": "result",
+      "valid": true,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "VIOLATION",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": "repros/F-1",
+            "review": {
+              "reviewer": "maintainer",
+              "reviewed": "2026-10-08"
+            },
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "NO_ANOMALY_UNSPECIFIED with what it needs",
+      "kind": "result",
+      "valid": true,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "NO_ANOMALY_UNSPECIFIED",
+            "clause": null,
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "INVALID with what it needs",
+      "kind": "result",
+      "valid": true,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "INVALID",
+            "clause": null,
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": "control C1 failed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VIOLATION without a repro",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "VIOLATION",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": null,
+            "review": {
+              "reviewer": "maintainer",
+              "reviewed": "2026-10-08"
+            },
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "VIOLATION without a review",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "VIOLATION",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": "repros/F-1",
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "VIOLATION without evidence",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "VIOLATION",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [],
+            "repro": "repros/F-1",
+            "review": {
+              "reviewer": "maintainer",
+              "reviewed": "2026-10-08"
+            },
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "VIOLATION without a clause",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "VIOLATION",
+            "clause": null,
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": "repros/F-1",
+            "review": {
+              "reviewer": "maintainer",
+              "reviewed": "2026-10-08"
+            },
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "VIOLATION_CANDIDATE without evidence",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "VIOLATION_CANDIDATE",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "VIOLATION_CANDIDATE with a review",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "VIOLATION_CANDIDATE",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": "r/1",
+            "review": {
+              "reviewer": "maintainer",
+              "reviewed": "2026-10-08"
+            },
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "PASS without a clause",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "PASS",
+            "clause": null,
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "PASS with a review",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "PASS",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [],
+            "repro": null,
+            "review": {
+              "reviewer": "maintainer",
+              "reviewed": "2026-10-08"
+            },
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "PASS with a repro",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "PASS",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [],
+            "repro": "r/1",
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "EXPECTED without a clause",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "EXPECTED",
+            "clause": null,
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": "repros/E-1",
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "EXPECTED without evidence",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "EXPECTED",
+            "clause": "LG-DUR-ASYNC",
+            "evidence": [],
+            "repro": "repros/E-1",
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "EXPECTED with a review",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "EXPECTED",
+            "clause": "LG-DUR-ASYNC",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": "repros/E-1",
+            "review": {
+              "reviewer": "maintainer",
+              "reviewed": "2026-10-08"
+            },
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "GAP without evidence",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "GAP",
+            "clause": null,
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "GAP with a clause",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "GAP",
+            "clause": "LG-PW",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "GAP with a review",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "GAP",
+            "clause": null,
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": null,
+            "review": {
+              "reviewer": "maintainer",
+              "reviewed": "2026-10-08"
+            },
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "NO_ANOMALY_UNSPECIFIED with a clause",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "NO_ANOMALY_UNSPECIFIED",
+            "clause": "LG-PW",
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "NO_ANOMALY_UNSPECIFIED with a repro",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "NO_ANOMALY_UNSPECIFIED",
+            "clause": null,
+            "evidence": [],
+            "repro": "r/1",
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "INVALID without a reason",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "INVALID",
+            "clause": null,
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "INVALID with a repro",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "INVALID",
+            "clause": null,
+            "evidence": [],
+            "repro": "r/1",
+            "review": null,
+            "reason": "control C1 failed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a review date that is not a day",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "VIOLATION",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": "repros/F-1",
+            "review": {
+              "reviewer": "maintainer",
+              "reviewed": "2026-02-30"
+            },
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "an outcome outside the seven",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "MAYBE",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "VIOLATION with the review key absent",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "VIOLATION",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [
+              "trials/0/merged.jsonl#/41"
+            ],
+            "repro": "repros/F-1",
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "result: a fixture whose batch id is not DEMO-",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "b-1",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "PASS",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "batch: a fixture whose batch id is not DEMO-",
+      "kind": "batch",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "b-1",
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "result: a run whose batch id is DEMO-",
+      "kind": "result",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "run",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "PASS",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "batch: a run whose batch id is DEMO-",
+      "kind": "batch",
+      "valid": false,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "provenance": "run",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "batch: a fixture",
+      "kind": "batch",
+      "valid": true,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "batch: a run",
+      "kind": "batch",
+      "valid": true,
+      "schema": true,
+      "record": {
+        "v": 1,
+        "batch": "b-2026-10-09",
+        "provenance": "run",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "the same invariant twice (the models only)",
+      "kind": "result",
+      "valid": false,
+      "schema": false,
+      "record": {
+        "v": 1,
+        "batch": "DEMO-b",
+        "cell": "DEMO-c",
+        "trial": 0,
+        "provenance": "fixture",
+        "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "results": [
+          {
+            "invariant": "I1",
+            "outcome": "PASS",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          },
+          {
+            "invariant": "I1",
+            "outcome": "PASS",
+            "clause": "LG-DUR-SYNC",
+            "evidence": [],
+            "repro": null,
+            "review": null,
+            "reason": null
+          }
+        ]
+      }
+    }
+  ]
+}
