@@ -6,3 +6,5 @@ __pycache__/
 /manifest.json
 results/*/raw/
 .cache/
+# Batches from `crashcourt run`: raw histories stay out of git.
+runs/
