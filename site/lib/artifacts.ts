@@ -12,12 +12,24 @@ import {
   parseResult,
 } from "./schema/validate.ts";
 
+/** A release build (scripts/build-release.ts sets CRASHCOURT_RELEASE=1) reads ../results and nothing else. */
+export function isRelease(): boolean {
+  return process.env.CRASHCOURT_RELEASE === "1";
+}
+
 /**
- * The artifact directory: $CRASHCOURT_ARTIFACTS if set, else site/fixtures when it exists, else none.
- * Release builds point it at ../results (F-02 adds the fixtures and the release guard).
+ * The artifact directory. A release build reads ../results only, and refuses to be pointed anywhere
+ * else. Otherwise $CRASHCOURT_ARTIFACTS if set, else site/fixtures (the demo data) when it exists,
+ * else none.
  */
 export function artifactRoot(cwd: string = process.cwd()): string | null {
   const configured = process.env.CRASHCOURT_ARTIFACTS;
+  if (isRelease()) {
+    if (configured) {
+      throw new Error("a release build reads ../results only; unset CRASHCOURT_ARTIFACTS");
+    }
+    return path.resolve(cwd, "..", "results");
+  }
   if (configured) return path.resolve(cwd, configured);
   const fixtures = path.join(cwd, "fixtures");
   return existsSync(fixtures) ? fixtures : null;
@@ -34,7 +46,8 @@ export interface ValidationSummary {
 type Counts = Omit<ValidationSummary, "files">;
 const NONE: Counts = { events: 0, manifests: 0, batches: 0, results: 0 };
 
-function* walk(dir: string): Generator<string> {
+/** Every file under `dir`, depth first. */
+export function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) yield* walk(full);
