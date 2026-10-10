@@ -1,13 +1,15 @@
 """Database faults: backend termination and a fast restart of the target container.
 
 Both act through the direct admin connection or the Docker CLI, never through Toxiproxy, and
-only against the compose project Crashcourt created.
+only against the compose project Crashcourt created. A restart acts only when that project's
+container is the server the admin DSN reaches, and counts only when that server restarted.
 """
 
 from __future__ import annotations
 
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 
 import psycopg
@@ -122,30 +124,79 @@ def _check_target_container(root: Path) -> str:
     return container
 
 
+_IDENTITY = "SELECT system_identifier FROM pg_control_system()"
+
+
+def _server(admin_dsn: str) -> tuple[int, datetime]:
+    """The system identifier and postmaster start time of the server `admin_dsn` reaches."""
+    with psycopg.connect(admin_dsn, autocommit=True, connect_timeout=2) as conn:
+        row = conn.execute(
+            "SELECT system_identifier, pg_postmaster_start_time() FROM pg_control_system()"
+        ).fetchone()
+    if row is None:
+        raise FaultError("pg_control_system() returned no row")
+    return int(row[0]), row[1]
+
+
+def _container_system_identifier(container: str) -> int:
+    """The system identifier of the server inside `container`, read over its local socket."""
+    out = subprocess.run(
+        [
+            "docker",
+            "exec",
+            container,
+            "sh",
+            "-c",
+            f'psql -U "$POSTGRES_USER" -d postgres -XtAc "{_IDENTITY}"',
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    ).stdout.strip()
+    return int(out)
+
+
 def restart_database(
     history: HistoryWriter, admin_dsn: str, fault_id: str, *, root: Path, ready_timeout: float = 60
 ) -> Data:
     """Fast shutdown and restart of the target container; returns when it accepts connections
-    again. The postgres image stops with SIGINT, Postgres's fast shutdown mode."""
+    again. The postgres image stops with SIGINT, Postgres's fast shutdown mode.
+
+    The container is restarted only if its server has the system identifier of the server
+    `admin_dsn` reaches (each initdb draws a new one), so a DSN aimed at another stack's database
+    never restarts this one. The fault counts only if that server's postmaster start time then
+    moved forward. FaultError otherwise, so the trial cannot count it as injected."""
 
     def apply() -> Data:
         container = _check_target_container(root)
+        identifier, before = _server(admin_dsn)
+        seen: Data = {"container": container[:12], "postmaster_start_before": before.isoformat()}
+        if _container_system_identifier(container) != identifier:
+            raise FaultError(
+                f"container {container[:12]} is not the database the admin DSN reaches;"
+                " nothing was restarted",
+                seen,
+            )
         started = time.monotonic()
         _compose(root, "restart", TARGET_SERVICE)
         restarted = time.monotonic()
         while True:
             try:
-                with psycopg.connect(admin_dsn, autocommit=True, connect_timeout=2) as conn:
-                    conn.execute("SELECT 1")
+                now_identifier, after = _server(admin_dsn)
                 break
             except psycopg.OperationalError:
                 if time.monotonic() - restarted > ready_timeout:
                     raise FaultError(
-                        f"{TARGET_SERVICE} still refusing connections {ready_timeout} s later"
+                        f"{TARGET_SERVICE} still refusing connections {ready_timeout} s later",
+                        seen,
                     ) from None
                 time.sleep(0.1)
+        seen["postmaster_start_after"] = after.isoformat()
+        if now_identifier != identifier or after <= before:
+            raise FaultError("the database the admin DSN reaches did not restart", seen)
         return {
-            "container": container[:12],
+            **seen,
             "restart_s": round(restarted - started, 3),
             "ready_s": round(time.monotonic() - restarted, 3),
         }
