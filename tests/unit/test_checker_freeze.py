@@ -213,7 +213,11 @@ def test_a_scenario_pins_its_landmark_table(tmp_path: Path) -> None:
     is one of the frozen tables; the result is the hash checker.json carries."""
     landmarks = tmp_path / "landmarks"
     landmarks.mkdir()
-    audited = TABLE.model_copy(update={"name": "demo", "status": "audited"})
+    audited = LandmarkTable(
+        name="demo",
+        status="audited",
+        landmarks=(TABLE.landmarks[0].model_copy(update={"occurrence": 1}),),
+    )
     (landmarks / "demo.yaml").write_text(
         yaml.safe_dump(audited.model_dump(mode="json")), encoding="utf-8"
     )
@@ -227,7 +231,7 @@ def test_a_scenario_pins_its_landmark_table(tmp_path: Path) -> None:
     for outside in ("../demo", "demo/x", "demo yaml", ""):
         with pytest.raises(freeze.FreezeMismatch):
             freeze.verify_landmarks(text, REGISTRY_SHA, outside, landmarks)
-    draft = audited.model_copy(update={"status": "draft"})
+    draft = TABLE.model_copy(update={"name": "demo"})
     (landmarks / "demo.yaml").write_text(
         yaml.safe_dump(draft.model_dump(mode="json")), encoding="utf-8"
     )

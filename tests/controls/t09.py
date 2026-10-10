@@ -12,13 +12,15 @@ adapter reconstructs them, and the report lists each reconstruction:
   the chain verified by T-08's own Ledger.verify;
 - snapshot.json: the first snapshot is T-09's db-rows.jsonl export, the second a dump of the same
   threads from the live database now (the two must agree, as trigger 7 requires); the metadata
-  (settings, postmaster start) comes from the live dump;
+  (settings, postmaster start) comes from the live dump, and the first snapshot's time is the
+  trial's last orchestrator event (the export's own time was not recorded);
 - pre-trial emptiness: not recorded by the runner; reconstructed as zero (thread ids are scoped to
   the trial, so no earlier trial shares them), and listed as unverified;
-- sink-health.json: the batch's /health reading from run.json, as the reading after the trial.
+- sink-health.json: the batch's /health reading from run.json, as both the reading before the
+  trial and the one after.
 
-The draft landmark table is applied as if audited, so that the checker's verdicts are what they
-would be once it is. Nothing here changes a predicate.
+The landmark table is the repository's audited one; every landmark's occurrence in these batches
+is compared with the occurrence it records. Nothing here changes a predicate.
 """
 
 from __future__ import annotations
@@ -64,8 +66,8 @@ RECONSTRUCTED = (
     "ledger rows from a copy of the sink's SQLite file, verified with T-08's Ledger.verify",
     "first snapshot from db-rows.jsonl, second from a live dump; metadata from the live dump",
     "pre-trial emptiness not recorded by the runner; set to zero (thread ids are trial-scoped)",
-    "the sink reading after the trial taken from the batch's /health reading in run.json",
-    "the draft landmark table applied as if audited",
+    "both sink readings taken from the batch's /health reading in run.json",
+    "the first snapshot's time is the trial's last orchestrator event (export time not recorded)",
 )
 
 
@@ -230,7 +232,10 @@ def reconstruct(
     orchestrator = next(h for h in artifacts.histories if h.proc == "orchestrator")
     after = len(orchestrator.events) - 1
     live = take(dsn, scenario.threads, after_orchestrator_seq=after)
-    exported = export_snapshot(directory / "db-rows.jsonl", live.meta)
+    exported_at = orchestrator.events[-1].wall_ns
+    exported = export_snapshot(
+        directory / "db-rows.jsonl", live.meta.model_copy(update={"taken_ns": exported_at})
+    )
     health = run["sink"]["health"]
     return artifacts.model_copy(
         update={
@@ -240,13 +245,14 @@ def reconstruct(
             "snapshots": SnapshotPair(
                 first=exported, second=live, pretrial_rows=dict.fromkeys(scenario.threads, 0)
             ),
-            "sink_health": (
+            "sink_health": tuple(
                 SinkHealth(
-                    when="after",
+                    when=when,
                     hooks_enabled=bool(health["test_hooks"]),
                     source_sha256=health["source_sha256"],
                     open_trial=None,
-                ),
+                )
+                for when in ("before", "after")
             ),
         }
     )
@@ -314,6 +320,13 @@ def run_batch(
     stable, problems = occurrences(sites_per_trial)
     report.landmarks = {f"{k[0]} {k[1]} {k[2]}": v for k, v in stable.items()}
     report.landmark_problems.extend(problems)
+    for (landmark, worker, op), occurrence in stable.items():
+        spec = table.get(landmark)
+        if spec is None or spec.occurrence != occurrence:
+            recorded = spec.occurrence if spec is not None else None
+            report.landmark_problems.append(
+                f"{landmark} {worker} {op}: occurrence {occurrence}, the table records {recorded}"
+            )
     if first is not None and report.cell in {"w1-approve", "w5-concurrent"}:
         mutants = (
             W1_MUTANTS
@@ -357,8 +370,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[2]
     registry, sha = ClauseRegistry.load(root / "clauses"), registry_sha256(root / "clauses")
-    (draft,) = repository_tables()
-    table = draft.model_copy(update={"status": "audited"})
+    (table,) = repository_tables()
+    if table.status != "audited":
+        raise SystemExit(f"landmark table {table.name} is {table.status}, not audited")
     reports = [
         run_batch(batch, args.ledgers, table, args.dsn, registry, sha)
         for batch in sorted(p for p in args.data.iterdir() if p.is_dir())

@@ -27,9 +27,17 @@ def sites(artifacts: TrialArtifacts, point: str = "before") -> tuple[list[Site],
     return locate(TABLE, by_proc(artifacts), point)
 
 
-def test_the_repository_table_is_a_draft() -> None:
-    assert TABLE.status == "draft"
-    assert [s.id for s in TABLE.landmarks] == ["L-IN", "L-RES", "L-EXW", "L-EXC", "L-T1", "L-GET"]
+def test_the_repository_table_is_audited_with_the_derived_occurrences() -> None:
+    """The occurrences derived from T-09's real fault-free histories (research/evidence/t-10/)."""
+    assert TABLE.status == "audited"
+    assert {s.id: s.occurrence for s in TABLE.landmarks} == {
+        "L-IN": 1,
+        "L-RES": 2,
+        "L-EXW": 3,
+        "L-EXC": 2,
+        "L-T1": 3,
+        "L-GET": 1,
+    }
 
 
 def test_extraction_agrees_with_how_hits_are_counted() -> None:

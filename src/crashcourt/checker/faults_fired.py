@@ -6,8 +6,10 @@ its fp.hit (trigger 10); every hit must sit at its declared landmark (trigger 11
 fault must show its symptom in the targeted worker's history and in the oracle (trigger 12).
 
 The landmark table is input data: the checker holds only the generic context rules a landmark is
-made of, and no occurrence numbers. An arm with no landmark is accepted only in synthetic trials
-and artifact mutants; any other trial with an unverifiable hit is INVALID.
+made of. An audited table also records each landmark's occurrence, derived from real fault-free
+histories, and an arm naming the landmark must name that occurrence. An arm with no landmark is
+accepted only in synthetic trials and artifact mutants; any other trial with an unverifiable hit
+is INVALID.
 
 Commit timestamps are compared with the inject and heal events' wall_ns only where 3.6 and
 founder decision 7 require it (a lost acknowledgment's commit fell between them). No verdict
@@ -147,6 +149,11 @@ def _check_landmark(
         raise _Failed(11, f"landmark table {table.name} is a draft, not yet audited")
     if spec.method != arm.point.split(".", 1)[0]:
         raise _Failed(11, f"landmark {spec.id} is a {spec.method} call, the arm is at {arm.point}")
+    if spec.occurrence is not None and arm.occurrence != spec.occurrence:
+        raise _Failed(
+            11,
+            f"landmark {spec.id} is occurrence {spec.occurrence}, the arm names {arm.occurrence}",
+        )
     events = facts.order.by_proc[hit.proc]
     call = _call_of(events, hit)
     if call is None or not matches(spec, call, hit.seq, events):

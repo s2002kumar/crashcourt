@@ -1,49 +1,57 @@
 # Landmarks for W1 and W5 (red-team specification 4.2, "Verification by events").
 #
-# DRAFT. The rules restate 4.2's verification column; no occurrence number is written here. Each
-# landmark's occurrence is derived from real fault-free T-09 histories with
-# crashcourt.checker.landmarks (locate, occurrences) and audited before this table's status
-# becomes "audited". Until then the checker verifies hits against it only in synthetic trials and
-# artifact mutants.
+# AUDITED, 2026-10-10. The rules restate 4.2's verification column. Each occurrence was derived with
+# crashcourt.checker.landmarks (locate, occurrences) from T-09's real fault-free histories, the five
+# canonical batches of 50 trials recorded on its merged tree (t09-*-20261010T093643Z, evidence in
+# research/evidence/t-09/), and was the same in all 50 trials of each batch and in the development
+# corpus (T-09 at 194c94a); research/evidence/t-10/ holds the audit. An occurrence counts calls of
+# the method in one worker and op, as T-06's registry counts them, and an arm naming the landmark
+# must name it.
 #
-# Settled:
+# - L-IN: W1's start op and every W5 turn.
 # - L-RES is the put_writes carrying the RESUME special write for the interrupted task (founder
-#   ruling, 2026-10-10): channel __resume__ and the approval node's task. A resume run also writes
-#   the null task's copy of the Command's value (langgraph 1.2.12, pregel/_io.py:75), which is not
-#   the landmark; nor is the checkpoint put after it.
-# - L-T1 follows W5's model node, which T-09 names "respond" (its real fault-free histories,
-#   2026-10-10).
+#   ruling, 2026-10-10): channel __resume__ and the approval node's task. A resume run first writes
+#   the null task's copy of the Command's value (langgraph 1.2.12, pregel/_io.py:75), occurrence 1,
+#   which is not the landmark; nor is the checkpoint put after it.
+# - L-EXW and L-EXC: W1's resume op.
+# - L-T1 follows W5's model node, which T-09 names "respond": a turn puts its input checkpoint, the
+#   checkpoint after the input step, then this one.
 # - L-GET is not in 4.2's table: control C2 holds both workers at their turn's first read
-#   (get_tuple.after), and every hit outside a synthetic trial must sit at a landmark. Proposed here
-#   for the audit.
+#   (get_tuple.after), and every hit outside a synthetic trial must sit at a landmark.
 name: langgraph-v1
-status: draft
+status: audited
 landmarks:
   - id: L-IN
     method: put
+    occurrence: 1
     rules:
       - {rule: call_data_equals, key: source, value: input}
       - {rule: no_kind_before, kind: node.start}
   - id: L-RES
     method: put_writes
+    occurrence: 2
     rules:
       - {rule: call_channels_include, channel: __resume__}
       - {rule: call_task_of_node, node: approval}
   - id: L-EXW
     method: put_writes
+    occurrence: 3
     rules:
       - {rule: after_node_end, node: execute}
       - {rule: call_task_of_node, node: execute}
   - id: L-EXC
     method: put
+    occurrence: 2
     rules:
       - {rule: after_node_end, node: execute}
       - {rule: before_node_start, node: record}
   - id: L-T1
     method: put
+    occurrence: 3
     rules:
       - {rule: after_node_end, node: respond}
   - id: L-GET
     method: get_tuple
+    occurrence: 1
     rules:
       - {rule: first_call}

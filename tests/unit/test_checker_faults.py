@@ -196,8 +196,8 @@ def two_resumes(order: tuple[str, str] = ("resume-1", "resume-2")) -> TrialArtif
 def test_second_resume_needs_both_in_the_declared_order() -> None:
     assert trigger(two_resumes()) is None
     assert trigger(two_resumes(("resume-2", "resume-1"))) == 12
-    # Two resumes on one thread: LGP-DT disclaims it, so no durability PASS.
-    assert outcomes(run(two_resumes()))["I1b"] == ("NO_ANOMALY_UNSPECIFIED", None)
+    # Two resumes on one thread: LGP-DT disclaims what a second run does, not durability (D1).
+    assert outcomes(run(two_resumes()))["I1b"] == ("PASS", "LG-DUR-SYNC")
 
 
 TOXIC = {
@@ -431,6 +431,7 @@ def l_in(status: str = "audited") -> LandmarkTable:
     """A test table whose first landmark uses the input-checkpoint rules of 4.2's verification
     column. Marked audited only to exercise run-evidence verification; the repository's table is
     derived from real T-09 histories."""
+    occurrence = 1 if status == "audited" else None
     return LandmarkTable(
         name="DEMO-landmarks",
         status=status,  # pyright: ignore[reportArgumentType]
@@ -442,11 +443,13 @@ def l_in(status: str = "audited") -> LandmarkTable:
                     ContextRule(rule="call_data_equals", key="source", value="input"),
                     ContextRule(rule="no_kind_before", kind="node.start"),
                 ),
+                occurrence=occurrence,
             ),
             LandmarkSpec(
                 id="L-WRONG",
                 method="put",
                 rules=(ContextRule(rule="after_node_end", node="plan"),),
+                occurrence=occurrence,
             ),
         ),
     )
@@ -472,9 +475,35 @@ def test_a_landmark_of_another_method_is_invalid() -> None:
     table = LandmarkTable(
         name="DEMO-landmarks",
         status="audited",
-        landmarks=(LandmarkSpec(id="L-IN", method="put_writes", rules=l_in().landmarks[0].rules),),
+        landmarks=(
+            LandmarkSpec(
+                id="L-IN", method="put_writes", rules=l_in().landmarks[0].rules, occurrence=1
+            ),
+        ),
     )
     assert trigger(replication("L-IN", table)) == 11
+
+
+def test_an_arm_must_name_the_audited_occurrence() -> None:
+    """An audited table records each landmark's occurrence; an arm naming another is INVALID even
+    if its hit happens to satisfy the rules."""
+    table = l_in()
+    moved = table.model_copy(
+        update={"landmarks": (table.landmarks[0].model_copy(update={"occurrence": 2}),)}
+    )
+    assert trigger(replication("L-IN", moved)) == 11
+
+
+def test_a_table_states_occurrences_exactly_when_audited() -> None:
+    spec = l_in().landmarks[0]
+    with pytest.raises(ValueError, match="draft"):
+        LandmarkTable(name="DEMO-landmarks", status="draft", landmarks=(spec,))
+    with pytest.raises(ValueError, match="audited"):
+        LandmarkTable(
+            name="DEMO-landmarks",
+            status="audited",
+            landmarks=(spec.model_copy(update={"occurrence": None}),),
+        )
 
 
 def test_a_draft_table_verifies_nothing_outside_synthetic_trials() -> None:
