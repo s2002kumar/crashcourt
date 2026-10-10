@@ -207,3 +207,18 @@ def test_the_runner_confirms_against_the_committed_preregistration(tmp_path: Pat
         "os_system" in p
         for p in confirm(auth, manifest_for(auth.run_commit, os_system="Darwin"), repo.root)
     )
+
+
+def test_a_fault_cell_must_name_a_landmark_table(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    assert "cell R1 injects F01, so its scenario must name a landmark table" in refused(
+        authorize, repo, checker=FakeChecker(landmark=None)
+    )
+
+
+def test_a_cell_without_a_fault_may_name_no_landmark_table(tmp_path: Path) -> None:
+    cells = prereg_model().model_dump(mode="json")["cells"]
+    cells[0]["fault"] = None
+    repo = make_repo(tmp_path, prereg_model(cells=cells))
+    auth = authorize(repo, checker=FakeChecker(landmark=None))
+    assert auth.landmark_table_sha256 is None

@@ -10,7 +10,8 @@ file the pre-registration lists. It refuses, naming every reason at once, unless
    (T-10's `freeze.verify_checker`), its checker hash is the pre-registered one, and the commit
    that last changed it (the freeze commit) is an ancestor of the pre-registration commit;
 3. the scenario is the one pre-registered for its cell: same content hash, same cell id, same
-   master seed, its landmark table verifies against the freeze, and `trials` is the
+   master seed; the landmark table it names is audited and frozen (T-10's
+   `freeze.verify_scenario`), and a cell that injects a fault names one; and `trials` is the
    pre-registered N (no optional stopping, no extra trials);
 4. for a new-evidence cell, every instrument cell (controls and published replications) of the
    same pre-registration, checker, and environment has batches that came out as predicted.
@@ -70,6 +71,11 @@ class FrozenChecker:
 
 
 @dataclass(frozen=True)
+class _Landmarks:
+    sha256: str | None
+
+
+@dataclass(frozen=True)
 class _Freeze:
     commit: str
     text: str
@@ -91,7 +97,9 @@ class CheckerView(Protocol):
 
     def verify_checker(self, frozen_md: str, registry_sha256: str) -> FrozenChecker: ...
 
-    def landmark_sha256(self, frozen_md: str, registry_sha256: str, scenario: Path) -> str: ...
+    def landmark_sha256(
+        self, frozen_md: str, registry_sha256: str, scenario: Path
+    ) -> str | None: ...
 
 
 class ScenarioView(Protocol):
@@ -123,11 +131,12 @@ class T10Checker:
             str(frozen.checker_version), str(frozen.checker_sha256), str(frozen.registry_sha256)
         )
 
-    def landmark_sha256(self, frozen_md: str, registry_sha256: str, scenario: Path) -> str:
-        # A scenario's landmark table is derived from T-09's fault-free histories and carried by
-        # the scenario (T-09/T-10). Until that wiring exists the gate cannot verify it, so it
-        # refuses.
-        raise Unavailable(f"{scenario}: reading a scenario's landmark table is not wired yet")
+    def landmark_sha256(self, frozen_md: str, registry_sha256: str, scenario: Path) -> str | None:
+        """The audited landmark table the scenario names (its `landmarks` key), verified against
+        the freeze; None when the scenario names none."""
+        freeze = _module("crashcourt.checker.freeze", "T-10")
+        verify = cast(Callable[[str, str, Path], str | None], freeze.verify_scenario)
+        return verify(frozen_md, registry_sha256, scenario)
 
 
 class T07Scenarios:
@@ -161,7 +170,8 @@ class Authorization(BaseModel):
     checker_version: str
     checker_sha256: str
     registry_sha256: str
-    landmark_table_sha256: str
+    #: The audited landmark table the scenario names; None for a cell that arms no failpoint.
+    landmark_table_sha256: str | None
     #: For a new-evidence cell, the instrument batches whose results allowed it.
     instrument_batches: tuple[str, ...] = ()
 
@@ -264,7 +274,7 @@ def authorize_batch(
         checker_version=frozen.checker.version,
         checker_sha256=frozen.checker.checker_sha256,
         registry_sha256=frozen.checker.registry_sha256,
-        landmark_table_sha256=landmarks,
+        landmark_table_sha256=landmarks.sha256,
         instrument_batches=tuple(instrument_batches),
     )
 
@@ -327,7 +337,7 @@ def _scenario(
     checker: CheckerView,
     frozen: _Freeze | None,
     check: _Check,
-) -> str | None:
+) -> _Landmarks | None:
     if trials != cell.n:
         check.fail(f"cell {cell.id} is pre-registered at N = {cell.n}, not {trials}")
     try:
@@ -349,12 +359,20 @@ def _scenario(
     if frozen is None:
         return None
     try:
-        return checker.landmark_sha256(frozen.text, frozen.checker.registry_sha256, path)
+        table = checker.landmark_sha256(frozen.text, frozen.checker.registry_sha256, path)
     except Unavailable as exc:
         check.fail(f"cannot verify the landmark table: {exc}")
-    except Exception as exc:  # noqa: BLE001
+        return None
+    except Exception as exc:  # FreezeMismatch: unaudited, unfrozen, or changed  # noqa: BLE001
         check.fail(f"{path}: the landmark table does not verify against the freeze: {exc}")
-    return None
+        return None
+    if table is None and cell.fault is not None:
+        # Every arm is checked against a landmark; without a table each trial would be INVALID.
+        check.fail(
+            f"cell {cell.id} injects {cell.fault}, so its scenario must name a landmark table"
+        )
+        return None
+    return _Landmarks(table)
 
 
 def confirm_environment(

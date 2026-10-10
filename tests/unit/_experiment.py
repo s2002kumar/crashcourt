@@ -156,7 +156,7 @@ class FakeChecker:
         default_factory=lambda: FrozenChecker("v1", CHECKER_SHA, REGISTRY_SHA)
     )
     mismatch: str | None = None
-    landmark: str | Exception = LANDMARK_SHA
+    landmark: str | Exception | None = LANDMARK_SHA
     seen: list[str] = field(default_factory=list[str])
 
     def freeze_state(self) -> str:
@@ -171,7 +171,7 @@ class FakeChecker:
             raise ValueError(self.mismatch)
         return self.frozen
 
-    def landmark_sha256(self, frozen_md: str, registry_sha256: str, scenario: Path) -> str:
+    def landmark_sha256(self, frozen_md: str, registry_sha256: str, scenario: Path) -> str | None:
         if isinstance(self.landmark, Exception):
             raise self.landmark
         return self.landmark
