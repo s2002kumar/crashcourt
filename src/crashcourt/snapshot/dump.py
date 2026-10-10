@@ -3,7 +3,8 @@
 The checker judges a trial from this dump (crashcourt.checker.artifacts.Snapshot), so it reads the
 database as the oracle: on the direct DSN (never through a proxy), in one read-only, repeatable-
 read transaction, the three saver tables' rows for the trial's threads, each with `xmin` and
-`pg_xact_commit_timestamp(xmin)`, plus the durability settings and the postmaster's start time.
+`pg_xact_commit_timestamp(xmin)`, plus the durability settings, the postmaster's start time, and
+the database clock when the transaction's snapshot was taken.
 Values stay as the saver stored them (types and blob bytes); decoding is the checker's, under
 strict msgpack.
 
@@ -90,6 +91,8 @@ def take(
     """One snapshot of the trial's threads, read in a single repeatable-read transaction."""
     with _connect(dsn) as conn, conn.transaction():
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        # The first statement fixes the transaction's snapshot; it reads the clock.
+        taken = conn.execute("SELECT clock_timestamp()").fetchone()
         ids = list(threads)
         checkpoints = [
             CheckpointRow(
@@ -135,9 +138,10 @@ def take(
         ]
         settings = {name: _show(conn, name) for name in SETTINGS}
         started = conn.execute("SELECT pg_postmaster_start_time()").fetchone()
-    assert started is not None
+    assert started is not None and taken is not None
     meta = SnapshotMeta(
         after_orchestrator_seq=after_orchestrator_seq,
+        taken_ns=_ns(taken[0]) or 0,
         dsn=redact(dsn),
         settings=settings,
         postmaster_start_ns=_ns(started[0]) or 0,
@@ -169,7 +173,8 @@ def take_pair(
     toxics_installed: Sequence[str] = (),
     gap_s: float = 2.0,
 ) -> SnapshotPair:
-    """Two snapshots at least `gap_s` seconds apart after quiescence; the checker compares them."""
+    """Two snapshots at least `gap_s` seconds apart after quiescence; the checker compares them
+    and requires the two seconds of red-team specification 3.7 by the database clock."""
     first = take(
         dsn,
         threads,

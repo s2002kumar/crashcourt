@@ -90,7 +90,14 @@ CASES: list[tuple[str, int, Callable[[], TrialArtifacts]]] = [
         ),
     ),
     ("a thread the snapshot does not cover", 1, lambda: snapshot(BASE, meta(threads=("T9",)))),
-    ("no sink reading after the trial", 1, lambda: update(BASE, sink_health=())),
+    ("no sink readings", 1, lambda: update(BASE, sink_health=())),
+    ("no sink reading after the trial", 1, lambda: update(BASE, sink_health=BASE.sink_health[:1])),
+    (
+        "sink readings out of order",
+        1,
+        lambda: update(BASE, sink_health=tuple(reversed(BASE.sink_health))),
+    ),
+    ("a malformed post-trial file", 1, lambda: update(BASE, load_errors=("ledger.json: bad",))),
     # 2: histories
     (
         "an unparseable line",
@@ -175,14 +182,22 @@ CASES: list[tuple[str, int, Callable[[], TrialArtifacts]]] = [
         "sink hooks enabled",
         6,
         lambda: update(
-            BASE, sink_health=(BASE.sink_health[0].model_copy(update={"hooks_enabled": True}),)
+            BASE,
+            sink_health=(
+                BASE.sink_health[0],
+                BASE.sink_health[1].model_copy(update={"hooks_enabled": True}),
+            ),
         ),
     ),
     (
         "another sink source",
         6,
         lambda: update(
-            BASE, sink_health=(BASE.sink_health[0].model_copy(update={"source_sha256": "c" * 64}),)
+            BASE,
+            sink_health=(
+                BASE.sink_health[0].model_copy(update={"source_sha256": "c" * 64}),
+                BASE.sink_health[1],
+            ),
         ),
     ),
     (
@@ -191,6 +206,7 @@ CASES: list[tuple[str, int, Callable[[], TrialArtifacts]]] = [
         lambda: update(
             BASE,
             sink_health=(
+                BASE.sink_health[0],
                 SinkHealth(
                     when="after",
                     hooks_enabled=False,
@@ -222,12 +238,30 @@ CASES: list[tuple[str, int, Callable[[], TrialArtifacts]]] = [
     ("toxics at snapshot time", 7, lambda: snapshot(BASE, meta(toxics_installed=("latency",)))),
     ("a proxied snapshot", 7, lambda: snapshot(BASE, meta(dsn="postgresql://proxy"))),
     (
+        "two snapshots under two seconds apart",
+        7,
+        lambda: update(
+            BASE,
+            snapshots=SNAPSHOTS.model_copy(
+                update={
+                    "second": SNAPSHOTS.second.model_copy(
+                        update={
+                            "meta": SNAPSHOTS.second.meta.model_copy(
+                                update={"taken_ns": SNAPSHOTS.first.meta.taken_ns + 1_999_999_999}
+                            )
+                        }
+                    )
+                }
+            ),
+        ),
+    ),
+    (
         "two snapshots that differ",
         7,
         lambda: update(
             BASE,
             snapshots=SNAPSHOTS.model_copy(
-                update={"second": _snapshots(M.am1_delete_head(BASE)).first}
+                update={"second": _snapshots(M.am1_delete_head(BASE)).second}
             ),
         ),
     ),

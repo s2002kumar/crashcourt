@@ -1,23 +1,48 @@
 """Read a trial directory into the checker's inputs, and write its outputs beside them.
 
-Layout (T-07's runner, plus the two files the post-trial step adds):
+Layout (T-07's runner, plus the three files its post-trial step adds):
 
 | File | Read as |
 | --- | --- |
 | `<batch>/manifest.json` | `manifest`, and the sha256 of its bytes |
 | `<trial>/<proc>.jsonl` | `histories`: complete lines, the partial tail, or the parse error |
 | `<trial>/trial.json` | `harness`: the orchestrator's valid, invalid_reasons, observations |
-| `<trial>/ledger.json` | `ledger`: the effect ledger's rows and the sink's verify answer |
-| `<trial>/snapshot.json` | `snapshots`: the two direct snapshots and the pre-trial counts |
-| `<trial>/sink-health.json` | `sink_health`: /health readings around the trial |
+| `<trial>/ledger.json` | `ledger`: a LedgerExport |
+| `<trial>/snapshot.json` | `snapshots`: a SnapshotPair |
+| `<trial>/sink-health.json` | `sink_health`: a JSON list of two SinkHealth readings |
 
 The process histories are the ones trial.json lists (all `.jsonl` files when there is no
 trial.json); `merged.jsonl` (a display copy) and `db-rows.jsonl` (an export of the saver rows) are
 never read as histories.
 
-A file that is absent is left absent: the checker then makes the trial INVALID (trigger 1); the
-loader never fills a gap. The scenario facts are the caller's: they come from the batch's scenario
-and the workload's effect model, which T-07 and T-09 define.
+The post-trial files (frozen with the checker; the runner writes each as the model's
+`model_dump_json()`, so its bytes are this schema by construction):
+
+- They are evidence only. Nothing read for them may decide the schedule, a fault, or a retry: the
+  pre-trial count and the "before" reading are taken before the first dispatch and recorded,
+  everything else after quiescence, when the trial's schedule is over.
+- `snapshot.json`: `crashcourt.snapshot.dump.take_pair(dsn, threads, pretrial, ...)` on the
+  direct oracle DSN (the manifest's, never a worker's proxied route), for every thread of the
+  scenario, with `pretrial` from `crashcourt.snapshot.dump.pretrial_rows(dsn, threads)` read
+  before the first dispatch. Quiescence: every worker the trial started has exited and been
+  reaped, and every fault is healed; `after_orchestrator_seq` is the orchestrator history's last
+  seq at that point; `toxics_installed` names every toxic on any proxy then, as `proxy/toxic`
+  (non-empty is INVALID). The two snapshots must be at least two seconds apart by the database
+  clock (`take_pair`'s default gap) and hold the same rows.
+- `ledger.json`: `LedgerExport.from_sink(rows, verify)` from the sink's GET /ledger and GET
+  /ledger/verify for this trial, read after quiescence: every row of the trial's ledger, as the
+  sink returns it, and the sink's verdict on the chain. Written for every trial, with no rows
+  when the workload posted none.
+- `sink-health.json`: `[SinkHealth.from_reading(before, "before"), SinkHealth.from_reading(after,
+  "after")]`, two GET /health answers: "before" after the runner opened the trial in the sink and
+  before the first dispatch, "after" with the ledger read.
+
+Missing or malformed evidence fails closed. A runner that cannot read the database or the sink, or
+gets an answer the helpers refuse, writes no file rather than a partial one, and an absent file is
+left absent: the trial is INVALID (trigger 1). A file that does not parse as its model is recorded
+in `load_errors`, and the trial is INVALID (trigger 1) too. The loader never fills a gap. The
+scenario facts are the caller's: they come from the batch's scenario and the workload's effect
+model.
 """
 
 from __future__ import annotations
@@ -26,6 +51,8 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any, cast
+
+from pydantic import BaseModel, TypeAdapter
 
 from crashcourt.checker.artifacts import (
     HarnessRecord,
@@ -43,6 +70,8 @@ from crashcourt.manifest import Manifest
 #: JSON-lines files in a trial directory that are not process histories.
 NOT_HISTORIES = frozenset({"merged", "db-rows"})
 
+_HEALTH = TypeAdapter(tuple[SinkHealth, ...])
+
 
 def _history(path: Path) -> ProcessHistory:
     proc = path.stem
@@ -53,6 +82,27 @@ def _history(path: Path) -> ProcessHistory:
     except HistoryError as exc:
         return ProcessHistory(proc=proc, events=(), parse_error=str(exc))
     return ProcessHistory(proc=proc, events=read.events, partial_tail=read.partial_tail)
+
+
+def _read[M: BaseModel](path: Path, model: type[M], errors: list[str]) -> M | None:
+    """The file as `model`, None when it is absent; a file that does not parse is an error."""
+    if not path.is_file():
+        return None
+    try:
+        return model.model_validate_json(path.read_bytes())
+    except ValueError as exc:
+        errors.append(f"{path.name}: {exc}")
+        return None
+
+
+def _health(path: Path, errors: list[str]) -> tuple[SinkHealth, ...]:
+    if not path.is_file():
+        return ()
+    try:
+        return _HEALTH.validate_json(path.read_bytes())
+    except ValueError as exc:
+        errors.append(f"{path.name}: {exc}")
+        return ()
 
 
 def _json(path: Path) -> Any:
@@ -79,22 +129,24 @@ def load_trial(directory: Path, scenario: TrialScenario) -> TrialArtifacts:
         found = [p.stem for p in directory.glob("*.jsonl")]
     names = sorted(n for n in found if n not in NOT_HISTORIES)
     histories = tuple(_history(directory / f"{name}.jsonl") for name in names)
-    ledger = _json(directory / "ledger.json")
-    snapshots = _json(directory / "snapshot.json")
-    health = _json(directory / "sink-health.json")
+    errors: list[str] = []
+    ledger = _read(directory / "ledger.json", LedgerExport, errors)
+    snapshots = _read(directory / "snapshot.json", SnapshotPair, errors)
+    health = _health(directory / "sink-health.json", errors)
     return TrialArtifacts(
         scenario=scenario,
         manifest=manifest,
         manifest_sha256=manifest_sha,
         histories=histories,
-        ledger=LedgerExport.model_validate(ledger) if ledger is not None else None,
-        snapshots=SnapshotPair.model_validate(snapshots) if snapshots is not None else None,
-        sink_health=tuple(SinkHealth.model_validate(h) for h in health or ()),
+        ledger=ledger,
+        snapshots=snapshots,
+        sink_health=health,
         harness=HarnessRecord.model_validate(
             {k: trial[k] for k in ("valid", "invalid_reasons", "observations") if k in trial}
         )
         if isinstance(trial, dict)
         else None,
+        load_errors=tuple(errors),
     )
 
 

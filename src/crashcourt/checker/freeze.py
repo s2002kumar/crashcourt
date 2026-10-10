@@ -177,7 +177,10 @@ def verify_landmarks(
     path = root / f"{name}.yaml"
     if not path.is_file():
         raise FreezeMismatch(f"no landmark table {name} in {root}")
-    table = load_table(path)
+    try:
+        table = load_table(path)
+    except ValueError as exc:
+        raise FreezeMismatch(f"landmark table {path.name} does not parse: {exc}") from exc
     if table.name != name or table.status != "audited":
         raise FreezeMismatch(f"landmark table {path.name} is not the audited table {name}")
     verify_trial(text, registry_sha256, table)

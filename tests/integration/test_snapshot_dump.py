@@ -78,7 +78,7 @@ def test_the_dump_gives_the_checker_what_it_needs() -> None:
             graph = _graph(thread).compile(checkpointer=saver)
             graph.invoke({}, config, durability="sync")
             graph.invoke(Command(resume="approve"), config, durability="sync")
-        pair = take_pair(DSN, [thread], {thread: 0}, after_orchestrator_seq=0, gap_s=0.2)
+        pair = take_pair(DSN, [thread], {thread: 0}, after_orchestrator_seq=0)
         snapshot = take(DSN, [thread], after_orchestrator_seq=0)
     finally:
         with psycopg.connect(DSN, autocommit=True) as conn:
@@ -86,6 +86,9 @@ def test_the_dump_gives_the_checker_what_it_needs() -> None:
                 conn.execute(f"DELETE FROM {table} WHERE thread_id = %s", (thread,))  # pyright: ignore[reportArgumentType]
 
     assert pair.first.same_rows(pair.second)
+    # By the database clock, the gap the checker requires (3.7: at least two seconds).
+    assert pair.second.meta.taken_ns - pair.first.meta.taken_ns >= 2_000_000_000
+    assert snapshot.meta.taken_ns > pair.second.meta.taken_ns
     assert snapshot.meta.settings == {
         "fsync": "on",
         "synchronous_commit": "on",
@@ -110,8 +113,10 @@ def test_the_dump_gives_the_checker_what_it_needs() -> None:
     state = decode_states((thread,), build_lineages(snapshot), reader, W1)[thread]
     assert state.head_executed == ((f"charge:{thread}", 1),)
     assert state.head_decision == "approve"
-    # The null task's write of the Command's value and the interrupted node's own RESUME list.
-    assert [d for d, _ in state.resume_decisions] == ["approve", "approve"]
+    # Both RESUME writes are stored: the null task's copy of the Command's value and the
+    # interrupted node's own list. The decision is read from the interrupted task's only (the
+    # founder's L-RES ruling).
+    assert [d for d, _ in state.resume_decisions] == ["approve"]
     tasks = {w.task_id for w in snapshot.writes if w.channel == "__resume__"}
     assert "00000000-0000-0000-0000-000000000000" in tasks and len(tasks) == 2
     assert any(w.channel == "__interrupt__" for w in snapshot.writes)

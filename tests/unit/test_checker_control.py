@@ -205,7 +205,9 @@ def test_row_order_never_matters() -> None:
             }
         )
         pair = SnapshotPair(
-            first=shuffled, second=first, pretrial_rows=artifacts.snapshots.pretrial_rows
+            first=shuffled,
+            second=artifacts.snapshots.second,
+            pretrial_rows=artifacts.snapshots.pretrial_rows,
         )
         reordered = artifacts.model_copy(update={"snapshots": pair})
         a, b = run(artifacts), run(reordered)

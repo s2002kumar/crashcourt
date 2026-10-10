@@ -27,6 +27,8 @@ from crashcourt.history.reader import HistoryError
 from crashcourt.spec.events import Event
 
 REQUIRED_SETTINGS = {"fsync": "on", "synchronous_commit": "on", "track_commit_timestamp": "on"}
+#: The double snapshot's minimum gap (3.7: "at least two seconds apart"), by the database clock.
+SNAPSHOT_GAP_NS = 2_000_000_000
 #: Errors of a request cut off by its worker's own death; any other failed response is INVALID.
 CONNECTION_FAILURES = (
     "ConnectionError",
@@ -145,7 +147,9 @@ def check_causal(by_proc: Mapping[str, Sequence[Event]], orchestrator: str) -> N
 
 
 def check_complete(artifacts: TrialArtifacts, orchestrator: str, sink: str | None) -> None:
-    """Trigger 1: every record the trial must have, and every process its events name."""
+    """Trigger 1: every record the trial must have, readable, and every process its events name."""
+    if artifacts.load_errors:
+        raise Invalid(1, f"malformed {'; '.join(artifacts.load_errors)}")
     missing = [
         name
         for name, value in (
@@ -177,11 +181,13 @@ def check_complete(artifacts: TrialArtifacts, orchestrator: str, sink: str | Non
     uncovered = set(artifacts.scenario.threads) - set(artifacts.snapshots.first.meta.threads)
     if uncovered:
         raise Invalid(1, f"the snapshot does not cover threads {sorted(uncovered)}")
-    workload_has_effects = bool(artifacts.ledger and artifacts.ledger.rows)
-    if workload_has_effects and sink is None:
+    if artifacts.ledger is not None and artifacts.ledger.rows and sink is None:
         raise Invalid(1, "the ledger holds rows but there is no sink history")
-    if workload_has_effects and not any(h.when == "after" for h in artifacts.sink_health):
-        raise Invalid(1, "no sink /health reading after the trial")
+    readings = [h.when for h in artifacts.sink_health]
+    if readings != ["before", "after"]:
+        raise Invalid(
+            1, f"sink-health.json must hold a reading before and one after, not {readings}"
+        )
     for history in artifacts.histories:
         for event in history.events:
             if event.kind in {"node.start", "node.end"} and (
@@ -364,6 +370,9 @@ def check_snapshot(
         raise Invalid(7, f"toxics were installed at snapshot time: {meta.toxics_installed}")
     if meta.dsn != artifacts.scenario.oracle_dsn or pair.second.meta.dsn != meta.dsn:
         raise Invalid(7, "the snapshot did not use the direct oracle DSN")
+    gap = pair.second.meta.taken_ns - meta.taken_ns
+    if gap < SNAPSHOT_GAP_NS:
+        raise Invalid(7, f"the two snapshots were {gap} ns apart, not at least two seconds (3.7)")
     if pair.first.same_rows(pair.second):
         return pair.first.canonical(), ()
     unexplained = _late_rows(pair.first, pair.second, _in_flight_calls(facts))

@@ -38,6 +38,7 @@ from crashcourt.checker.artifacts import (
 )
 from crashcourt.checker.decode import encode
 from crashcourt.checker.facts import NULL_TASK_ID
+from crashcourt.checker.integrity import SNAPSHOT_GAP_NS
 from crashcourt.clauses.registry import ClauseRegistry, registry_sha256
 from crashcourt.sink.ledger import row_hash as ledger_row_hash
 from crashcourt.spec.events import Event
@@ -47,6 +48,8 @@ REPO = Path(__file__).resolve().parents[2]
 CLAUSES = REPO / "clauses"
 DSN = "postgresql://oracle@127.0.0.1:55432/crashcourt"
 SINK_SOURCE = "a" * 64
+#: When the first snapshot was taken (the second follows by the minimum gap).
+SNAPSHOT_NS = 1_700_000_000_000_000_000
 PACKAGES = {**GOOD_VERSIONS, "langgraph": "1.2.12", "langgraph-checkpoint": "4.2.0"}
 MANIFEST = make_manifest(packages=PACKAGES)
 MANIFEST_SHA = hashlib.sha256(MANIFEST.to_json().encode()).hexdigest()
@@ -276,9 +279,11 @@ class TrialBuilder:
         commit: bool = True,
         returns: bool = True,
         stop_before: str | None = None,
+        hold: bool = False,
     ) -> str:
         """saver.put of the next checkpoint. `stop_before` names a signal to die with at
-        put.before (the call is logged, the hit and action too, then nothing)."""
+        put.before (the call is logged, the hit and action too, then nothing); `hold` pauses at
+        put.before until `release_put`."""
         graph = self.graphs[thread]
         cp = self._new_id()
         parent = graph.head if parent is None else parent
@@ -299,11 +304,12 @@ class TrialBuilder:
             **fields,
             data={"step": step, "source": source, "channels": sorted(updates)},
         )
-        if stop_before is not None:
-            hit = self.fp(
-                w, "put.before", op, "signal", **{k: v for k, v in fields.items() if k != "op_id"}
-            )
-            self.act(w, hit, signal=stop_before)
+        if stop_before is not None or hold:
+            ids = {k: v for k, v in fields.items() if k != "op_id"}
+            if hold:
+                self.fp(w, "put.before", op, "pause", **ids)
+            else:
+                self.act(w, self.fp(w, "put.before", op, "signal", **ids), signal=stop_before)
             self.pending[cp] = (
                 thread,
                 source,
@@ -321,6 +327,15 @@ class TrialBuilder:
         graph.head = cp
         graph.step = step
         return cp
+
+    def release_put(self, w: Proc, op: str, cp: str) -> Event:
+        """The orchestrator releases a put held at put.before; it acts, commits, and returns.
+        Returns the hit."""
+        hit = self.last_hit(w.name)
+        self.orch.emit("fp.release", data={"proc": w.name, "hit_seq": hit.seq})
+        self.act(w, hit)
+        self.finish_put(w, op, cp)
+        return hit
 
     def finish_put(self, w: Proc, op: str, cp: str) -> None:
         """A put stopped at put.before goes on (after SIGCONT): it commits and returns."""
@@ -443,7 +458,19 @@ class TrialBuilder:
             )
 
     def node(self, w: Proc, op: str, name: str, task: str, *, end: bool = True) -> None:
-        w.emit("node.start", op_id=op, task_id=task, attempt=1, data={"node": name})
+        """node.start with the checkpoint the task runs from (the thread's head), as T-09 writes
+        it, then node.end unless `end` is false."""
+        spec = next(o for o in self.ops if o.op_id == op)
+        w.emit(
+            "node.start",
+            op_id=op,
+            thread_id=spec.thread_id,
+            checkpoint_ns="",
+            checkpoint_id=self.graphs[spec.thread_id].head,
+            task_id=task,
+            attempt=1,
+            data={"node": name},
+        )
         if end:
             self.node_end(w, op, name, task)
 
@@ -680,10 +707,11 @@ class TrialBuilder:
         base.update(changes)
         return TrialScenario.model_validate(base)
 
-    def snapshot(self) -> Snapshot:
+    def snapshot(self, taken_ns: int = SNAPSHOT_NS) -> Snapshot:
         return Snapshot(
             meta=SnapshotMeta(
                 after_orchestrator_seq=self.orch.last_seq,
+                taken_ns=taken_ns,
                 dsn=DSN,
                 settings={
                     "fsync": "on",
@@ -705,23 +733,23 @@ class TrialBuilder:
         ]
         if self.sink.events:
             histories.append(ProcessHistory(proc="sink", events=tuple(self.sink.events)))
-        snap = self.snapshot()
+        trial = f"{self.batch}/{self.cell}/{self.trial}"
         return TrialArtifacts(
             scenario=self.scenario(**scenario_changes),
             manifest=MANIFEST,
             manifest_sha256=MANIFEST_SHA,
             histories=tuple(histories),
             ledger=LedgerExport(rows=tuple(self.ledger), verify_ok=True),
-            sink_health=(
+            sink_health=tuple(
                 SinkHealth(
-                    when="after",
-                    hooks_enabled=False,
-                    source_sha256=SINK_SOURCE,
-                    open_trial=f"{self.batch}/{self.cell}/{self.trial}",
-                ),
+                    when=when, hooks_enabled=False, source_sha256=SINK_SOURCE, open_trial=trial
+                )
+                for when in ("before", "after")
             ),
             snapshots=SnapshotPair(
-                first=snap, second=snap, pretrial_rows={t: 0 for t in self.threads}
+                first=self.snapshot(),
+                second=self.snapshot(SNAPSHOT_NS + SNAPSHOT_GAP_NS),
+                pretrial_rows={t: 0 for t in self.threads},
             ),
         )
 

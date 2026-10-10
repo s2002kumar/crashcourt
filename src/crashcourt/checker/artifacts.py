@@ -5,15 +5,15 @@ the manifest. Nothing here is read from the target's own reports. The scenario f
 orchestrator declared before the trial ran: the workload, the durability mode, the operations it
 sent, the failpoint arms, the faults, and the landmark table the arms are verified against.
 
-These models are the checker's side of the trial directory. T-07 writes the directory and
-T-10's snapshot dump fills the snapshot; until then the models are built directly (synthetic
-histories and artifact mutants). Field names follow T-04 (events), T-06 (failpoints), and T-08
+These models are the checker's side of the trial directory (crashcourt.checker.load states the
+contract the runner writes to). Field names follow T-04 (events), T-06 (failpoints), and T-08
 (ledger rows) where those already define them.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Self
+from collections.abc import Mapping, Sequence
+from typing import Annotated, Any, Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
@@ -24,6 +24,7 @@ from crashcourt.spec.records import Provenance
 
 Name = Annotated[str, StringConstraints(min_length=1)]
 Count = Annotated[int, Field(ge=0, strict=True)]
+Positive = Annotated[int, Field(ge=1, strict=True)]
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 
 #: A landmark table's name: path-safe, as the scenario's `landmarks` key allows (T-07, T-09).
@@ -157,6 +158,10 @@ class LandmarkSpec(BaseModel):
     id: Name
     method: Method
     rules: tuple[ContextRule, ...] = Field(min_length=1)
+    #: The audited occurrence: which call of the method, counted per worker and op as T-06's
+    #: registry counts them, the landmark was at in every real fault-free trial. An arm naming the
+    #: landmark must name this occurrence. A draft table carries none.
+    occurrence: Positive | None = None
 
 
 class LandmarkTable(BaseModel):
@@ -171,6 +176,16 @@ class LandmarkTable(BaseModel):
     #: a draft table only in synthetic trials and artifact mutants.
     status: Literal["draft", "audited"]
     landmarks: tuple[LandmarkSpec, ...]
+
+    @model_validator(mode="after")
+    def _occurrences(self) -> Self:
+        given = [spec.id for spec in self.landmarks if spec.occurrence is not None]
+        if self.status == "draft" and given:
+            raise ValueError(f"a draft table names no occurrences (it names {given})")
+        absent = [spec.id for spec in self.landmarks if spec.occurrence is None]
+        if self.status == "audited" and absent:
+            raise ValueError(f"an audited table names every occurrence ({absent} have none)")
+        return self
 
     def get(self, landmark_id: str) -> LandmarkSpec | None:
         return next((spec for spec in self.landmarks if spec.id == landmark_id), None)
@@ -267,11 +282,26 @@ class LedgerRow(BaseModel):
 
 
 class LedgerExport(BaseModel):
+    """ledger.json: every row of the trial's ledger and the sink's verdict on its chain."""
+
     model_config = _FROZEN
 
     rows: tuple[LedgerRow, ...]
     #: The sink's own /ledger/verify answer at export time.
     verify_ok: bool
+
+    @classmethod
+    def from_sink(cls, rows: Sequence[Mapping[str, Any]], verify: Mapping[str, Any]) -> Self:
+        """The export from the sink's GET /ledger rows and GET /ledger/verify answer for the
+        trial, read in one post-trial step. Raises ValueError when the two disagree on the row
+        count or the answer is malformed: the runner then writes no ledger.json."""
+        ok = verify.get("ok")
+        counted = verify.get("rows")
+        if not isinstance(ok, bool) or not isinstance(counted, int) or isinstance(counted, bool):
+            raise ValueError(f"malformed /ledger/verify answer: {dict(verify)}")
+        if counted != len(rows):
+            raise ValueError(f"/ledger/verify counted {counted} rows, /ledger returned {len(rows)}")
+        return cls(rows=tuple(LedgerRow.model_validate(r) for r in rows), verify_ok=ok)
 
 
 class SinkHealth(BaseModel):
@@ -284,6 +314,42 @@ class SinkHealth(BaseModel):
     source_sha256: Sha256
     #: The trial the sink had open, as batch/cell/trial.
     open_trial: str | None
+
+    @classmethod
+    def from_reading(cls, reading: Mapping[str, Any], when: Literal["before", "after"]) -> Self:
+        """The record of one GET /health answer (crashcourt.sink.app). Raises ValueError for a
+        reading that is not healthy or not well formed (status not "ok", a resume error, a field
+        missing or of the wrong type): the runner then writes no sink-health.json."""
+        if reading.get("status") != "ok":
+            raise ValueError(f"the sink's status is {reading.get('status')!r}, not 'ok'")
+        if reading.get("resume_error") is not None:
+            raise ValueError(f"the sink reports a resume error: {reading['resume_error']}")
+        hooks = reading.get("test_hooks")
+        if not isinstance(hooks, bool):
+            raise ValueError(f"test_hooks is {hooks!r}, not a boolean")
+        trial = reading.get("trial")
+        open_trial: str | None = None
+        if trial is not None:
+            if not isinstance(trial, Mapping):
+                raise ValueError(f"trial is {trial!r}, not an object or null")
+            parts = cast("Mapping[str, Any]", trial)
+            batch, cell, number = parts.get("batch"), parts.get("cell"), parts.get("trial")
+            if not (
+                isinstance(batch, str)
+                and isinstance(cell, str)
+                and isinstance(number, int)
+                and not isinstance(number, bool)
+            ):
+                raise ValueError(f"trial {dict(parts)} lacks batch, cell, or trial")
+            open_trial = f"{batch}/{cell}/{number}"
+        return cls.model_validate(
+            {
+                "when": when,
+                "hooks_enabled": hooks,
+                "source_sha256": reading.get("source_sha256"),
+                "open_trial": open_trial,
+            }
+        )
 
 
 class CheckpointRow(BaseModel):
@@ -339,6 +405,9 @@ class SnapshotMeta(BaseModel):
 
     #: The orchestrator history's seq of its last event before the snapshot was taken.
     after_orchestrator_seq: Count
+    #: The database's clock_timestamp() when the snapshot's transaction began, in nanoseconds
+    #: since the epoch: one clock for both snapshots, so their gap is measured exactly.
+    taken_ns: Positive
     dsn: Name
     #: SHOW values read at snapshot time (fsync, synchronous_commit, track_commit_timestamp).
     settings: dict[str, str]
@@ -449,3 +518,5 @@ class TrialArtifacts(BaseModel):
     worker_reports: tuple[WorkerReport, ...] = ()
     #: T-07's trial.json verdict; required for a harness run (provenance "run").
     harness: HarnessRecord | None = None
+    #: Files the loader found but could not read as their model (the trial is then INVALID).
+    load_errors: tuple[str, ...] = ()
