@@ -2,7 +2,7 @@
 
 `doctor` verifies the pinned environment and writes the manifest; `clauses` checks and lists the
 clause registry; `schema export` writes the v1 JSON Schemas; `faults selftest` checks every fault
-primitive against the compose services.
+primitive against the compose services; `run` runs a batch of trials of one scenario (Linux only).
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -144,6 +145,56 @@ def _faults_selftest(args: argparse.Namespace) -> int:
     return 0 if all(t.ok for t in results) else 1
 
 
+def _run(args: argparse.Namespace) -> int:
+    from crashcourt.faults.base import FaultError
+    from crashcourt.orchestrator.runner import (
+        RunOptions,
+        RunRefused,
+        Settings,
+        TrialResult,
+        require_linux,
+        run_batch,
+    )
+    from crashcourt.orchestrator.topology import TopologyError
+    from crashcourt.spec.scenario import ScenarioError, load_scenario
+
+    def progress(trial: TrialResult) -> None:
+        counts = " ".join(f"{k}={v}" for k, v in sorted(trial.outcomes.items()))
+        state = "ok     " if trial.valid else "INVALID"
+        detail = (trial.reasons or trial.observations or [""])[0]
+        print(f"trial {trial.number:>4}: {state}  {counts}  {detail}".rstrip(), flush=True)
+
+    try:
+        require_linux()
+        scenario = load_scenario(args.scenario)
+        settings = Settings.from_environment(Path.cwd())
+        options = RunOptions(
+            trials=args.trials,
+            out=args.out,
+            batch=args.batch,
+            canonical=args.canonical,
+            own_database=args.i_own_this_database,
+        )
+        summary = run_batch(
+            scenario,
+            options,
+            settings,
+            source=args.scenario,
+            argv=sys.argv,
+            progress=progress,
+            warn=lambda text: print(f"warning: {text}", flush=True),
+        )
+    except (RunRefused, ScenarioError, TopologyError, FaultError) as exc:
+        print(f"run refused: {exc}")
+        return 2
+    valid = sum(t.valid for t in summary.trials)
+    print(
+        f"batch {summary.batch}: {len(summary.trials)} trials, {valid} valid; "
+        f"written to {summary.directory}"
+    )
+    return 0 if summary.valid else 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="crashcourt", description=__doc__)
     parser.add_argument("--version", action="version", version=f"crashcourt {__version__}")
@@ -191,6 +242,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     selftest.add_argument("--report", type=Path, help="also write the Markdown report here")
     selftest.add_argument("--history", type=Path, help="keep the fault histories in this directory")
 
+    run = commands.add_parser(
+        "run", help="run trials of a scenario: two workers, barriers, histories (Linux only)"
+    )
+    run.add_argument("scenario", type=Path, help="the scenario YAML file")
+    run.add_argument("--trials", type=_positive_int, default=1)
+    run.add_argument("--out", type=Path, default=Path("runs"), help="batches go here")
+    run.add_argument("--batch", help="the batch id (default: b- and the UTC time)")
+    run.add_argument(
+        "--canonical",
+        action="store_true",
+        help="a publishable batch: refuse a dirty checkout or a sink clock off by over 1 s",
+    )
+    run.add_argument(
+        "--i-own-this-database",
+        action="store_true",
+        help="allow a target database that is not on this host",
+    )
+
     args = parser.parse_args(argv)
     if args.command == "doctor":
         return _doctor(args)
@@ -200,5 +269,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _schema_export(args)
     if args.command == "faults":
         return _faults_selftest(args)
+    if args.command == "run":
+        return _run(args)
     parser.error(f"unknown command {args.command}")
     return 2
