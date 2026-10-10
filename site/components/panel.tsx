@@ -20,7 +20,9 @@ export function PageHeader({
         <span aria-hidden="true" className="text-ink-faint">
           /
         </span>
-        <span className="normal-case tracking-normal text-ink-faint">{route}</span>
+        <span className="min-w-0 normal-case tracking-normal wrap-anywhere text-ink-faint">
+          {route}
+        </span>
       </p>
       <h1 className="display max-w-[22ch] text-4xl text-ink sm:text-5xl">{title}</h1>
       {children ? <div className="max-w-[68ch] text-lg text-ink-muted">{children}</div> : null}
@@ -56,7 +58,7 @@ export function Readout({ label, value }: { label: string; value: string | null 
   return (
     <div className="grid gap-1">
       <dt className="label">{label}</dt>
-      <dd className="readout text-lg text-ink">
+      <dd className="readout text-lg wrap-anywhere text-ink">
         {value ?? (
           <>
             <span aria-hidden="true" className="text-ink-faint">

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { exportedPages } from "../../scripts/exported.ts";
 import { ROUTES } from "./routes.ts";
@@ -9,6 +9,10 @@ import { ROUTES } from "./routes.ts";
 // renders fixture values on every page, so there the banner must be on all of them.
 
 const PAGES = exportedPages();
+
+/** True when the page is wider than the viewport: a long id that does not wrap. */
+const overflows = (page: Page) =>
+  page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
 
 test("this build exports every experience's page", () => {
   for (const { path } of ROUTES) expect(PAGES).toContain(path);
@@ -22,6 +26,7 @@ for (const colorScheme of ["dark", "light"] as const) {
       test(`${path} shows the demo banner exactly when it shows fixture data`, async ({ page }) => {
         const response = await page.goto(path, { waitUntil: "networkidle" });
         expect(response?.status(), path).toBe(200);
+        expect(await overflows(page), "the page scrolls sideways").toBe(false);
         const banner = page.getByRole("note", { name: "Demo data" });
         const content = await page.locator("main").innerText();
         const demo = content.includes("DEMO-");
@@ -47,4 +52,16 @@ test("a build from the demo fixtures shows the banner on every page", async ({ p
     if ((await page.getByRole("note", { name: "Demo data" }).count()) !== 1) missing.push(path);
   }
   expect(missing).toEqual([]);
+});
+
+test("no page scrolls sideways on a phone", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  const wide: string[] = [];
+  for (const path of PAGES) {
+    await page.goto(path);
+    if (await overflows(page)) wide.push(path);
+  }
+  await context.close();
+  expect(wide).toEqual([]);
 });
