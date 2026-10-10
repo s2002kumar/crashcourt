@@ -51,10 +51,16 @@ A static site that renders the harness's artifacts and computes no verdicts. It 
 ```bash
 cd site
 npm ci
-npm run build                       # static export in site/out
+npm run build                       # static export in site/out, from the demo data in site/fixtures
 npm run test:unit
 npx playwright install chromium && npm run test:e2e
+npm run build:release               # release build: reads ../results only, behind the release guard
 ```
+
+Until real batches exist, a development build renders labeled demo data (`uv run crashcourt fixtures
+--demo` regenerates it): every id starts with `DEMO-`, every record says `provenance: "fixture"`, and every
+page that shows it carries a "Demo data — not a result" banner. A release build reads only harness batches
+in `results/` and fails on any fixture, on any `DEMO-` id, and when `results/` holds no batch.
 
 `site/DESIGN.md` describes the visual system and `site/BUDGETS.md` the JavaScript budgets.
 

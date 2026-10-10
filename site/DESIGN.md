@@ -77,6 +77,16 @@ Smallest pairwise difference (ΔE00), light / dark: normal 21.7 / 20.8, protanop
 deuteranopia 11.7 / 13.3, tritanopia 15.7 / 11.0. Every verdict color is also at least 4.6:1 on plain
 surfaces.
 
+**Outcomes that are not verdicts.** A result record can also carry a violation candidate or "no anomaly,
+no clause". Neither may borrow a verdict's look, so both are drawn in muted ink (no verdict color, no
+tint) with a dashed edge and a glyph no verdict uses. Their contrast is ink-muted's, which the token test
+already covers.
+
+| Outcome | Glyph | Label | Meaning |
+| --- | --- | --- | --- |
+| VIOLATION_CANDIDATE | ? | CANDIDATE | A documented guarantee forbids the anomaly; it is not a violation until a standalone repro and human review confirm it |
+| NO_ANOMALY_UNSPECIFIED | – | UNSPECIFIED | No anomaly was observed, and no documented clause covers the case; it is not a pass |
+
 **Actors.** The same color for the same actor on every page.
 
 | Actor | Light | Dark |
@@ -101,20 +111,39 @@ Drawn as SVG (`components/glyphs.tsx`) so they are identical on every platform, 
   SIGCONT (play), network toxic (zigzag), database restart (circular arrow), barrier (gate).
 - Brand: a quartered disc with two accent quadrants, the crash-test target.
 
+## Demo data
+
+Until real batches exist the explorer is built from labeled fixtures (`site/fixtures/`, written by
+`crashcourt fixtures --demo`). Every page that renders a value from one carries a banner: "Demo data — not
+a result", with where it came from and that every id on the page begins with "DEMO". It shows whenever
+the provenance of anything the page renders is `fixture`, which the artifacts themselves say; no route
+list, build flag, or environment variable is involved. It has no close control and stays pinned to the
+top of the window, so a screenshot of any part of a demo page carries it.
+
+It is an inverted band (page color on ink) with a short hatched mark, not the accent: crash-test yellow
+marks faults and focus and nothing else. Inverting ink and page keeps their tested contrast (16.7:1 light,
+13.9:1 dark) and makes the band read as part of neither theme's content. A release build cannot show it:
+release builds read only harness runs, and the release guard fails any export that holds the banner.
+
 ## Layout
 
 - A 12-column grid, 82.5rem (1320px) wide at most, with 24px gutters (16px on phones).
 - Panels are flat with a hairline border and two registration marks at opposite corners, 3px radius, and
   an engraved label.
 - Evidence panels will slide in from the right (F-04); every state gets a deep link.
-- Dynamic routes export one empty-state page (`/trials/none/none/` and so on) until artifacts exist,
-  because a static export needs at least one page per route.
+- Dynamic routes export one page per id the build's artifacts hold, and a single empty-state page at
+  `none` (`/trials/none/none/` and so on) when they hold none, because a static export needs at least one
+  page per route.
+- Ids are long (a trial seed and a scenario hash are 64 characters), so readouts and routes wrap anywhere;
+  no page scrolls sideways, at 1280 pixels or on a 390-pixel phone (tested on every exported page).
 
 ## Accessibility
 
 - A skip link is the first stop on every page; every focusable element shows a 2px ring (tested on every
   route by tabbing through it).
 - `?` opens a list of keys; pages with timelines and grids will add their own.
+- The demo banner is a note with nothing to press. While it is pinned, scroll padding keeps a focused
+  element from sliding under it.
 - Every visualization will have a synchronized table or text equivalent; the
   timeline frame already names its lanes.
 - axe reports no serious or critical violations on every route in both themes, which is what CI enforces;
@@ -127,7 +156,8 @@ contain.
 
 ## Screenshots
 
-Captured with `npm run screenshots` after a build (1280px wide unless noted; reduced motion).
+Captured with `npm run screenshots` after a build from the demo fixtures, so every page shows the demo
+banner and DEMO- ids (1280px wide unless noted; reduced motion).
 
 | | |
 | --- | --- |
