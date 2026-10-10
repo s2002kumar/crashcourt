@@ -60,7 +60,7 @@ as T-06's registry counts them; it is the number a fault scenario's arm names.
 | L-T1 | put after the model node (`respond`) ends | every W5 turn | 3 | 2 |
 | L-GET | the op's first get_tuple | every op | 1 | (not in 4.2) |
 
-- L-RES: the founder's ruling (2026-10-10) names the RESUME write for the interrupted task. A resume run first
+- L-RES: my ruling (2026-10-10) names the RESUME write for the interrupted task. A resume run first
   writes the null task's copy of the Command's value (`pregel/_io.py:75`); that is occurrence 1 and is not the
   landmark, so 4.2's guessed occurrence would have armed the wrong call.
 - L-T1: a W5 turn writes its input checkpoint, the checkpoint after the input step, then the one after
