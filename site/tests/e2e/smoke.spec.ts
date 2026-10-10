@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { PORT } from "../../playwright.config.ts";
 import { ROUTES } from "./routes.ts";
+
+const routeOf = (name: string) => ROUTES.find((r) => r.name === name)!.path;
 
 /**
  * Loads a page and fails on console errors, error responses, failed requests, or any request that
@@ -21,7 +24,7 @@ async function open(page: Page, path: string): Promise<void> {
   });
   page.on("request", (r) => {
     const url = new URL(r.url());
-    if (url.origin !== "http://127.0.0.1:4173" && url.protocol !== "data:") {
+    if (url.origin !== `http://127.0.0.1:${PORT}` && url.protocol !== "data:") {
       problems.push(`left the site: ${r.url()}`);
     }
   });
@@ -121,7 +124,7 @@ test("? opens the keyboard list and Escape closes it", async ({ page }) => {
 });
 
 test("the timeline zooms with its buttons", async ({ page }) => {
-  await open(page, "/trials/none/none/");
+  await open(page, routeOf("failure explorer"));
   const zoom = page.getByRole("group", { name: "Timeline zoom" });
   await expect(zoom.getByRole("button", { name: "Zoom out" })).toBeDisabled();
   await zoom.getByRole("button", { name: "Zoom in" }).click();
@@ -131,9 +134,11 @@ test("the timeline zooms with its buttons", async ({ page }) => {
 });
 
 test("the lineage graph loads after the page", async ({ page }) => {
-  await open(page, "/lineage/none/none/");
+  await open(page, routeOf("lineage"));
   await expect(page.locator(".react-flow")).toBeVisible();
-  await expect(page.getByText("No checkpoints in this build.")).toBeVisible();
+  await expect(
+    page.getByText("No database snapshot in this build.", { exact: false }),
+  ).toBeVisible();
 });
 
 test("reduced motion removes transitions", async ({ browser }) => {
