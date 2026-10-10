@@ -51,8 +51,12 @@ jobs:
       - name: manifest names the tested commit, checked out clean
         run: jq -e --arg sha "$HEAD_SHA" '.git_sha == $sha and .git_dirty == false' manifest-ci.json
       - run: uv run pytest -m integration
+      # T-05 gate: every fault primitive behaves as the fault model assumes, 20 of 20 trials.
+      - run: uv run crashcourt faults selftest --trials 20 --report fault-selftest-ci.md
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: manifest-ci
-          path: manifest-ci.json
+          name: doctor-evidence
+          path: |
+            manifest-ci.json
+            fault-selftest-ci.md
