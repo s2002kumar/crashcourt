@@ -1,0 +1,80 @@
+{
+  "batch": "t07-self-kill-20261010T080258Z",
+  "cell": "self-kill",
+  "client_outcomes": {
+    "info": 1,
+    "ok": 1
+  },
+  "histories": {
+    "merged": {
+      "lines": 31,
+      "partial_tail": false
+    },
+    "orchestrator": {
+      "lines": 10,
+      "partial_tail": false
+    },
+    "w1": {
+      "lines": 5,
+      "partial_tail": false
+    },
+    "w2": {
+      "lines": 16,
+      "partial_tail": false
+    }
+  },
+  "invalid_reasons": [],
+  "observations": [
+    "w1 ended with saver calls in flight: put (op-1)"
+  ],
+  "ops": {
+    "op-1": {
+      "late_result": null,
+      "outcome": "info",
+      "reason": "w1 exited (SIGKILL) before answering",
+      "sent": true,
+      "thread_id": "t07-self-kill-20261010T080258Z/self-kill/1/t1",
+      "worker": "w1"
+    },
+    "op-2": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t07-self-kill-20261010T080258Z/self-kill/1/t2",
+      "worker": "w2"
+    }
+  },
+  "seed": "d186e57c9b44cf6a886922660a4d32075ce4f7f21155756969be13fdcd1d5ce0",
+  "sink": {
+    "pid": 1,
+    "rows": 0
+  },
+  "steps": {
+    "barrier_fired": [],
+    "barrier_unfired": []
+  },
+  "trial": 1,
+  "v": 1,
+  "valid": true,
+  "workers": {
+    "w1": {
+      "exit_code": null,
+      "forced": false,
+      "killed_by_step": null,
+      "pid": 21520,
+      "returncode": -9,
+      "shutdown_sent": false,
+      "signal": "SIGKILL"
+    },
+    "w2": {
+      "exit_code": 0,
+      "forced": false,
+      "killed_by_step": null,
+      "pid": 21521,
+      "returncode": 0,
+      "shutdown_sent": true,
+      "signal": null
+    }
+  }
+}

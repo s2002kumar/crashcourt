@@ -1,0 +1,86 @@
+orchestrator   0  worker.start                                              proc=w1 pid=20406
+orchestrator   1  worker.start                                              proc=w2 pid=20407
+orchestrator   2  client.invoke           op-1                     t1       worker=w1
+orchestrator   3  dispatch.send           op-1                     t1       to=w1
+orchestrator   4  client.invoke           op-2                     t2       worker=w2
+orchestrator   5  dispatch.send           op-2                     t2       to=w2
+          w2   0  saver.get_tuple.call    op-2                     t2
+          w1   0  saver.get_tuple.call    op-1                     t1
+          w2   1  fp.hit                  op-2    get_tuple.after  t2       action=pause occurrence=1
+          w1   1  fp.hit                  op-1    get_tuple.after  t1       action=pause occurrence=1
+orchestrator   6  fp.release                                                proc=w1 hit_seq=1 barrier=B1
+orchestrator   7  fp.release                                                proc=w2 hit_seq=1 barrier=B2
+          w2   2  fp.action               op-2    get_tuple.after  t2       hit_seq=1 action=pause
+          w1   2  fp.action               op-1    get_tuple.after  t1       hit_seq=1 action=pause
+          w2   3  saver.get_tuple.return  op-2                     t2  ok   found=False
+          w1   3  saver.get_tuple.return  op-1                     t1  ok   found=False
+          w2   4  saver.put.call          op-2                     t2
+          w1   4  saver.put.call          op-1                     t1
+          w2   5  saver.put_writes.call   op-2                     t2
+          w1   5  saver.put_writes.call   op-1                     t1
+          w2   6  saver.put.return        op-2                     t2  ok
+          w2   7  saver.put.call          op-2                     t2
+          w1   6  saver.put.return        op-1                     t1  ok
+          w1   7  saver.put.call          op-1                     t1
+          w2   8  saver.put_writes.return op-2                     t2  ok
+          w1   8  saver.put_writes.return op-1                     t1  ok
+          w2   9  saver.put.return        op-2                     t2  ok
+          w2  10  saver.put_writes.call   op-2                     t2
+          w1   9  saver.put.return        op-1                     t1  ok
+          w2  11  saver.put.call          op-2                     t2
+          w1  10  saver.put_writes.call   op-1                     t1
+          w1  11  saver.put.call          op-1                     t1
+          w2  12  saver.put.return        op-2                     t2  ok
+          w1  12  saver.put.return        op-1                     t1  ok
+          w2  13  saver.put_writes.call   op-2                     t2
+          w2  14  saver.put.call          op-2                     t2
+          w1  13  saver.put_writes.call   op-1                     t1
+          w1  14  saver.put.call          op-1                     t1
+          w2  15  saver.put_writes.return op-2                     t2  ok
+          w1  15  saver.put_writes.return op-1                     t1  ok
+          w2  16  saver.put.return        op-2                     t2  ok
+          w1  16  saver.put.return        op-1                     t1  ok
+          w2  17  saver.put_writes.return op-2                     t2  ok
+orchestrator   8  client.ok               op-2                     t2  ok   worker=w2 worker_seq=17 output={'trace': ['first', 'second']}
+orchestrator   9  client.invoke           op-4                     t2       worker=w1
+orchestrator  10  dispatch.send           op-4                     t2       to=w1
+          w1  17  saver.get_tuple.call    op-4                     t2
+          w1  18  saver.put_writes.return op-1                     t1  ok
+orchestrator  11  client.ok               op-1                     t1  ok   worker=w1 worker_seq=18 output={'trace': ['first', 'second']}
+orchestrator  12  client.invoke           op-3                     t1       worker=w2
+orchestrator  13  dispatch.send           op-3                     t1       to=w2
+          w2  18  saver.get_tuple.call    op-3                     t1
+          w1  19  saver.get_tuple.return  op-4                     t2  ok   found=True
+          w1  20  saver.put.call          op-4                     t2
+          w1  21  saver.put_writes.call   op-4                     t2
+          w2  19  saver.get_tuple.return  op-3                     t1  ok   found=True
+          w2  20  saver.put.call          op-3                     t1
+          w2  21  saver.put_writes.call   op-3                     t1
+          w1  22  saver.put.return        op-4                     t2  ok
+          w1  23  saver.put.call          op-4                     t2
+          w2  22  saver.put.return        op-3                     t1  ok
+          w2  23  saver.put.call          op-3                     t1
+          w1  24  saver.put_writes.return op-4                     t2  ok
+          w2  24  saver.put_writes.return op-3                     t1  ok
+          w1  25  saver.put.return        op-4                     t2  ok
+          w1  26  saver.put_writes.call   op-4                     t2
+          w1  27  saver.put.call          op-4                     t2
+          w2  25  saver.put.return        op-3                     t1  ok
+          w2  26  saver.put_writes.call   op-3                     t1
+          w2  27  saver.put.call          op-3                     t1
+          w1  28  saver.put.return        op-4                     t2  ok
+          w1  29  saver.put_writes.call   op-4                     t2
+          w1  30  saver.put.call          op-4                     t2
+          w2  28  saver.put.return        op-3                     t1  ok
+          w1  31  saver.put_writes.return op-4                     t2  ok
+          w2  29  saver.put_writes.call   op-3                     t1
+          w2  30  saver.put.call          op-3                     t1
+          w2  31  saver.put_writes.return op-3                     t1  ok
+          w1  32  saver.put.return        op-4                     t2  ok
+          w2  32  saver.put.return        op-3                     t1  ok
+          w1  33  saver.put_writes.return op-4                     t2  ok
+orchestrator  14  client.ok               op-4                     t2  ok   worker=w1 worker_seq=33 output={'trace': ['first', 'second', 'first', 'second']}
+          w2  33  saver.put_writes.return op-3                     t1  ok
+orchestrator  15  client.ok               op-3                     t1  ok   worker=w2 worker_seq=33 output={'trace': ['first', 'second', 'first', 'second']}
+orchestrator  16  worker.exit                                               proc=w2 pid=20407 returncode=0 signal=None
+orchestrator  17  worker.exit                                               proc=w1 pid=20406 returncode=0 signal=None

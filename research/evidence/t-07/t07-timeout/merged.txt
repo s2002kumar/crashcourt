@@ -1,0 +1,28 @@
+orchestrator   0  worker.start                                              proc=w1 pid=21745
+orchestrator   1  worker.start                                              proc=w2 pid=21746
+orchestrator   2  client.invoke           op-1                     t1       worker=w1
+orchestrator   3  dispatch.send           op-1                     t1       to=w1
+          w1   0  saver.get_tuple.call    op-1                     t1
+          w1   1  fp.hit                  op-1    get_tuple.after  t1       action=pause occurrence=1
+orchestrator   4  client.info             op-1                     t1  info worker=w1 reason=no result within 3 s
+orchestrator   5  client.invoke           op-2                     t2       worker=w2
+orchestrator   6  dispatch.send           op-2                     t2       to=w2
+          w2   0  saver.get_tuple.call    op-2                     t2
+          w2   1  saver.get_tuple.return  op-2                     t2  ok   found=False
+          w2   2  saver.put.call          op-2                     t2
+          w2   3  saver.put_writes.call   op-2                     t2
+          w2   4  saver.put.return        op-2                     t2  ok
+          w2   5  saver.put.call          op-2                     t2
+          w2   6  saver.put_writes.return op-2                     t2  ok
+          w2   7  saver.put.return        op-2                     t2  ok
+          w2   8  saver.put_writes.call   op-2                     t2
+          w2   9  saver.put.call          op-2                     t2
+          w2  10  saver.put.return        op-2                     t2  ok
+          w2  11  saver.put_writes.call   op-2                     t2
+          w2  12  saver.put.call          op-2                     t2
+          w2  13  saver.put_writes.return op-2                     t2  ok
+          w2  14  saver.put.return        op-2                     t2  ok
+          w2  15  saver.put_writes.return op-2                     t2  ok
+orchestrator   7  client.ok               op-2                     t2  ok   worker=w2 worker_seq=15 output={'trace': ['first', 'second']}
+orchestrator   8  worker.exit                                               proc=w1 pid=21745 returncode=0 signal=None
+orchestrator   9  worker.exit                                               proc=w2 pid=21746 returncode=0 signal=None

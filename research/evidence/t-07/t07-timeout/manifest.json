@@ -1,0 +1,52 @@
+{
+  "clause_registry_sha256": "05cbc2b430eb60244d8bdbe46bef2580fa84c0b6d15679cb4968afeefcc00ec7",
+  "compose_version": "2.39.4-desktop.1",
+  "docker_kernel": "6.6.87.2-microsoft-standard-WSL2",
+  "docker_version": "28.4.0",
+  "generated_at": "2026-10-10T08:03:01+00:00",
+  "git_dirty": false,
+  "git_sha": "ff54ef46437065481d504035e004a0b058db007b",
+  "image_ids": {
+    "postgres": "sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722",
+    "toxiproxy": "sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e"
+  },
+  "images": {
+    "postgres": "postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722",
+    "toxiproxy": "ghcr.io/shopify/toxiproxy:2.12.0@sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e"
+  },
+  "libpq_build_version": "18.6",
+  "libpq_version": "18.6",
+  "lockfile_sha256": "19a0dd0df75a86126dec1b617422001fedb30ac18978c7fe31585ce52a92702e",
+  "machine": "x86_64",
+  "os_release": "6.6.87.2-microsoft-standard-WSL2",
+  "os_system": "Linux",
+  "packages": {
+    "langgraph": "1.2.12",
+    "langgraph-checkpoint": "4.2.0",
+    "langgraph-checkpoint-conformance": "0.0.2",
+    "langgraph-checkpoint-postgres": "3.1.2",
+    "langgraph-checkpoint-sqlite": "3.1.1",
+    "langgraph-prebuilt": "1.1.0",
+    "langgraph-sdk": "0.4.5",
+    "psycopg": "3.3.6",
+    "psycopg-binary": "3.3.6",
+    "psycopg-pool": "3.3.3"
+  },
+  "postgres": {
+    "default_transaction_isolation": "read committed",
+    "fsync": "on",
+    "max_connections": "100",
+    "server_version": "18.6 (Debian 18.6-1.pgdg13+2)",
+    "synchronous_commit": "on",
+    "track_commit_timestamp": "on"
+  },
+  "psycopg_impl": "binary",
+  "psycopg_wheel": "cp312-cp312-manylinux2014_x86_64,cp312-cp312-manylinux_2_17_x86_64",
+  "python_implementation": "CPython",
+  "python_version": "3.12.13",
+  "runner": "local",
+  "schema_version": 1,
+  "sink_clock_offset_ns": 104950,
+  "spec_sha256": "c6560f855c0bf80d9d1b18cd1407157dd619d84bc7e2b14dd7e1591f3cb45258",
+  "toxiproxy_version": "2.12.0"
+}

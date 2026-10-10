@@ -1,0 +1,78 @@
+{
+  "batch": "t07-timeout-20261010T080301Z",
+  "cell": "timeout",
+  "client_outcomes": {
+    "info": 1,
+    "ok": 1
+  },
+  "histories": {
+    "merged": {
+      "lines": 28,
+      "partial_tail": false
+    },
+    "orchestrator": {
+      "lines": 10,
+      "partial_tail": false
+    },
+    "w1": {
+      "lines": 2,
+      "partial_tail": false
+    },
+    "w2": {
+      "lines": 16,
+      "partial_tail": false
+    }
+  },
+  "invalid_reasons": [],
+  "observations": [],
+  "ops": {
+    "op-1": {
+      "late_result": null,
+      "outcome": "info",
+      "reason": "no result within 3 s",
+      "sent": true,
+      "thread_id": "t07-timeout-20261010T080301Z/timeout/1/t1",
+      "worker": "w1"
+    },
+    "op-2": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t07-timeout-20261010T080301Z/timeout/1/t2",
+      "worker": "w2"
+    }
+  },
+  "seed": "4175312d4deb4856dc72c91889186a4401ffbddd7bf31da6fad30b1cb96dc2c2",
+  "sink": {
+    "pid": 1,
+    "rows": 0
+  },
+  "steps": {
+    "barrier_fired": [],
+    "barrier_unfired": []
+  },
+  "trial": 1,
+  "v": 1,
+  "valid": true,
+  "workers": {
+    "w1": {
+      "exit_code": 0,
+      "forced": false,
+      "killed_by_step": null,
+      "pid": 21745,
+      "returncode": 0,
+      "shutdown_sent": true,
+      "signal": null
+    },
+    "w2": {
+      "exit_code": 0,
+      "forced": false,
+      "killed_by_step": null,
+      "pid": 21746,
+      "returncode": 0,
+      "shutdown_sent": true,
+      "signal": null
+    }
+  }
+}

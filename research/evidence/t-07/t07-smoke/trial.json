@@ -1,0 +1,95 @@
+{
+  "batch": "t07-smoke-20261010T080136Z",
+  "cell": "smoke",
+  "client_outcomes": {
+    "ok": 4
+  },
+  "histories": {
+    "merged": {
+      "lines": 86,
+      "partial_tail": false
+    },
+    "orchestrator": {
+      "lines": 18,
+      "partial_tail": false
+    },
+    "w1": {
+      "lines": 34,
+      "partial_tail": false
+    },
+    "w2": {
+      "lines": 34,
+      "partial_tail": false
+    }
+  },
+  "invalid_reasons": [],
+  "observations": [],
+  "ops": {
+    "op-1": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t07-smoke-20261010T080136Z/smoke/1/t1",
+      "worker": "w1"
+    },
+    "op-2": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t07-smoke-20261010T080136Z/smoke/1/t2",
+      "worker": "w2"
+    },
+    "op-3": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t07-smoke-20261010T080136Z/smoke/1/t1",
+      "worker": "w2"
+    },
+    "op-4": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t07-smoke-20261010T080136Z/smoke/1/t2",
+      "worker": "w1"
+    }
+  },
+  "seed": "461e9eadb7e02d1f3866befbdda1e441fbdee46b8136472e1b7cf318729a47e5",
+  "sink": {
+    "pid": 1,
+    "rows": 0
+  },
+  "steps": {
+    "barrier_fired": [
+      2
+    ],
+    "barrier_unfired": []
+  },
+  "trial": 1,
+  "v": 1,
+  "valid": true,
+  "workers": {
+    "w1": {
+      "exit_code": 0,
+      "forced": false,
+      "killed_by_step": null,
+      "pid": 20406,
+      "returncode": 0,
+      "shutdown_sent": true,
+      "signal": null
+    },
+    "w2": {
+      "exit_code": 0,
+      "forced": false,
+      "killed_by_step": null,
+      "pid": 20407,
+      "returncode": 0,
+      "shutdown_sent": true,
+      "signal": null
+    }
+  }
+}

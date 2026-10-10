@@ -1,0 +1,18 @@
+{
+  "batch": "t07-kill-parked-20261010T080256Z",
+  "cell": "kill-parked",
+  "client_outcomes": {
+    "info": 1,
+    "ok": 1
+  },
+  "invalid": 0,
+  "invalid_trials": {},
+  "observations": {
+    "1": [
+      "w1 ended with saver calls in flight: put (op-1), put_writes (op-1)"
+    ]
+  },
+  "trials": 1,
+  "v": 1,
+  "valid": 1
+}
