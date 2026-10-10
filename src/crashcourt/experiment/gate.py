@@ -57,6 +57,8 @@ from crashcourt.spec.scenario import load_scenario, scenario_sha256
 FROZEN_PATH = PurePosixPath("src/crashcourt/checker/FROZEN.md")
 PREREG = PREREGISTRATION_PATH.as_posix()
 AUTHORIZATION_FILE = "authorization.json"
+#: Where the runner moves the authorization when the checkout changes under a running batch.
+REVOKED_FILE = "authorization.revoked.json"
 
 
 class NotAuthorized(Exception):

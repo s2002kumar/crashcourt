@@ -295,3 +295,16 @@ def test_the_runner_entry_point_authorizes_new_evidence_from_instrument_batches(
     assert auth.instrument_batches == ("inst",)
     assert auth.instrument_fingerprint is not None
     assert auth.instrument_fingerprint["git_sha"] == auth.run_commit
+
+
+def test_a_revoked_batch_is_refused_with_the_runners_reasons(repo: Repo) -> None:
+    d = batch(repo, "b1")
+    auth = json.loads((d / "authorization.json").read_text(encoding="utf-8"))
+    (d / "authorization.json").unlink()
+    auth["revoked"] = ["HEAD moved during the batch"]
+    (d / "authorization.revoked.json").write_text(json.dumps(auth), encoding="utf-8")
+    assert "the runner revoked this batch's authorization: HEAD moved during the batch" in (
+        problems(repo, d)
+    )
+    with pytest.raises(AggregationRefused, match="revoked"):
+        aggregate([d], repo.root)

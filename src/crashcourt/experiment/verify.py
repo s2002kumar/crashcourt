@@ -22,6 +22,9 @@ batch says about itself:
   are the authorized ones), authorized for new evidence; a trial without result.json lists what
   was not exercised.
 
+A batch whose authorization the runner revoked (authorization.revoked.json: the checkout changed
+while it ran) is refused outright.
+
 An empty list of problems is the proof; anything else keeps the batch out of every summary.
 """
 
@@ -37,6 +40,7 @@ from crashcourt.experiment import gitproof
 from crashcourt.experiment.gate import (
     AUTHORIZATION_FILE,
     FROZEN_PATH,
+    REVOKED_FILE,
     Authorization,
     confirm_environment,
     rules_at,
@@ -98,6 +102,14 @@ def read_trials(batch_dir: Path) -> list[TrialFiles]:
 def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
     """The batch with its pre-registration, if every check holds; BatchNotVerified otherwise."""
     problems: list[str] = []
+    revoked = batch_dir / REVOKED_FILE
+    if revoked.exists():
+        try:
+            reasons = [str(r) for r in _json(revoked).get("revoked", [])]
+        except (OSError, ValueError):
+            reasons = []
+        why = "; ".join(reasons) or "no reason recorded"
+        raise BatchNotVerified(batch_dir, [f"the runner revoked this batch's authorization: {why}"])
     try:
         auth = Authorization.model_validate_json(
             (batch_dir / AUTHORIZATION_FILE).read_text("utf-8")
