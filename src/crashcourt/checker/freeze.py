@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any, cast
@@ -33,6 +34,7 @@ Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 CHECKER_ROOT = Path(__file__).resolve().parent
 FROZEN_PATH = CHECKER_ROOT / "FROZEN.md"
 _FENCE = "```json"
+TABLE_NAME = re.compile(r"[A-Za-z0-9._-]+")
 
 
 class FreezeMismatch(Exception):
@@ -170,6 +172,8 @@ def verify_landmarks(
     if name is None:
         verify_checker(text, registry_sha256)
         return None
+    if not TABLE_NAME.fullmatch(name):
+        raise FreezeMismatch(f"{name!r} is not a landmark table name")
     path = root / f"{name}.yaml"
     if not path.is_file():
         raise FreezeMismatch(f"no landmark table {name} in {root}")

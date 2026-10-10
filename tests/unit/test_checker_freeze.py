@@ -224,6 +224,9 @@ def test_a_scenario_pins_its_landmark_table(tmp_path: Path) -> None:
     assert freeze.verify_landmarks(text, REGISTRY_SHA, None, landmarks) is None
     with pytest.raises(freeze.FreezeMismatch):
         freeze.verify_landmarks(text, REGISTRY_SHA, "missing", landmarks)
+    for outside in ("../demo", "demo/x", "demo yaml", ""):
+        with pytest.raises(freeze.FreezeMismatch):
+            freeze.verify_landmarks(text, REGISTRY_SHA, outside, landmarks)
     draft = audited.model_copy(update={"status": "draft"})
     (landmarks / "demo.yaml").write_text(
         yaml.safe_dump(draft.model_dump(mode="json")), encoding="utf-8"

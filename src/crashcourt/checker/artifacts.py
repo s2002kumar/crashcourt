@@ -26,6 +26,9 @@ Name = Annotated[str, StringConstraints(min_length=1)]
 Count = Annotated[int, Field(ge=0, strict=True)]
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 
+#: A landmark table's name: path-safe, as the scenario's `landmarks` key allows (T-07, T-09).
+TableName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._-]+$")]
+
 Durability = Literal["sync", "async", "exit"]
 #: W1 covers both resume values (approve and reject); the misuse variant posts an effect before
 #: interrupt(). W5 is the two-turn continuation workload.
@@ -162,7 +165,8 @@ class LandmarkTable(BaseModel):
 
     model_config = _FROZEN
 
-    name: Name
+    #: The name a scenario's `landmarks` key gives, and the table's file stem.
+    name: TableName
     #: draft until derived from real fault-free histories and audited; hits are verified against
     #: a draft table only in synthetic trials and artifact mutants.
     status: Literal["draft", "audited"]
