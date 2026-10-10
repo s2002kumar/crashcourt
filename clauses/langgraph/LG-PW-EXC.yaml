@@ -1,0 +1,26 @@
+id: LG-PW-EXC
+title: When a node fails in a super-step, the other nodes' writes are stored and not re-run
+polarity: guarantees
+paraphrase: >-
+  When a node fails mid-execution in a super-step, LangGraph stores the pending writes of the other
+  nodes that completed successfully in that super-step, and resuming from that super-step does not
+  re-run those nodes.
+quotes:
+  - >-
+    Pending writes: When a graph node fails mid-execution at a given super-step, LangGraph stores
+    pending checkpoint writes from any other nodes that completed successfully at that super-step.
+    When you resume graph execution from that super-step you don't re-run the successful nodes.
+source_url: https://docs.langchain.com/oss/python/langgraph/checkpointers#pending-writes
+snapshot_url: https://docs.langchain.com/oss/python/langgraph/checkpointers.md
+retrieved: 2026-10-10
+snapshot_sha256: "3881beeb186af756c6f5495c89effa821fd654957c63584341b91861e6677b6a"
+version_scope:
+  package: langgraph
+  specifier: ">=1.2,<1.3"
+applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
+notes: >-
+  Split from LG-PW, which it replaces with LG-PW-CRASH. It guarantees only what the text states: a
+  node failing (an exception) in a super-step, and the resume from that super-step. A process crash
+  does not inherit it (LG-PW-CRASH describes that case). Under durability="exit", per-task writes
+  reach the saver only when the run ends (langgraph 1.2.12, pregel/_loop.py:466). The page was
+  refetched on 2026-10-10 and still hashes to the snapshot recorded on 2026-10-08.

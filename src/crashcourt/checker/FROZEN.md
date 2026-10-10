@@ -1,0 +1,46 @@
+# Checker v1: frozen
+
+Checker hash `d80951681c2b8656a08647d3ba60ee3b9b025e1ff118d83796ccdb433f111097`.
+
+```json
+{
+  "checker_sha256": "d80951681c2b8656a08647d3ba60ee3b9b025e1ff118d83796ccdb433f111097",
+  "checker_version": "v1",
+  "effect_models": {
+    "w1": "7e0376323ac016537edf5b1abb4641efba36519d40df58d9762817158e857859",
+    "w1-misuse": "d750e43ba865dc834a7341def0e19727bec72e5fd96da2ddf4ec7d2f467b1b5f",
+    "w5": "74d96b6a84043e5cbd7ef8e3386bba50c191572dff16284bb1664e991dc6f8af"
+  },
+  "files": {
+    "__init__.py": "19893b344f15ad58ac47f79c6c3c5399f92c297147faea57c08e4cebea6e29ee",
+    "artifacts.py": "df9f8b683659cc573d0100f4df223a9bf0b295781f491df95dcc4f05b859fd30",
+    "classify.py": "1395d8b5cd342e8a6e34065a77b91d71531d4c2fafd09598f59ebfd78a3b513b",
+    "decode.py": "d67f6ef3d347fbd4ffa226b1b9ebc5434ed611c5ad4f1d4e45e5d9804574f9b1",
+    "effect_models.py": "90052b9eca7b1a5a67f4e3e8cb7093aa5a1a86daf4273b5ae67376a4c68267a2",
+    "engine.py": "8e720c668263540259c36878ac1c1bcc656331cd3f3a2028be20bd3fbd619f55",
+    "facts.py": "f1680c866e2f8f589f821075ca2407c83dd334b2e26a653488ec373faa144f53",
+    "faults_fired.py": "f7b708860e26bd826d071f03a5cfc82183464be11684dc7c0ed77d8daff943b5",
+    "freeze.py": "0d600c6d736be23d5921198d318695143d6f95341571a711b865f50b539af98d",
+    "integrity.py": "c24e3abe4db9a3fff8bc538a75269c1c6ce65919916e7dd3a81e40d084e37d17",
+    "invariants/__init__.py": "8e45c059d20f76356a069b886630f54008065ce37c5bfd746cdda9ab2e0936e4",
+    "invariants/_common.py": "f8007ca7d8d4cac6a94bb18c18790099325764c5e21dbc023b1792eecb1236dc",
+    "invariants/durability.py": "e887f2842bf5cb87699e6c245aa55aa0ec823c75df941b9318c563e133e42892",
+    "invariants/effects.py": "6e7504b0902c353dd4395ddef9ed6a28e1adedf74e6dfefe4a10880503601bc7",
+    "invariants/lineage.py": "6180d1219b583c2db405f4d21b54830079ecd9e466354868b197c506a1774429",
+    "invariants/writes.py": "bc674d6a2d4e8662a18a4d73dc35b9744e59438f73ac55f1a2b60a4e027a6b49",
+    "landmarks.py": "8c03bf2f5c7c451b19ecc21eaf91885016b3d1b113b929d7ce1c1af015be2670",
+    "lineage.py": "6acf3b329f3b11107740f2903be90a43a677103267dcf52fdddb50394c2f0062",
+    "load.py": "3561362d60436511a883feb28251bd291ef3cb49b2c2f8705127a3cc6861d319",
+    "mapping.py": "645567da204094c7b7c7e50aed603611efc8b098ab358b3e16402ecd850752f4",
+    "observations.py": "4208793929c7f4c019bdddaf30851fb2e73205489ede79e66b8be0518a15f00c",
+    "order.py": "b3cb175b05c59c187e33fc50466dd833e9439660712986f0e31759e57499f6be",
+    "report.py": "bf3eac9868c87908aaac6830c20a68b8be15a25409b91bc242902f83d32e3dad",
+    "state.py": "acd353db73513648ebfcfbaf7b780cc9793bb4dbc4102958555f942632a04fbc",
+    "status.py": "c95c89110c2ee3e304014f70a44c5334522d97bb0a0690e8858c5814c85686af"
+  },
+  "landmark_tables": {
+    "langgraph-v1": "279e5e441b14dafca556d8b8824afbcc4698ce0d073a63f324386956160682f4"
+  },
+  "registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5"
+}
+```

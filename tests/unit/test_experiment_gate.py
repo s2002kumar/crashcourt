@@ -114,11 +114,12 @@ def test_no_frozen_checker_means_no_run(tmp_path: Path) -> None:
     )
 
 
-def test_the_default_adapters_refuse_where_the_checker_is_absent(tmp_path: Path) -> None:
+def test_the_default_adapters_refuse_a_freeze_that_is_not_the_checkers(tmp_path: Path) -> None:
+    """With T-10's frozen checker in the checkout, the default adapter verifies it against the
+    repository's FROZEN.md; this fixture's freeze is not the checker's, so the batch is refused."""
     repo = make_repo(tmp_path)
     reasons = refused(authorize_batch, repo.root / "scenarios/R1.yaml", N, repo.root)
-    assert "no frozen checker" in reasons
-    assert "not in this checkout" in reasons
+    assert f"the checker does not match {FROZEN_PATH}" in reasons
 
 
 def test_a_checker_that_does_not_match_its_freeze_is_refused(tmp_path: Path) -> None:
