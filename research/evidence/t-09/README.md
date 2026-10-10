@@ -1,7 +1,11 @@
 # T-09 evidence: fault-free W1 and W5
 
-Recorded 2026-10-10 at commit 194c94a, from a clean checkout on Linux (WSL2, kernel 6.6.87.2-microsoft-standard-WSL2)
-with Docker Desktop, the pinned images, and the sink built from the same checkout; sink clock offsets 0.12 to 0.20 ms.
+Recorded 2026-10-10 at commit 2224b17, the head squash-merged as 6aea04e (identical trees; on main ba6a721 the
+src, tests, scenarios, and uv.lock trees are the same), from a clean checkout on Linux (WSL2, kernel
+6.6.87.2-microsoft-standard-WSL2) with Docker Desktop, the pinned images, and the sink built from the same checkout;
+sink clock offsets 0.10 to 0.22 ms. Before the batches, on that checkout: ruff, ruff format, and pyright strict clean,
+680 unit and 36 integration tests passed. This replaces an earlier recording at 194c94a, made before the branch was
+restacked onto main, with the same results.
 Every batch ran in canonical mode with 50 trials, no faults, and no arms other than W5 concurrent's two barriers.
 Each directory holds the batch's manifest, batch record, run.json, summary, and scenario, and the first trial's
 trial.json, merged history (merged.jsonl, which includes the sink's ledger rows), and the same history rendered one

@@ -1,14 +1,14 @@
 {
-  "batch": "t09-w5-sequential-20261010T081351Z",
+  "batch": "t09-w5-sequential-20261010T093643Z",
   "cell": "w5-sequential",
   "clause_registry_sha256": "05cbc2b430eb60244d8bdbe46bef2580fa84c0b6d15679cb4968afeefcc00ec7",
   "clock": {
-    "batch_start_sink_offset_ns": 95144,
+    "batch_start_sink_offset_ns": 252353,
     "limit_ns": 1000000000,
-    "manifest_sink_offset_ns": 198255,
+    "manifest_sink_offset_ns": 177888,
     "warning": null
   },
-  "manifest_sha256": "4f40208573955732c33761e2000888e88e2d346a30e190734aa323140dd2af63",
+  "manifest_sha256": "0ef808a63029ffec1a53017682ca3b89f62f692578b68ca8d6edfe9125ee2a5b",
   "master_seed": "w5-sequential-v1",
   "mode": "canonical",
   "own_database": false,
@@ -33,7 +33,7 @@
   "sink": {
     "expected_source_sha256": "79b7538bd90ea9011efae790d35a5ab4165aacdef47b06d5a6d10a0bd32437bd",
     "health": {
-      "clock_offset_ns": 95144,
+      "clock_offset_ns": 252353,
       "ledger_version": 2,
       "pid": 1,
       "resume_error": null,
@@ -41,7 +41,7 @@
       "status": "ok",
       "test_hooks": false,
       "trial": {
-        "batch": "t09-w1-misuse-20261010T081351Z",
+        "batch": "t09-w1-misuse-20261010T093643Z",
         "cell": "w1-misuse",
         "seed": "70e4c5b56309d6cfa6b9f3b30405118b920241c3e78e2a8fe756d6d1224f74e0",
         "trial": 50
@@ -50,7 +50,7 @@
     },
     "url": "http://127.0.0.1:8490"
   },
-  "started": "2026-10-10T08:16:03+00:00",
+  "started": "2026-10-10T09:39:14+00:00",
   "trial_seeds": {
     "1": "de9d7a43618708e54fd567611821c11539527b25b0f5b975458945b40b3631b3",
     "10": "262dd88a6ec98ea63a5451c1dcffec9d97a2d454b538ed9958460e39d7489caf",
