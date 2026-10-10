@@ -90,6 +90,33 @@ def _cells_with(**change: Any) -> list[dict[str, Any]]:
         ({"predicted": [{"invariant": "I4", "expect": ["VIOLATION"]}]}, "cannot predict"),
         ({"predicted": [{"invariant": "I4", "expect": ["PASS"]}] * 2}, "one prediction per"),
         ({"n": 0}, "greater than or equal to 1"),
+        ({"observations": []}, "a replication names the published observation"),
+        (
+            {
+                "observations": [
+                    {"source": "ledger", "effect": "charge", "rows": 2},
+                    {"source": "ledger", "effect": "charge", "rows": 1},
+                ]
+            },
+            "one observation per effect",
+        ),
+        (
+            {
+                "observations": [
+                    {"source": "ledger", "effect": "charge", "rows": 2, "attempts": [1]}
+                ]
+            },
+            "attempts lists each row's",
+        ),
+        (
+            {
+                "observations": [
+                    {"source": "ledger", "effect": "charge", "rows": 2, "attempts": [2, 1]}
+                ]
+            },
+            "attempts lists each row's",
+        ),
+        ({"observations": [{"source": "oracle", "effect": "charge"}]}, "source"),
     ],
 )
 def test_cells_are_checked(change: dict[str, Any], message: str) -> None:

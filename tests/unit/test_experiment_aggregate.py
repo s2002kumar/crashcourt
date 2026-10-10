@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -10,10 +11,11 @@ from crashcourt.cli import main
 from crashcourt.experiment.aggregate import AggregationRefused, aggregate, instrument_ready
 from crashcourt.experiment.fingerprint import CompatibilityRule, fingerprint
 from crashcourt.experiment.gate import Authorization, InstrumentEvidence
-from crashcourt.experiment.preregistration import PREREGISTRATION_PATH
+from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, Preregistration
 from crashcourt.experiment.verify import BatchNotVerified, verify_batch
 
 from ._experiment import (
+    LEDGER,
     SEEDS,
     FakeChecker,
     FakeScenarios,
@@ -308,3 +310,104 @@ def test_a_revoked_batch_is_refused_with_the_runners_reasons(repo: Repo) -> None
     )
     with pytest.raises(AggregationRefused, match="revoked"):
         aggregate([d], repo.root)
+
+
+# -- observations --------------------------------------------------------------------------------
+
+
+def r1_prereg(**changes: Any) -> Preregistration:
+    data = prereg_model().model_dump(mode="json")
+    data["cells"][0].update(changes)
+    return Preregistration.model_validate(data)
+
+
+def test_a_replication_is_scored_on_its_observation_when_the_outcome_is_gap(
+    tmp_path: Path,
+) -> None:
+    repo = make_repo(tmp_path, r1_prereg(predicted=[{"invariant": "I4", "expect": ["GAP"]}]))
+    gap = [[("I4", "GAP")]] * N
+    group = aggregate([batch(repo, "b1", gap)], repo.root).cells[0].groups[0]
+    [seen] = group.observations
+    assert (seen.observation, seen.trials, seen.matched, seen.mismatches) == (
+        "ledger charge: 2 rows, attempts [1, 2]",
+        N,
+        N,
+        {},
+    )
+    assert group.status == "as-predicted"
+    one_row = {"rows": LEDGER["rows"][:1], "verify_ok": True}
+    shown = batch(repo, "b2", gap, ledgers=dict.fromkeys(range(1, N + 1), one_row))
+    group = aggregate([shown], repo.root).cells[0].groups[0]
+    [seen] = group.observations
+    assert (seen.matched, seen.prediction) == (0, "differs")
+    assert seen.mismatches["b2 trial 1"] == "1 charge row, attempts [1]"
+    assert group.invariants[0].status == "as-predicted"  # the outcome alone matched
+    assert group.status == "differs"
+    check = instrument_ready(repo.root)
+    assert check(
+        r1_prereg(predicted=[{"invariant": "I4", "expect": ["GAP"]}]), repo.prereg_commit, [shown]
+    ).missing == ["instrument cell R1 is differs, not as predicted"]
+
+
+def test_an_accepted_run_with_no_record_is_matched_when_nothing_is_scored(
+    tmp_path: Path,
+) -> None:
+    record = "accepted run with no durable record"
+    repo = make_repo(
+        tmp_path,
+        r1_prereg(
+            predicted=[
+                {"invariant": "I1a", "expect": ["NOT_EXERCISED"]},
+                {"invariant": "I1b", "expect": ["NOT_EXERCISED"]},
+            ],
+            observations=[{"source": "checker", "starts_with": record, "count": 1}],
+        ),
+    )
+    nothing = {
+        "not_exercised": [
+            {"invariant": "I1a", "missing": "no acknowledged checkpoint"},
+            {"invariant": "I1b", "missing": "no acknowledged checkpoint"},
+        ]
+    }
+    said = {"observations": [f"{record}: op start-1 ended client.info", "w1 seq 4 observed head"]}
+    trials: list[list[tuple[str, str]] | None] = [None] * N
+    good = batch(repo, "b1", trials, checker_changes={**nothing, **said})
+    group = aggregate([good], repo.root).cells[0].groups[0]
+    assert [i.values for i in group.invariants] == [{"NOT_EXERCISED": N}] * 2
+    assert (group.observations[0].matched, group.status) == (N, "as-predicted")
+    silent = batch(repo, "b2", trials, checker_changes=nothing, invalid={3: "uncontrolled trial"})
+    group = aggregate([silent], repo.root).cells[0].groups[0]
+    [seen] = group.observations
+    assert seen.trials == N - 1  # an INVALID trial is counted as INVALID, never matched
+    assert seen.mismatches == {
+        f"b2 trial {n}": f"0 checker records beginning {record!r}" for n in (1, 2)
+    }
+
+
+def test_a_ledger_the_sink_did_not_verify_matches_nothing(repo: Repo) -> None:
+    d = batch(repo, "b1", ledgers={1: {**LEDGER, "verify_ok": False}, 2: None})
+    group = aggregate([d], repo.root).cells[0].groups[0]
+    [seen] = group.observations
+    assert seen.mismatches == {
+        "b1 trial 1": "ledger.json is not an export the sink verified",
+        "b1 trial 2": "no ledger.json",
+    }
+    assert seen.unstable and group.status == "unstable"
+
+
+def test_an_anomaly_is_observed_whatever_its_class(tmp_path: Path) -> None:
+    anomaly = {"source": "anomaly", "invariant": "I4", "present": True}
+    repo = make_repo(
+        tmp_path,
+        r1_prereg(
+            predicted=[{"invariant": "I4", "expect": ["EXPECTED", "GAP", "VIOLATION_CANDIDATE"]}],
+            observations=[anomaly],
+            deterministic=False,
+        ),
+    )
+    rows = [[("I4", "EXPECTED")], [("I4", "GAP")], [("I4", "VIOLATION_CANDIDATE")]]
+    [seen] = aggregate([batch(repo, "b1", rows)], repo.root).cells[0].groups[0].observations
+    assert (seen.observation, seen.matched) == ("anomaly on I4: present", N)
+    rows = [[("I4", "PASS")], [("I4", "GAP")], [("I4", "GAP")]]
+    [seen] = aggregate([batch(repo, "b2", rows)], repo.root).cells[0].groups[0].observations
+    assert seen.mismatches == {"b2 trial 1": "I4 is PASS"}

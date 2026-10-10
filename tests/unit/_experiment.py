@@ -45,6 +45,15 @@ SCENARIO_JSON = {
 }
 SCENARIOS = {c: hashlib.sha256(text.encode()).hexdigest() for c, text in SCENARIO_JSON.items()}
 N = 3
+#: The effect ledger's export as the post-trial step writes it: the replication's published
+#: shape, two charge rows with attempts 1 and 2.
+LEDGER: dict[str, Any] = {
+    "rows": [
+        {"effect_key": "charge:t1", "attempt": 1, "node": "execute"},
+        {"effect_key": "charge:t1", "attempt": 2, "node": "execute"},
+    ],
+    "verify_ok": True,
+}
 
 
 def git(repo: Path, *args: str) -> str:
@@ -111,6 +120,9 @@ def prereg_model(**changes: Any) -> Preregistration:
                 "predicted": [
                     {"invariant": "I4", "expect": ["EXPECTED"]},
                     {"invariant": "I1b", "expect": ["PASS"]},
+                ],
+                "observations": [
+                    {"source": "ledger", "effect": "charge", "rows": 2, "attempts": [1, 2]}
                 ],
                 "escalate_if": "anything but as predicted",
             },
@@ -233,9 +245,13 @@ def make_batch(
     invalid: Mapping[int, str] | None = None,
     run_changes: Mapping[str, Any] | None = None,
     scenario_text: str | None = None,
+    trial_checker: Mapping[int, Mapping[str, Any]] | None = None,
+    ledgers: Mapping[int, Any] | None = None,
 ) -> Path:
     """A batch directory: records at the root, and one trial directory per entry of `trials`
-    (its (invariant, outcome) pairs, or None for a trial in which nothing was exercised)."""
+    (its (invariant, outcome) pairs, or None for a trial in which nothing was exercised).
+    `trial_checker` changes one trial's checker.json; `ledgers` replaces one trial's ledger.json
+    (None leaves it out)."""
     root = out / batch
     root.mkdir(parents=True)
     manifest_bytes = manifest.to_json().encode()
@@ -287,7 +303,11 @@ def make_batch(
         if pairs is None:
             report["not_exercised"] = [{"invariant": "I5a", "missing": "no fork window"}]
         report.update(checker_changes or {})
+        report.update((trial_checker or {}).get(n, {}))
         (trial / "checker.json").write_text(json.dumps(report), encoding="utf-8")
+        ledger = (ledgers or {}).get(n, LEDGER)
+        if ledger is not None:
+            (trial / "ledger.json").write_text(json.dumps(ledger), encoding="utf-8")
         if pairs is not None:
             result = ResultRecord.model_validate(
                 {

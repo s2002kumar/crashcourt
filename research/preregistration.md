@@ -100,45 +100,45 @@ and to the landmark derivation before the freeze. Neither is evidence about any 
 
 ## Cells
 
-| Cell | Phase | Evidence | Workload | Durability | Fault | Workers | N | Predicted | |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| C1-w1-sync | instrument | control (C1) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| C1-w1-async | instrument | control (C1) | w1 | async | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| C1-w1-exit | instrument | control (C1) | w1 | exit | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| C1-w1-reject-sync | instrument | control (C1) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| C1-w1-reject-async | instrument | control (C1) | w1 | async | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| C1-w1-misuse-sync | instrument | control (C1) | w1-misuse | sync | - | 1 | 50 | I4: EXPECTED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| C1-w1-misuse-async | instrument | control (C1) | w1-misuse | async | - | 1 | 50 | I4: EXPECTED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| C1-w5-sync | instrument | control (C1) | w5 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| C1-w5-async | instrument | control (C1) | w5 | async | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| C3-w1-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| C3-w1-reject-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| C3-w5-sync | instrument | control (C3) | w5 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| K2 | instrument | control (C2) | w5 | sync | F06 | 2 | 20 | I5a: GAP; I6a: NO_ANOMALY_UNSPECIFIED or GAP |  |
-| K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED |  |
-| K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED |  |
-| K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 1 | 20 | I4: EXPECTED; I7a: EXPECTED; I1b: PASS | pending |
-| K3 | instrument | replication (langgraph#8796) | w5 | sync | F05 | 2 | 20 | I5a: GAP; I6a: GAP |  |
-| K4 | instrument | replication (langgraph#8764) | w1 | sync | F01 | 1 | 20 | I1a: NOT_EXERCISED; I1b: NOT_EXERCISED |  |
-| K1b | new-evidence | new-evidence | w1 | sync | F01 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | pending |
-| N1 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: GAP; I7a: GAP | unknown |
-| N2 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: PASS or GAP; I11: NO_ANOMALY_UNSPECIFIED | unknown |
-| N3 | new-evidence | new-evidence | w1 | sync | F10 | 1 | 20 | I4: EXPECTED |  |
-| N4 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | unknown, pending |
-| N5 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP; I7a: GAP; I7c: GAP; I8: GAP |  |
-| N6 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP |  |
-| N7 | new-evidence | new-evidence | w1 | sync | F07 | 1 | 20 | I4: GAP | unknown |
-| N8 | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP |  |
-| N9 | new-evidence | new-evidence | w1 | sync | F13 | 1 | 20 | I1b: PASS |  |
-| N10 | new-evidence | new-evidence | w1 | sync | F12 | 1 | 20 | I1a: PASS; I1b: PASS; I11: PASS; I4: PASS |  |
-| N11 | new-evidence | new-evidence | w1 | sync | F01 | 1 | 20 | I7c: PASS or NO_ANOMALY_UNSPECIFIED | unknown |
-| N12 | new-evidence | new-evidence | w5 | sync | F11 | 1 | 20 | I5: NO_ANOMALY_UNSPECIFIED | unknown |
-| N12b | new-evidence | new-evidence | w5 | sync | F10 | 1 | 20 | I5b: GAP |  |
-| A1 | new-evidence | new-evidence | w1 | async | F01 | 1 | 20 | I4: EXPECTED; I1b: NOT_EXERCISED or EXPECTED | pending |
-| A2 | new-evidence | new-evidence | w1 | async | F01 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | pending |
-| A3 | new-evidence | new-evidence | w1 | async | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | unknown, pending |
-| A4 | new-evidence | new-evidence | w1 | async | F12 | 1 | 20 | I4: PASS; *: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| E1 | new-evidence | new-evidence | w1 | exit | F01 | 1 | 20 | I4: EXPECTED; I1a: NOT_EXERCISED; I1b: NOT_EXERCISED | pending |
+| Cell | Phase | Evidence | Workload | Durability | Fault | Workers | N | Predicted | Observed | |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| C1-w1-sync | instrument | control (C1) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w1-async | instrument | control (C1) | w1 | async | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w1-exit | instrument | control (C1) | w1 | exit | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w1-reject-sync | instrument | control (C1) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w1-reject-async | instrument | control (C1) | w1 | async | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w1-misuse-sync | instrument | control (C1) | w1-misuse | sync | - | 1 | 50 | I4: EXPECTED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w1-misuse-async | instrument | control (C1) | w1-misuse | async | - | 1 | 50 | I4: EXPECTED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w5-sync | instrument | control (C1) | w5 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w5-async | instrument | control (C1) | w5 | async | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C3-w1-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C3-w1-reject-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C3-w5-sync | instrument | control (C3) | w5 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| K2 | instrument | control (C2) | w5 | sync | F06 | 2 | 20 | I5a: GAP; I6a: NO_ANOMALY_UNSPECIFIED or GAP | anomaly on I5a: present |  |
+| K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 1 row, attempts [1] |  |
+| K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 0 rows, attempts [] |  |
+| K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 1 | 20 | I4: EXPECTED; I7a: EXPECTED; I1b: PASS | ledger charge: 2 rows, attempts [1, 2] | pending |
+| K3 | instrument | replication (langgraph#8796) | w5 | sync | F05 | 2 | 20 | I5a: GAP; I6a: GAP | anomaly on I5a: present |  |
+| K4 | instrument | replication (langgraph#8764) | w1 | sync | F01 | 1 | 20 | I1a: NOT_EXERCISED; I1b: NOT_EXERCISED | checker observation 'accepted run with no durable record: op start-1 ended': 1 |  |
+| K1b | new-evidence | new-evidence | w1 | sync | F01 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | pending |
+| N1 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: GAP; I7a: GAP | - | unknown |
+| N2 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: PASS or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown |
+| N3 | new-evidence | new-evidence | w1 | sync | F10 | 1 | 20 | I4: EXPECTED | - |  |
+| N4 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | unknown, pending |
+| N5 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP; I7a: GAP; I7c: GAP; I8: GAP | - |  |
+| N6 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP | - |  |
+| N7 | new-evidence | new-evidence | w1 | sync | F07 | 1 | 20 | I4: GAP | - | unknown |
+| N8 | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP | - |  |
+| N9 | new-evidence | new-evidence | w1 | sync | F13 | 1 | 20 | I1b: PASS | - |  |
+| N10 | new-evidence | new-evidence | w1 | sync | F12 | 1 | 20 | I1a: PASS; I1b: PASS; I11: PASS; I4: PASS | - |  |
+| N11 | new-evidence | new-evidence | w1 | sync | F01 | 1 | 20 | I7c: PASS or NO_ANOMALY_UNSPECIFIED | - | unknown |
+| N12 | new-evidence | new-evidence | w5 | sync | F11 | 1 | 20 | I5: NO_ANOMALY_UNSPECIFIED | - | unknown |
+| N12b | new-evidence | new-evidence | w5 | sync | F10 | 1 | 20 | I5b: GAP | - |  |
+| A1 | new-evidence | new-evidence | w1 | async | F01 | 1 | 20 | I4: EXPECTED; I1b: NOT_EXERCISED or EXPECTED | - | pending |
+| A2 | new-evidence | new-evidence | w1 | async | F01 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | pending |
+| A3 | new-evidence | new-evidence | w1 | async | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown, pending |
+| A4 | new-evidence | new-evidence | w1 | async | F12 | 1 | 20 | I4: PASS; *: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| E1 | new-evidence | new-evidence | w1 | exit | F01 | 1 | 20 | I4: EXPECTED; I1a: NOT_EXERCISED; I1b: NOT_EXERCISED | - | pending |
 
 ## Deviations
 
@@ -162,6 +162,7 @@ affects.
       "id": "C1-w1-sync",
       "master_seed": null,
       "n": 50,
+      "observations": [],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -194,6 +195,7 @@ affects.
       "id": "C1-w1-async",
       "master_seed": null,
       "n": 50,
+      "observations": [],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -226,6 +228,7 @@ affects.
       "id": "C1-w1-exit",
       "master_seed": null,
       "n": 50,
+      "observations": [],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -258,6 +261,7 @@ affects.
       "id": "C1-w1-reject-sync",
       "master_seed": null,
       "n": 50,
+      "observations": [],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -290,6 +294,7 @@ affects.
       "id": "C1-w1-reject-async",
       "master_seed": null,
       "n": 50,
+      "observations": [],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -322,6 +327,7 @@ affects.
       "id": "C1-w1-misuse-sync",
       "master_seed": null,
       "n": 50,
+      "observations": [],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -361,6 +367,7 @@ affects.
       "id": "C1-w1-misuse-async",
       "master_seed": null,
       "n": 50,
+      "observations": [],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -400,6 +407,7 @@ affects.
       "id": "C1-w5-sync",
       "master_seed": null,
       "n": 50,
+      "observations": [],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -432,6 +440,7 @@ affects.
       "id": "C1-w5-async",
       "master_seed": null,
       "n": 50,
+      "observations": [],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -464,6 +473,7 @@ affects.
       "id": "C3-w1-sync",
       "master_seed": null,
       "n": 50,
+      "observations": [],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -496,6 +506,7 @@ affects.
       "id": "C3-w1-reject-sync",
       "master_seed": null,
       "n": 50,
+      "observations": [],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -528,6 +539,7 @@ affects.
       "id": "C3-w5-sync",
       "master_seed": null,
       "n": 50,
+      "observations": [],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -560,6 +572,14 @@ affects.
       "id": "K2",
       "master_seed": null,
       "n": 20,
+      "observations": [
+        {
+          "invariant": "I5a",
+          "note": "the fork, whatever its class",
+          "present": true,
+          "source": "anomaly"
+        }
+      ],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -598,6 +618,27 @@ affects.
       "id": "K5",
       "master_seed": null,
       "n": 20,
+      "observations": [
+        {
+          "attempts": [
+            1,
+            2
+          ],
+          "effect": "precheck",
+          "note": "attempt 1 before interrupt() in start-1, attempt 2 when approval re-runs on resume",
+          "rows": 2,
+          "source": "ledger"
+        },
+        {
+          "attempts": [
+            1
+          ],
+          "effect": "charge",
+          "note": null,
+          "rows": 1,
+          "source": "ledger"
+        }
+      ],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -635,6 +676,25 @@ affects.
       "id": "K5-reject",
       "master_seed": null,
       "n": 20,
+      "observations": [
+        {
+          "attempts": [
+            1,
+            2
+          ],
+          "effect": "precheck",
+          "note": null,
+          "rows": 2,
+          "source": "ledger"
+        },
+        {
+          "attempts": [],
+          "effect": "charge",
+          "note": null,
+          "rows": 0,
+          "source": "ledger"
+        }
+      ],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -672,6 +732,18 @@ affects.
       "id": "K1a",
       "master_seed": null,
       "n": 20,
+      "observations": [
+        {
+          "attempts": [
+            1,
+            2
+          ],
+          "effect": "charge",
+          "note": "langgraph#8039's published observation: attempt 1 charged before the kill, attempt 2 after the redelivery",
+          "rows": 2,
+          "source": "ledger"
+        }
+      ],
       "pending": "the founder's ruling on spec 2.0's running-at-a-stop definition against C11-8039; T-10's current reading gives I4 GAP for this shape, not EXPECTED (a)",
       "phase": "instrument",
       "predicted": [
@@ -716,6 +788,14 @@ affects.
       "id": "K3",
       "master_seed": null,
       "n": 20,
+      "observations": [
+        {
+          "invariant": "I5a",
+          "note": "langgraph#8796's published observation: two processes on one thread fork the lineage",
+          "present": true,
+          "source": "anomaly"
+        }
+      ],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -753,6 +833,14 @@ affects.
       "id": "K4",
       "master_seed": null,
       "n": 20,
+      "observations": [
+        {
+          "count": 1,
+          "note": "langgraph#8764's published observation: the run was accepted and the snapshot holds no row for its thread",
+          "source": "checker",
+          "starts_with": "accepted run with no durable record: op start-1 ended"
+        }
+      ],
       "pending": null,
       "phase": "instrument",
       "predicted": [
@@ -790,6 +878,7 @@ affects.
       "id": "K1b",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": "the LG-PW split into LG-PW-EXC and LG-PW-CRASH (a T-02 follow-up)",
       "phase": "new-evidence",
       "predicted": [
@@ -821,6 +910,7 @@ affects.
       "id": "N1",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -858,6 +948,7 @@ affects.
       "id": "N2",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -896,6 +987,7 @@ affects.
       "id": "N3",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -926,6 +1018,7 @@ affects.
       "id": "N4",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": "the LG-PW split into LG-PW-EXC and LG-PW-CRASH (a T-02 follow-up)",
       "phase": "new-evidence",
       "predicted": [
@@ -957,6 +1050,7 @@ affects.
       "id": "N5",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -1008,6 +1102,7 @@ affects.
       "id": "N6",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -1038,6 +1133,7 @@ affects.
       "id": "N7",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -1068,6 +1164,7 @@ affects.
       "id": "N8",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -1119,6 +1216,7 @@ affects.
       "id": "N9",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -1149,6 +1247,7 @@ affects.
       "id": "N10",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -1200,6 +1299,7 @@ affects.
       "id": "N11",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -1231,6 +1331,7 @@ affects.
       "id": "N12",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -1261,6 +1362,7 @@ affects.
       "id": "N12b",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -1291,6 +1393,7 @@ affects.
       "id": "A1",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": "the founder's ruling on spec 2.0's running-at-a-stop definition against C11-8039; T-10's current reading gives I4 GAP for this shape, not EXPECTED (a)",
       "phase": "new-evidence",
       "predicted": [
@@ -1329,6 +1432,7 @@ affects.
       "id": "A2",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": "the LG-PW split into LG-PW-EXC and LG-PW-CRASH (a T-02 follow-up)",
       "phase": "new-evidence",
       "predicted": [
@@ -1360,6 +1464,7 @@ affects.
       "id": "A3",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": "the LG-PW split into LG-PW-EXC and LG-PW-CRASH (a T-02 follow-up)",
       "phase": "new-evidence",
       "predicted": [
@@ -1398,6 +1503,7 @@ affects.
       "id": "A4",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
@@ -1436,6 +1542,7 @@ affects.
       "id": "E1",
       "master_seed": null,
       "n": 20,
+      "observations": [],
       "pending": "the founder's ruling on spec 2.0's running-at-a-stop definition against C11-8039; T-10's current reading gives I4 GAP for this shape, not EXPECTED (a)",
       "phase": "new-evidence",
       "predicted": [

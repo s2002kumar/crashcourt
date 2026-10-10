@@ -27,8 +27,12 @@ Per invariant, three separate readings:
 - `prediction`: `as-predicted` when every valid trial shows a predicted value, `differs` when a
   predicted cell shows anything else, `recorded` for a cell whose outcome was honestly unknown,
   `missing` when no valid trial exists.
+Per predicted observation (crashcourt.experiment.observe), matched in every valid trial apart
+from any outcome: how many trials showed it, each one that did not with what it showed instead,
+`unstable` when a deterministic cell's trials split, and the same prediction reading.
 A group's status is the worst of: excluded, escalate, unstable, differs, missing, recorded,
-as-predicted. Nothing here decides an outcome: the checker wrote them all.
+as-predicted, over its invariants and its observations. Nothing here decides an outcome: the
+checker wrote them all.
 """
 
 from __future__ import annotations
@@ -56,11 +60,16 @@ from crashcourt.experiment.gate import (
     authorize_batch,
     rules_at,
 )
-from crashcourt.experiment.preregistration import EVERY_INVARIANT, Cell, Preregistration
+from crashcourt.experiment.observe import ANOMALY, mismatch
+from crashcourt.experiment.preregistration import (
+    EVERY_INVARIANT,
+    Cell,
+    Observation,
+    Preregistration,
+)
 from crashcourt.experiment.verify import TrialFiles, VerifiedBatch, verify_batch
 from crashcourt.stats import count_sentence, rule_of_three, wilson
 
-ANOMALY: frozenset[str] = frozenset({"EXPECTED", "GAP", "VIOLATION_CANDIDATE", "VIOLATION"})
 NOT_EXERCISED = "NOT_EXERCISED"
 NOT_EVALUATED = "NOT_EVALUATED"
 
@@ -107,6 +116,21 @@ class InvariantSummary(_Model):
         return self.prediction
 
 
+class ObservationSummary(_Model):
+    observation: str
+    #: Valid trials, and how many showed the observation.
+    trials: int
+    matched: int
+    #: Each valid trial that did not show it ("<batch> trial <n>"), with what it showed instead.
+    mismatches: dict[str, str]
+    prediction: Prediction
+    unstable: bool
+
+    @property
+    def status(self) -> Status:
+        return "unstable" if self.unstable else self.prediction
+
+
 class GroupSummary(_Model):
     batches: tuple[str, ...]
     fingerprint_sha256: str
@@ -115,6 +139,7 @@ class GroupSummary(_Model):
     invalid_reasons: dict[str, int]
     excluded: bool
     invariants: tuple[InvariantSummary, ...]
+    observations: tuple[ObservationSummary, ...] = ()
     status: Status
 
 
@@ -220,18 +245,43 @@ def summarize_invariant(
     )
 
 
+def summarize_observation(
+    cell: Cell, observation: Observation, valid: Sequence[tuple[str, TrialFiles]]
+) -> ObservationSummary:
+    mismatches = {
+        where: found for where, t in valid if (found := mismatch(observation, t)) is not None
+    }
+    matched = len(valid) - len(mismatches)
+    reading: Prediction
+    if not valid:
+        reading = "missing"
+    elif cell.confidence == "unknown":
+        reading = "recorded"
+    else:
+        reading = "as-predicted" if not mismatches else "differs"
+    return ObservationSummary(
+        observation=observation.label(),
+        trials=len(valid),
+        matched=matched,
+        mismatches=mismatches,
+        prediction=reading,
+        unstable=cell.deterministic and 0 < matched < len(valid),
+    )
+
+
 def summarize_group(
     cell: Cell, batches: Sequence[VerifiedBatch], max_invalid: float
 ) -> GroupSummary:
-    trials = [t for b in batches for t in b.trials]
-    reasons = Counter(r for r in (invalid_reason(t) for t in trials) if r is not None)
+    trials = [(f"{b.batch.batch} trial {t.trial}", t) for b in batches for t in b.trials]
+    reasons = Counter(r for r in (invalid_reason(t) for _, t in trials) if r is not None)
     invalid = sum(reasons.values())
     excluded = bool(trials) and invalid / len(trials) > max_invalid
-    valid = [t for t in trials if invalid_reason(t) is None]
+    named = [(where, t) for where, t in trials if invalid_reason(t) is None]
+    valid = [t for _, t in named]
     invariants = tuple(summarize_invariant(cell, name, valid) for name in _invariants(cell, valid))
-    statuses: list[Status] = (
-        ["excluded"] if excluded else [i.status for i in invariants] or ["missing"]
-    )
+    observations = tuple(summarize_observation(cell, o, named) for o in cell.observations)
+    readings: list[Status] = [*(i.status for i in invariants), *(o.status for o in observations)]
+    statuses: list[Status] = ["excluded"] if excluded else readings or ["missing"]
     return GroupSummary(
         batches=tuple(b.batch.batch for b in batches),
         fingerprint_sha256=fingerprint_sha256(batches[0].manifest),
@@ -240,6 +290,7 @@ def summarize_group(
         invalid_reasons=dict(sorted(reasons.items())),
         excluded=excluded,
         invariants=invariants,
+        observations=observations,
         status=min(statuses, key=SEVERITY.index),
     )
 

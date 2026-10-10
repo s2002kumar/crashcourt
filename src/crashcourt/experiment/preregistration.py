@@ -14,6 +14,11 @@ batch from a draft. Finalizing fills them in, sets `state` to `final`, and is th
 Phases. `instrument` cells (controls and published replications) run first; `new-evidence` cells
 are refused until every instrument cell of the same pre-registration, checker, and environment has
 come out as predicted.
+
+Observations. Besides its outcomes, a cell may predict what it observes: effect ledger rows, a
+record in checker.json that is not an outcome, or whether an invariant showed an anomaly at all.
+Each is matched in every valid trial, independently of how the anomaly was classified, so a
+replication still checks the published shape when its outcome is GAP or nothing is scored.
 """
 
 from __future__ import annotations
@@ -77,6 +82,71 @@ class Prediction(_Model):
         return self
 
 
+class LedgerRows(_Model):
+    """The effect ledger's rows for one effect in a trial (ledger.json, the oracle's export): how
+    many, and their attempt numbers."""
+
+    source: Literal["ledger"]
+    #: The effect: the effect key up to its first colon (`charge` for `charge:<thread>`).
+    effect: Id
+    rows: int = Field(ge=0)
+    #: The rows' attempts in ascending order; omitted when only the count is predicted.
+    attempts: tuple[Annotated[int, Field(ge=1)], ...] | None = None
+    note: Text | None = None
+
+    @model_validator(mode="after")
+    def _attempts(self) -> Self:
+        if self.attempts is not None and (
+            len(self.attempts) != self.rows or list(self.attempts) != sorted(self.attempts)
+        ):
+            raise ValueError(f"ledger {self.effect}: attempts lists each row's, in order")
+        return self
+
+    def label(self) -> str:
+        attempts = f", attempts {list(self.attempts)}" if self.attempts is not None else ""
+        return f"ledger {self.effect}: {counted(self.rows, 'row')}{attempts}"
+
+
+class CheckerRecord(_Model):
+    """Records in the trial's checker.json `observations` that begin with this text, which are
+    not outcomes (an accepted run with no durable record, for one)."""
+
+    source: Literal["checker"]
+    starts_with: Text
+    count: int = Field(ge=0)
+    note: Text | None = None
+
+    def label(self) -> str:
+        return f"checker observation {self.starts_with!r}: {self.count}"
+
+
+class AnomalySeen(_Model):
+    """Whether the checker found an anomaly on an invariant, whatever its class: any of EXPECTED,
+    GAP, VIOLATION_CANDIDATE, or VIOLATION, which differ only in the clause."""
+
+    source: Literal["anomaly"]
+    invariant: Id
+    present: bool
+    note: Text | None = None
+
+    def label(self) -> str:
+        return f"anomaly on {self.invariant}: {'present' if self.present else 'absent'}"
+
+
+#: What a cell predicts it observes, apart from any outcome: matched in every valid trial.
+Observation = Annotated[LedgerRows | CheckerRecord | AnomalySeen, Field(discriminator="source")]
+
+
+def _subject(o: LedgerRows | CheckerRecord | AnomalySeen) -> tuple[str, str]:
+    match o:
+        case LedgerRows():
+            return (o.source, o.effect)
+        case CheckerRecord():
+            return (o.source, o.starts_with)
+        case AnomalySeen():
+            return (o.source, o.invariant)
+
+
 class Cell(_Model):
     id: Id
     phase: Phase
@@ -106,6 +176,9 @@ class Cell(_Model):
     #: (the predictions then record the expected shape, and disagreement is recorded, not flagged).
     confidence: Literal["predicted", "unknown"]
     predicted: tuple[Prediction, ...] = Field(min_length=1)
+    #: What the cell shows apart from its outcomes. A replication names the published observation
+    #: here, so it is checked even when the outcome is GAP or nothing is scored.
+    observations: tuple[Observation, ...] = ()
     escalate_if: Text
     #: What this cell's prediction still waits on, if anything; a final pre-registration has none.
     pending: Text | None = None
@@ -122,6 +195,11 @@ class Cell(_Model):
         invariants = [p.invariant for p in self.predicted]
         if len(set(invariants)) != len(invariants):
             problems.append("one prediction per invariant")
+        if self.evidence == "replication" and not self.observations:
+            problems.append("a replication names the published observation it reproduces")
+        subjects = [_subject(o) for o in self.observations]
+        if len(set(subjects)) != len(subjects):
+            problems.append("one observation per effect, checker record, or invariant")
         if problems:
             raise ValueError(f"cell {self.id}: {'; '.join(problems)}")
         return self
@@ -152,6 +230,11 @@ class CheckerPin(_Model):
     effect_models: dict[Id, Sha256] = Field(min_length=1)
     #: Each audited landmark table, by name, as FROZEN.md records it.
     landmark_tables: dict[Id, Sha256] = Field(min_length=1)
+
+
+def counted(n: int, noun: str) -> str:
+    """`1 row`, `2 rows`."""
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
 
 
 def derive_seed(master_seed: str, cell: str, trial: int) -> str:
@@ -268,11 +351,13 @@ _TABLE_END = "\n\n## "
 def render_table(prereg: Preregistration) -> str:
     """The cell table the prose shows, rendered from the data so the two cannot disagree."""
     rows = [
-        "| Cell | Phase | Evidence | Workload | Durability | Fault | Workers | N | Predicted | |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Cell | Phase | Evidence | Workload | Durability | Fault | Workers | N | Predicted "
+        "| Observed | |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for c in prereg.cells:
         predicted = "; ".join(f"{p.invariant}: {' or '.join(p.expect)}" for p in c.predicted)
+        observed = "; ".join(o.label() for o in c.observations) or "-"
         evidence = c.evidence
         if c.replication_of:
             evidence += f" ({c.replication_of})"
@@ -283,7 +368,7 @@ def render_table(prereg: Preregistration) -> str:
         ]
         rows.append(
             f"| {c.id} | {c.phase} | {evidence} | {c.workload} | {c.durability} | {c.fault or '-'} "
-            f"| {c.workers} | {c.n} | {predicted} | {', '.join(flags)} |"
+            f"| {c.workers} | {c.n} | {predicted} | {observed} | {', '.join(flags)} |"
         )
     return "\n".join(rows)
 
