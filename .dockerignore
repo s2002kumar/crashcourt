@@ -1,0 +1,10 @@
+# The image copies only pyproject.toml, uv.lock, .python-version, README.md, Dockerfile.harness, and src/;
+# nothing else needs to reach the daemon.
+*
+!pyproject.toml
+!uv.lock
+!.python-version
+!README.md
+!Dockerfile.harness
+!src/
+**/__pycache__

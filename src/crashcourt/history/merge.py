@@ -11,9 +11,10 @@ each of which holds in every real execution:
    precedes the sink's first `sink.append`. Each `sink.append` precedes the worker's ok
    `effect.response` that names its ledger row (data.sink_seq). A failed response names no row
    and gets no edge, so a failure followed by a successful retry cannot be reordered. Both
-   edges rest on write order: the worker logs a request before sending it, and the sink logs an
-   append before answering (crashcourt.spec.events). A ledger row that appears twice, or an ok
-   response whose row is missing or belongs to another request, contradicts the trial.
+   edges rest on write order: the worker logs a request before sending it, and the sink's
+   append comes from a ledger row that commits before the sink answers
+   (crashcourt.spec.events). A ledger row that appears twice, or an ok response whose row is
+   missing or belongs to another request, contradicts the trial.
 4. Exit: a worker's last event precedes the `worker.exit` naming it (recorded from waitpid).
 5. Result: the worker event named by a `client.ok` or `client.fail` (data.worker, data.worker_seq,
    the worker's last event before it sent its result) precedes that client event.

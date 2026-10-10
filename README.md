@@ -14,7 +14,7 @@ every failure will ship as a standalone repro.
 ```bash
 git clone <repo> && cd crashcourt
 uv sync --locked --group dev        # installs uv's build of Python 3.12.13 and the locked packages
-docker compose up -d --wait         # Postgres on 127.0.0.1:55432, Toxiproxy API on 127.0.0.1:8474
+docker compose up -d --wait         # Postgres :55432, Toxiproxy API :8474, effect sink :8480 (127.0.0.1)
 uv run crashcourt doctor            # checks the pinned environment, writes manifest.json
 ```
 

@@ -1,4 +1,4 @@
-"""Pin compose images by digest (used by scripts/pin_images.py).
+"""Pin compose images and Dockerfile base images by digest (used by scripts/pin_images.py).
 
 The rewrite logic is pure and unit-tested; only `docker_digest` touches Docker.
 """
@@ -13,6 +13,11 @@ from pathlib import Path
 
 IMAGE_LINE = re.compile(
     r"^(?P<lead>\s*image:\s*)(?P<ref>[^\s#@]+)(?:@sha256:[0-9a-f]{64})?(?P<rest>\s*(?:#.*)?)$"
+)
+FROM_LINE = re.compile(
+    r"^(?P<lead>\s*FROM\s+)(?P<ref>[^\s#@]+)(?:@sha256:[0-9a-f]{64})?"
+    r"(?P<rest>(?:\s+AS\s+\S+)?\s*(?:#.*)?)$",
+    re.IGNORECASE,
 )
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 
@@ -32,11 +37,22 @@ def normalize_repo(name: str) -> str:
 
 def rewrite_compose(text: str, resolve: Callable[[str], str]) -> tuple[str, list[str]]:
     """Return compose text with every `image:` pinned to the digest `resolve(ref)` returns."""
+    return _rewrite(text, IMAGE_LINE, resolve)
+
+
+def rewrite_dockerfile(text: str, resolve: Callable[[str], str]) -> tuple[str, list[str]]:
+    """Return a Dockerfile with every `FROM` image pinned to the digest `resolve(ref)` returns."""
+    return _rewrite(text, FROM_LINE, resolve)
+
+
+def _rewrite(
+    text: str, pattern: re.Pattern[str], resolve: Callable[[str], str]
+) -> tuple[str, list[str]]:
     out: list[str] = []
     changes: list[str] = []
     for line in text.splitlines(keepends=True):
         body = line.rstrip("\n")
-        match = IMAGE_LINE.match(body)
+        match = pattern.match(body)
         if not match:
             out.append(line)
             continue
@@ -69,12 +85,29 @@ def docker_digest(ref: str) -> str:
     raise RuntimeError(f"no registry digest for {ref} in {entries}")
 
 
-def main(compose_path: Path, resolve: Callable[[str], str] = docker_digest) -> int:
+#: Dockerfiles next to compose.yaml whose base images are pinned too.
+DOCKERFILES: tuple[str, ...] = ("Dockerfile.harness",)
+
+
+def _pin_file(
+    path: Path,
+    rewrite: Callable[[str, Callable[[str], str]], tuple[str, list[str]]],
+    resolve: Callable[[str], str],
+) -> list[str]:
     # Bytes in, bytes out: text mode would translate line endings on Windows.
-    text = compose_path.read_bytes().decode("utf-8")
-    new_text, changes = rewrite_compose(text, resolve)
+    text = path.read_bytes().decode("utf-8")
+    new_text, changes = rewrite(text, resolve)
     if new_text != text:
-        compose_path.write_bytes(new_text.encode("utf-8"))
+        path.write_bytes(new_text.encode("utf-8"))
+    return [f"{path.name}: {change}" for change in changes]
+
+
+def main(compose_path: Path, resolve: Callable[[str], str] = docker_digest) -> int:
+    changes = _pin_file(compose_path, rewrite_compose, resolve)
+    for name in DOCKERFILES:
+        dockerfile = compose_path.parent / name
+        if dockerfile.exists():
+            changes += _pin_file(dockerfile, rewrite_dockerfile, resolve)
     for change in changes or ["already pinned; digests unchanged"]:
         print(change)
     return 0

@@ -20,12 +20,18 @@ from crashcourt.manifest import (
     normalize_dist,
     validate_manifest,
 )
+from crashcourt.sink.ledger import LEDGER_VERSION
 
-#: Accepted compose states per service. Postgres has a healthcheck; Toxiproxy's image has no shell.
+#: Accepted compose states per service. Postgres and the sink have healthchecks; Toxiproxy's image
+#: has no shell.
 ACCEPTED_STATES: Mapping[str, frozenset[str]] = {
     "postgres": frozenset({"healthy"}),
     "toxiproxy": frozenset({"healthy", "running"}),
+    "sink": frozenset({"healthy"}),
 }
+#: Every service that must be up. The manifest records images only for REQUIRED_SERVICES; the
+#: sink is built from Dockerfile.harness, whose base image is checked separately.
+SERVICES_UP: tuple[str, ...] = (*REQUIRED_SERVICES, "sink")
 
 
 @dataclass(frozen=True)
@@ -73,6 +79,9 @@ class Probes(Protocol):
     def image_id(self, ref: str) -> str | None: ...
     def postgres_settings(self, names: Iterable[str]) -> Mapping[str, str]: ...
     def toxiproxy_version(self) -> str: ...
+    def sink_health(self) -> Mapping[str, object]: ...
+    def sink_source_sha256(self) -> str: ...
+    def harness_base_images(self) -> Sequence[str] | None: ...
     def installed_versions(self, dists: Iterable[str]) -> Mapping[str, str | None]: ...
     def locked_versions(self) -> Mapping[str, str] | None: ...
     def lockfile_sha256(self) -> str | None: ...
@@ -149,6 +158,58 @@ def run_doctor(probes: Probes) -> DoctorReport:
         )
     else:
         checks.append(_check("toxiproxy api", True, f"version {toxiproxy}", ""))
+
+    sink_offset: int | None = None
+    try:
+        sink = dict(probes.sink_health())
+    except Exception as exc:  # noqa: BLE001
+        checks.append(
+            _check(
+                "effect sink",
+                False,
+                f"{type(exc).__name__}: {exc}",
+                "Run `docker compose up -d --wait`; check CRASHCOURT_SINK_URL.",
+            )
+        )
+    else:
+        problems: list[str] = []
+        if sink.get("status") != "ok":
+            problems.append(f"status {sink.get('status')}")
+        if sink.get("ledger_version") != LEDGER_VERSION:
+            problems.append(
+                f"ledger version {sink.get('ledger_version')}, expected {LEDGER_VERSION}"
+            )
+        if sink.get("test_hooks") is not False:
+            problems.append("a test hook is armed")
+        if sink.get("resume_error"):
+            problems.append(f"could not resume its open trial: {sink.get('resume_error')}")
+        expected = probes.sink_source_sha256()
+        if sink.get("source_sha256") != expected:
+            problems.append(
+                f"serving source {str(sink.get('source_sha256'))[:12]}, "
+                f"the checkout is {expected[:12]}"
+            )
+        offset = sink.get("clock_offset_ns")
+        if isinstance(offset, int):
+            sink_offset = offset  # recorded in the manifest, never compared or used to order
+        clock = f", clock offset {offset / 1e9:+.1f} s" if isinstance(offset, int) else ""
+        checks.append(
+            _check(
+                "effect sink",
+                not problems,
+                f"version {sink.get('version')}, ledger v{sink.get('ledger_version')}, "
+                f"source {expected[:12]}{clock}"
+                if not problems
+                else "; ".join(problems),
+                (
+                    "The sink-data volume holds a ledger this sink cannot resume (named above). "
+                    "Archive that file, then open a new trial or remove the volume "
+                    "(`docker compose rm -sf sink && docker volume rm crashcourt_sink-data`)."
+                )
+                if sink.get("resume_error")
+                else "Rebuild and restart the sink: `docker compose up -d --wait --build sink`.",
+            )
+        )
 
     installed = dict(probes.installed_versions(PINNED_DISTRIBUTIONS))
     try:
@@ -313,6 +374,7 @@ def run_doctor(probes: Probes) -> DoctorReport:
             image_ids={s: running[s][0] for s in REQUIRED_SERVICES},
             postgres=pg,
             toxiproxy_version=toxiproxy or "",
+            sink_clock_offset_ns=sink_offset,
         )
         problems = validate_manifest(candidate)
         checks.append(
@@ -341,6 +403,11 @@ def _docker_checks(
 ) -> dict[str, tuple[str, ...]]:
     """Pinned refs, service health, and running images; returns each service's image IDs."""
     unpinned = [s for s in REQUIRED_SERVICES if DIGEST_MARKER not in images.get(s, "")]
+    bases = probes.harness_base_images()
+    if bases is None:
+        unpinned.append("Dockerfile.harness")
+    else:
+        unpinned += [f"Dockerfile.harness FROM {b}" for b in bases if DIGEST_MARKER not in b]
     checks.append(
         _check(
             "images pinned by digest",
@@ -355,14 +422,14 @@ def _docker_checks(
     states = dict(probes.service_states())
     bad = [
         f"{s}={states.get(s) or 'missing'}"
-        for s in REQUIRED_SERVICES
+        for s in SERVICES_UP
         if states.get(s) not in ACCEPTED_STATES[s]
     ]
     checks.append(
         _check(
             "compose services up",
             not bad,
-            "postgres healthy, toxiproxy running" if not bad else "; ".join(bad),
+            "postgres healthy, toxiproxy running, sink healthy" if not bad else "; ".join(bad),
             "Run `docker compose up -d --wait`.",
         )
     )

@@ -24,7 +24,7 @@ _FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_APPEND | getattr(os, "O_BIN
 
 if sys.platform == "win32":
 
-    def _host_monotonic_ns() -> int:
+    def host_monotonic_ns() -> int:
         """Windows has no CLOCK_MONOTONIC, and time.monotonic there ticks every 15.6 ms.
 
         QueryPerformanceCounter (time.perf_counter_ns) is system-wide and fine-grained. Official
@@ -34,7 +34,7 @@ if sys.platform == "win32":
 
 else:
 
-    def _host_monotonic_ns() -> int:
+    def host_monotonic_ns() -> int:
         """CLOCK_MONOTONIC: one host-wide clock, so mono_ns compares across processes."""
         return time.clock_gettime_ns(time.CLOCK_MONOTONIC)
 
@@ -75,7 +75,7 @@ class HistoryWriter:
                 proc=self.proc,
                 pid=self.pid,
                 seq=self._seq,
-                mono_ns=_host_monotonic_ns(),
+                mono_ns=host_monotonic_ns(),
                 wall_ns=time.time_ns(),
                 kind=kind,
                 **fields,

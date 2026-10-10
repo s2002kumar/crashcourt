@@ -10,6 +10,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import re
 import subprocess
 import urllib.request
 from collections.abc import Iterable, Mapping, Sequence
@@ -17,7 +18,9 @@ from pathlib import Path
 from typing import Any, cast
 
 from crashcourt.doctor import DriverInfo
+from crashcourt.history.writer import host_monotonic_ns
 from crashcourt.manifest import parse_uv_lock, sha256_file
+from crashcourt.sink.source import source_sha256
 
 #: Direct connection to the target database: the oracle path, never through Toxiproxy
 #: (the oracle path).
@@ -25,6 +28,10 @@ DEFAULT_PG_DSN = "postgresql://crashcourt:crashcourt@127.0.0.1:55432/crashcourt"
 DEFAULT_TOXIPROXY_URL = "http://127.0.0.1:8474"
 #: The same database through Toxiproxy: the path workers use and faults act on.
 DEFAULT_PG_PROXY_DSN = "postgresql://crashcourt:crashcourt@127.0.0.1:15432/crashcourt"
+#: The effect sink, reached directly: it is never behind Toxiproxy.
+DEFAULT_SINK_URL = "http://127.0.0.1:8480"
+#: The full image reference, digest included, of a Dockerfile FROM line.
+_FROM_IMAGE = re.compile(r"^\s*FROM\s+(\S+)", re.IGNORECASE)
 
 
 def _compose_ps_items(raw: str) -> list[dict[str, object]]:
@@ -111,6 +118,7 @@ class SystemProbes:
         self.root = root
         self.pg_dsn = os.environ.get("CRASHCOURT_PG_DSN", DEFAULT_PG_DSN)
         self.toxiproxy_url = os.environ.get("CRASHCOURT_TOXIPROXY_URL", DEFAULT_TOXIPROXY_URL)
+        self.sink_url = os.environ.get("CRASHCOURT_SINK_URL", DEFAULT_SINK_URL)
 
     def _run(self, *args: str) -> str | None:
         try:
@@ -197,6 +205,33 @@ class SystemProbes:
         if isinstance(data, dict):
             return str(cast("dict[str, object]", data).get("version", body))
         return str(data)
+
+    def sink_health(self) -> Mapping[str, object]:
+        """/health, plus `clock_offset_ns`: the sink's monotonic clock minus this host's, taken at
+        the midpoint of the request. It is near zero only when both share a kernel."""
+        url = self.sink_url.rstrip("/") + "/health"
+        before = host_monotonic_ns()
+        with urllib.request.urlopen(url, timeout=5) as response:
+            data: Any = json.loads(response.read().decode())
+        after = host_monotonic_ns()
+        if not isinstance(data, dict):
+            raise ValueError(f"unexpected /health body: {data!r}")
+        health = cast("dict[str, object]", data)
+        sink_clock = health.get("mono_ns")
+        if isinstance(sink_clock, int):
+            health["clock_offset_ns"] = sink_clock - (before + after) // 2
+        return health
+
+    def sink_source_sha256(self) -> str:
+        """The source the sink should be serving: this checkout's crashcourt package."""
+        return source_sha256(self.root, self.root / "src" / "crashcourt")
+
+    def harness_base_images(self) -> Sequence[str] | None:
+        path = self.root / "Dockerfile.harness"
+        if not path.exists():
+            return None
+        lines = path.read_bytes().decode("utf-8").splitlines()
+        return [m.group(1) for m in (_FROM_IMAGE.match(line) for line in lines) if m]
 
     def installed_versions(self, dists: Iterable[str]) -> Mapping[str, str | None]:
         found: dict[str, str | None] = {}

@@ -22,3 +22,19 @@ services:
     ports:
       - "127.0.0.1:8474:8474"    # control API
       - "127.0.0.1:15432:15432"  # proxied Postgres; the harness creates the proxy (T-05)
+  sink:
+    # The effect ledger (T-08): its own failure domain, never behind Toxiproxy. Always rebuilt on
+    # `up`, so a sink image from another checkout is never reused; doctor checks its source hash.
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile.harness
+    volumes: ["sink-data:/data"]
+    ports: ["127.0.0.1:8480:8000"]
+    healthcheck:
+      test: ["CMD", "/opt/venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  sink-data: {}

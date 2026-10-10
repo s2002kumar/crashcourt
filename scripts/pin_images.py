@@ -1,4 +1,4 @@
-"""Pin every compose image by digest: `python scripts/pin_images.py` (needs Docker and network)."""
+"""Pin every compose image and Dockerfile base image by digest: `python scripts/pin_images.py`."""
 
 import sys
 from pathlib import Path

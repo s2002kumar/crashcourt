@@ -34,6 +34,15 @@ SPEC_SHA = "c" * 64
 GOOD_DRIVER = DriverInfo(
     impl="binary", libpq=180006, libpq_build=180006, cancel_safe=True, wheel=LINUX_WHEEL
 )
+SINK_SOURCE = "f" * 64
+GOOD_SINK = {
+    "status": "ok",
+    "version": "0.0.1",
+    "source_sha256": SINK_SOURCE,
+    "ledger_version": 2,
+    "trial": None,
+    "test_hooks": False,
+}
 
 
 def make_manifest(**changes: object) -> Manifest:
@@ -75,7 +84,7 @@ class FakeProbes:
     compose: str | None = "2.29.7"
     images: Mapping[str, str] | None = field(default_factory=lambda: dict(GOOD_IMAGES))
     states: Mapping[str, str] = field(
-        default_factory=lambda: {"postgres": "healthy", "toxiproxy": "running"}
+        default_factory=lambda: {"postgres": "healthy", "toxiproxy": "running", "sink": "healthy"}
     )
     running: Mapping[str, Sequence[str]] | Exception = field(
         default_factory=lambda: {s: [i] for s, i in GOOD_RUNNING.items()}
@@ -83,6 +92,8 @@ class FakeProbes:
     local_ids: Mapping[str, str] = field(default_factory=lambda: dict(GOOD_IMAGE_IDS))
     pg: Mapping[str, str] | Exception = field(default_factory=lambda: dict(GOOD_PG))
     toxiproxy: str | Exception = "2.9.0"
+    sink: Mapping[str, object] | Exception = field(default_factory=lambda: dict(GOOD_SINK))
+    bases: Sequence[str] | None = field(default_factory=lambda: [f"uv:0.12.1@{D1}"])
     installed: Mapping[str, str | None] = field(default_factory=lambda: dict(GOOD_VERSIONS))
     locked: Mapping[str, str] | Exception | None = field(
         default_factory=lambda: dict(GOOD_VERSIONS)
@@ -135,6 +146,17 @@ class FakeProbes:
         if isinstance(self.toxiproxy, Exception):
             raise self.toxiproxy
         return self.toxiproxy
+
+    def sink_health(self) -> Mapping[str, object]:
+        if isinstance(self.sink, Exception):
+            raise self.sink
+        return self.sink
+
+    def sink_source_sha256(self) -> str:
+        return SINK_SOURCE
+
+    def harness_base_images(self) -> Sequence[str] | None:
+        return self.bases
 
     def installed_versions(self, dists: Iterable[str]) -> Mapping[str, str | None]:
         return {d: self.installed.get(d) for d in dists}
