@@ -1,0 +1,17 @@
+# A worker SIGKILLed while parked at a failpoint. w1 parks before writing its first checkpoint;
+# once it is held, the orchestrator kills it. Its op can only end as info: no result came back.
+v: 1
+name: kill-parked
+cell: kill-parked
+seed: kill-parked-v1
+workload: smoke
+target: {saver: postgres, driver: async, durability: sync}
+workers: [w1, w2]
+ops:
+  - {id: op-1, worker: w1, thread: t1, after: start}
+  - {id: op-2, worker: w2, thread: t2, after: start}
+schedule:
+  - on: {fp: put.before, worker: w1, op: op-1}
+    do: {pause: B1}
+  - on: {all_paused: [B1]}
+    do: {kill: w1}

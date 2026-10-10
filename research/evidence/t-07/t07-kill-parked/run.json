@@ -1,0 +1,65 @@
+{
+  "batch": "t07-kill-parked-20261010T080256Z",
+  "cell": "kill-parked",
+  "clause_registry_sha256": "05cbc2b430eb60244d8bdbe46bef2580fa84c0b6d15679cb4968afeefcc00ec7",
+  "clock": {
+    "batch_start_sink_offset_ns": 228830,
+    "limit_ns": 1000000000,
+    "manifest_sink_offset_ns": 141886,
+    "warning": null
+  },
+  "manifest_sha256": "ba559734bd6081394a9d8f4d5c2ab06f484b67b8e901a46347ba59400590b9e9",
+  "master_seed": "kill-parked-v1",
+  "mode": "canonical",
+  "own_database": false,
+  "pool": {
+    "autocommit": true,
+    "prepare_threshold": 0,
+    "row_factory": "dict_row"
+  },
+  "routes": {
+    "w1": {
+      "listen": "0.0.0.0:15453",
+      "port": 15453,
+      "proxy": "postgres-w1",
+      "upstream": "postgres:5432"
+    },
+    "w2": {
+      "listen": "0.0.0.0:15454",
+      "port": 15454,
+      "proxy": "postgres-w2",
+      "upstream": "postgres:5432"
+    }
+  },
+  "scenario": {
+    "file": "tests/integration/scenarios/kill-parked.yaml",
+    "name": "kill-parked",
+    "sha256": "64d87865daf10a2e0002a1da0fb13f3379322016c9de0c9c1b2994c0e2b30865"
+  },
+  "sink": {
+    "expected_source_sha256": "3171fca815bdddfffdfc2de328771ce88aff16d42e022b8b12a19f30439e9ecf",
+    "health": {
+      "clock_offset_ns": 228830,
+      "ledger_version": 2,
+      "pid": 1,
+      "resume_error": null,
+      "source_sha256": "3171fca815bdddfffdfc2de328771ce88aff16d42e022b8b12a19f30439e9ecf",
+      "status": "ok",
+      "test_hooks": false,
+      "trial": {
+        "batch": "t07-sequential-100-20261010T080251Z",
+        "cell": "sequential-100",
+        "seed": "85d31e35f8fecbad09129dbdf36490fa5d6c42e752810095e487a0520b981a0c",
+        "trial": 1
+      },
+      "version": "0.0.1"
+    },
+    "url": "http://127.0.0.1:8490"
+  },
+  "started": "2026-10-10T08:02:57+00:00",
+  "trial_seeds": {
+    "1": "2d22b8a91907eafa6b64d9627c65e752a23f1b9261277c02c4f77174697f589b"
+  },
+  "trials": 1,
+  "v": 1
+}

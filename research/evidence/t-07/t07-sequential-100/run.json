@@ -1,0 +1,65 @@
+{
+  "batch": "t07-sequential-100-20261010T080251Z",
+  "cell": "sequential-100",
+  "clause_registry_sha256": "05cbc2b430eb60244d8bdbe46bef2580fa84c0b6d15679cb4968afeefcc00ec7",
+  "clock": {
+    "batch_start_sink_offset_ns": 184621,
+    "limit_ns": 1000000000,
+    "manifest_sink_offset_ns": 219193,
+    "warning": null
+  },
+  "manifest_sha256": "5b113b858287e35c523bd0a57e128c60f4dfa7ced15239f47e375430d78bc581",
+  "master_seed": "sequential-100-v1",
+  "mode": "canonical",
+  "own_database": false,
+  "pool": {
+    "autocommit": true,
+    "prepare_threshold": 0,
+    "row_factory": "dict_row"
+  },
+  "routes": {
+    "w1": {
+      "listen": "0.0.0.0:15453",
+      "port": 15453,
+      "proxy": "postgres-w1",
+      "upstream": "postgres:5432"
+    },
+    "w2": {
+      "listen": "0.0.0.0:15454",
+      "port": 15454,
+      "proxy": "postgres-w2",
+      "upstream": "postgres:5432"
+    }
+  },
+  "scenario": {
+    "file": "tests/integration/scenarios/sequential-100.yaml",
+    "name": "sequential-100",
+    "sha256": "2012121e668dbfd605e11f5ce1ab76bbb690e07f4bea254b13e3bc9347d3ec08"
+  },
+  "sink": {
+    "expected_source_sha256": "3171fca815bdddfffdfc2de328771ce88aff16d42e022b8b12a19f30439e9ecf",
+    "health": {
+      "clock_offset_ns": 184621,
+      "ledger_version": 2,
+      "pid": 1,
+      "resume_error": null,
+      "source_sha256": "3171fca815bdddfffdfc2de328771ce88aff16d42e022b8b12a19f30439e9ecf",
+      "status": "ok",
+      "test_hooks": false,
+      "trial": {
+        "batch": "t07-smoke-20261010T080136Z",
+        "cell": "smoke",
+        "seed": "434a77eafdc05f82b120f6c8c78f64cb8135310654d395c655154a921069644e",
+        "trial": 50
+      },
+      "version": "0.0.1"
+    },
+    "url": "http://127.0.0.1:8490"
+  },
+  "started": "2026-10-10T08:02:52+00:00",
+  "trial_seeds": {
+    "1": "85d31e35f8fecbad09129dbdf36490fa5d6c42e752810095e487a0520b981a0c"
+  },
+  "trials": 1,
+  "v": 1
+}

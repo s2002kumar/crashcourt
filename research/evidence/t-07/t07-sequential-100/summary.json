@@ -1,0 +1,13 @@
+{
+  "batch": "t07-sequential-100-20261010T080251Z",
+  "cell": "sequential-100",
+  "client_outcomes": {
+    "ok": 100
+  },
+  "invalid": 0,
+  "invalid_trials": {},
+  "observations": {},
+  "trials": 1,
+  "v": 1,
+  "valid": 1
+}

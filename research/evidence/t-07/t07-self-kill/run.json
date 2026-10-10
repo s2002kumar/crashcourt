@@ -1,0 +1,65 @@
+{
+  "batch": "t07-self-kill-20261010T080258Z",
+  "cell": "self-kill",
+  "clause_registry_sha256": "05cbc2b430eb60244d8bdbe46bef2580fa84c0b6d15679cb4968afeefcc00ec7",
+  "clock": {
+    "batch_start_sink_offset_ns": 178529,
+    "limit_ns": 1000000000,
+    "manifest_sink_offset_ns": 210521,
+    "warning": null
+  },
+  "manifest_sha256": "d99641d17c9a496237052c038de466a71f3c45fb946fd7e019605bea75ea7c3d",
+  "master_seed": "self-kill-v1",
+  "mode": "canonical",
+  "own_database": false,
+  "pool": {
+    "autocommit": true,
+    "prepare_threshold": 0,
+    "row_factory": "dict_row"
+  },
+  "routes": {
+    "w1": {
+      "listen": "0.0.0.0:15453",
+      "port": 15453,
+      "proxy": "postgres-w1",
+      "upstream": "postgres:5432"
+    },
+    "w2": {
+      "listen": "0.0.0.0:15454",
+      "port": 15454,
+      "proxy": "postgres-w2",
+      "upstream": "postgres:5432"
+    }
+  },
+  "scenario": {
+    "file": "tests/integration/scenarios/self-kill.yaml",
+    "name": "self-kill",
+    "sha256": "3c697f4017d4710e401b7e1bcb693f420565e0c358343a21639485c46c2e65ef"
+  },
+  "sink": {
+    "expected_source_sha256": "3171fca815bdddfffdfc2de328771ce88aff16d42e022b8b12a19f30439e9ecf",
+    "health": {
+      "clock_offset_ns": 178529,
+      "ledger_version": 2,
+      "pid": 1,
+      "resume_error": null,
+      "source_sha256": "3171fca815bdddfffdfc2de328771ce88aff16d42e022b8b12a19f30439e9ecf",
+      "status": "ok",
+      "test_hooks": false,
+      "trial": {
+        "batch": "t07-kill-parked-20261010T080256Z",
+        "cell": "kill-parked",
+        "seed": "2d22b8a91907eafa6b64d9627c65e752a23f1b9261277c02c4f77174697f589b",
+        "trial": 1
+      },
+      "version": "0.0.1"
+    },
+    "url": "http://127.0.0.1:8490"
+  },
+  "started": "2026-10-10T08:02:59+00:00",
+  "trial_seeds": {
+    "1": "d186e57c9b44cf6a886922660a4d32075ce4f7f21155756969be13fdcd1d5ce0"
+  },
+  "trials": 1,
+  "v": 1
+}

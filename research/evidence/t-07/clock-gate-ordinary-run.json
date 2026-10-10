@@ -1,0 +1,66 @@
+{
+  "batch": "t07-skewed-20261010T080316Z",
+  "cell": "smoke",
+  "clause_registry_sha256": "05cbc2b430eb60244d8bdbe46bef2580fa84c0b6d15679cb4968afeefcc00ec7",
+  "clock": {
+    "batch_start_sink_offset_ns": 5000346354,
+    "limit_ns": 1000000000,
+    "manifest_sink_offset_ns": 5000394564,
+    "warning": "manifest: the sink's clock is +5.000 s from this host's, beyond the 1 s limit; batch start: the sink's clock is +5.000 s from this host's, beyond the 1 s limit (recorded; never used to order events)"
+  },
+  "manifest_sha256": "8a6981da0b32ce27fdee41f3c778c91a003ad107c36c880d1c94cdf4d57b7d9a",
+  "master_seed": "smoke-v1",
+  "mode": "ordinary",
+  "own_database": false,
+  "pool": {
+    "autocommit": true,
+    "prepare_threshold": 0,
+    "row_factory": "dict_row"
+  },
+  "routes": {
+    "w1": {
+      "listen": "0.0.0.0:15453",
+      "port": 15453,
+      "proxy": "postgres-w1",
+      "upstream": "postgres:5432"
+    },
+    "w2": {
+      "listen": "0.0.0.0:15454",
+      "port": 15454,
+      "proxy": "postgres-w2",
+      "upstream": "postgres:5432"
+    }
+  },
+  "scenario": {
+    "file": "scenarios/smoke.yaml",
+    "name": "smoke",
+    "sha256": "00de75ac9258c5af8a8b8ad44b2755364290d1ecd2cfb3ef5d427058bacf3761"
+  },
+  "sink": {
+    "expected_source_sha256": "3171fca815bdddfffdfc2de328771ce88aff16d42e022b8b12a19f30439e9ecf",
+    "health": {
+      "clock_offset_ns": 5000346354,
+      "ledger_version": 2,
+      "pid": 1,
+      "resume_error": null,
+      "source_sha256": "3171fca815bdddfffdfc2de328771ce88aff16d42e022b8b12a19f30439e9ecf",
+      "status": "ok",
+      "test_hooks": false,
+      "trial": {
+        "batch": "t07-timeout-20261010T080301Z",
+        "cell": "timeout",
+        "seed": "4175312d4deb4856dc72c91889186a4401ffbddd7bf31da6fad30b1cb96dc2c2",
+        "trial": 1
+      },
+      "version": "0.0.1"
+    },
+    "url": "http://127.0.0.1:8495"
+  },
+  "started": "2026-10-10T08:03:17+00:00",
+  "trial_seeds": {
+    "1": "461e9eadb7e02d1f3866befbdda1e441fbdee46b8136472e1b7cf318729a47e5",
+    "2": "ea1867e06e1b5339e194dac09ab3f444f02c73e3d861d1c6754691a59d6cdc9c"
+  },
+  "trials": 2,
+  "v": 1
+}

@@ -1,0 +1,24 @@
+# Smoke: the harness end to end on the two-node smoke graph. No effects and no faults; only a
+# barrier, which reorders and changes nothing a slow scheduler could not.
+#
+# Each worker starts its own thread and parks right after its first checkpoint read. Once both
+# are parked, both are released together. Then each worker continues the other worker's thread.
+v: 1
+name: smoke
+cell: smoke
+seed: smoke-v1
+workload: smoke
+target: {saver: postgres, driver: async, durability: sync}
+workers: [w1, w2]
+ops:
+  - {id: op-1, worker: w1, thread: t1, after: start}
+  - {id: op-2, worker: w2, thread: t2, after: start}
+  - {id: op-3, worker: w2, thread: t1, after: op-1}
+  - {id: op-4, worker: w1, thread: t2, after: op-2}
+schedule:
+  - on: {fp: get_tuple.after, worker: w1, op: op-1}
+    do: {pause: B1}
+  - on: {fp: get_tuple.after, worker: w2, op: op-2}
+    do: {pause: B2}
+  - on: {all_paused: [B1, B2]}
+    do: {release: [B1, B2]}

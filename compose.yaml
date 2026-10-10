@@ -22,6 +22,8 @@ services:
     ports:
       - "127.0.0.1:8474:8474"    # control API
       - "127.0.0.1:15432:15432"  # proxied Postgres; the harness creates the proxy (T-05)
+      - "127.0.0.1:15433:15433"  # w1's own route to Postgres; `crashcourt run` creates it (T-07)
+      - "127.0.0.1:15434:15434"  # w2's own route, so a toxic can target one worker
   sink:
     # The effect ledger (T-08): its own failure domain, never behind Toxiproxy. Always rebuilt on
     # `up`, so a sink image from another checkout is never reused; doctor checks its source hash.

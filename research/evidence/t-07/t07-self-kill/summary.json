@@ -1,0 +1,18 @@
+{
+  "batch": "t07-self-kill-20261010T080258Z",
+  "cell": "self-kill",
+  "client_outcomes": {
+    "info": 1,
+    "ok": 1
+  },
+  "invalid": 0,
+  "invalid_trials": {},
+  "observations": {
+    "1": [
+      "w1 ended with saver calls in flight: put (op-1)"
+    ]
+  },
+  "trials": 1,
+  "v": 1,
+  "valid": 1
+}

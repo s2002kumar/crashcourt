@@ -1,0 +1,14 @@
+{
+  "batch": "t07-timeout-20261010T080301Z",
+  "cell": "timeout",
+  "client_outcomes": {
+    "info": 1,
+    "ok": 1
+  },
+  "invalid": 0,
+  "invalid_trials": {},
+  "observations": {},
+  "trials": 1,
+  "v": 1,
+  "valid": 1
+}
