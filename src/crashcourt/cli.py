@@ -2,7 +2,9 @@
 
 `doctor` verifies the pinned environment and writes the manifest; `clauses` checks and lists the
 clause registry; `schema export` writes the v1 JSON Schemas; `faults selftest` checks every fault
-primitive against the compose services; `run` runs a batch of trials of one scenario (Linux only).
+primitive against the compose services; `run` runs a batch of trials of one scenario (Linux only);
+`experiment` checks the pre-registration, authorizes a pre-registered batch, re-proves archived
+batches, and summarizes them into cells.json.
 """
 
 from __future__ import annotations
@@ -193,6 +195,12 @@ def _run(args: argparse.Namespace) -> int:
     return 0 if summary.valid else 1
 
 
+def _experiment(args: argparse.Namespace) -> int:
+    from crashcourt.experiment import commands  # lazy: keeps `--help` fast
+
+    return commands.run(args)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="crashcourt", description=__doc__)
     parser.add_argument("--version", action="version", version=f"crashcourt {__version__}")
@@ -239,6 +247,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     selftest.add_argument("--report", type=Path, help="also write the Markdown report here")
     selftest.add_argument("--history", type=Path, help="keep the fault histories in this directory")
+    experiment = commands.add_parser(
+        "experiment", help="the pre-registration, its run gate, verification, and cell summaries"
+    )
+    from crashcourt.experiment.commands import add_arguments
+
+    add_arguments(experiment)
 
     run = commands.add_parser(
         "run", help="run trials of a scenario: two workers, barriers, histories (Linux only)"
@@ -269,5 +283,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _faults_selftest(args)
     if args.command == "run":
         return _run(args)
+    if args.command == "experiment":
+        return _experiment(args)
     parser.error(f"unknown command {args.command}")
     return 2
