@@ -266,6 +266,11 @@ class ProcessWorker:
     def force_kill(self) -> None:
         self.popen.kill()  # SIGKILL, unless the child has already been reaped
 
+    @property
+    def reaped(self) -> bool:
+        """Whether the process has exited and been waited for."""
+        return self._waiter.done()
+
     async def close(self) -> None:
         """Release the socket and log once the worker has exited."""
         if self._reader_task is not None and not self._reader_task.done():

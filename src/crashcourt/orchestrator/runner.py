@@ -21,6 +21,7 @@ Layout of one batch (`<out>/<batch>/`):
 | scenario.yaml | the scenario file as given, when there is one |
 | run.json | how the batch ran: mode, trials, seeds, routes, clock check, sink health |
 | `<cell>/trial-NNNNN/` | every process's history, the merged history, worker logs, trial.json |
+| | and the checker's evidence: ledger.json, snapshot.json, sink-health.json (`evidence`) |
 | summary.json | every trial's validity and client outcomes |
 
 Each trial must also start fresh: its sink ledger empty, and no row in the saver's tables for
@@ -58,12 +59,13 @@ from crashcourt.history.merge import merge
 from crashcourt.history.reader import HistoryError, read_history
 from crashcourt.history.writer import HistoryWriter, RunIdentity
 from crashcourt.manifest import Manifest
-from crashcourt.orchestrator import preregistered, topology
+from crashcourt.orchestrator import evidence, preregistered, topology
 from crashcourt.orchestrator.dispatcher import EngineReport, Note, TrialEngine, describe_status
 from crashcourt.orchestrator.workers import ProcessWorker, socket_directory
 from crashcourt.probes import DEFAULT_PG_DSN, DEFAULT_SINK_URL, DEFAULT_TOXIPROXY_URL, SystemProbes
 from crashcourt.sink.client import SinkClient, SinkError
 from crashcourt.sink.ledger import LEDGER_VERSION, TrialId, ledger_events
+from crashcourt.snapshot.dump import redact
 from crashcourt.spec.content import canonical_json
 from crashcourt.spec.events import Event
 from crashcourt.spec.records import BatchRecord
@@ -305,6 +307,10 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
                 "was the batch id reused?"
             )
     threads = sorted({f"{prefix}/{op.thread}" for op in scenario.ops})
+    # Evidence only: recorded for the checker, never consulted by anything below.
+    before = await asyncio.to_thread(
+        evidence.read_before, ctx.sink, ctx.settings.direct_dsn, threads
+    )
     try:
         existing = await asyncio.to_thread(rows_for_threads, ctx.settings.direct_dsn, threads)
     except Exception as exc:  # noqa: BLE001 - an unchecked start is not a fresh start
@@ -355,7 +361,22 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
         history.close()
         shutil.rmtree(socket_dir, ignore_errors=True)
 
-    sink_rows, sink_pid = await _collect_sink(ctx, trial, identity, directory, reasons)
+    after = await _collect_sink(ctx, trial, identity, directory, reasons)
+    reasons.extend(
+        await asyncio.to_thread(
+            evidence.write_after,
+            directory,
+            before,
+            after,
+            dsn=ctx.settings.direct_dsn,
+            threads=threads,
+            toxiproxy=ctx.toxiproxy,
+            after_orchestrator_seq=history.last_seq,
+            quiescent=all(link.reaped for link in links),
+        )
+    )
+    sink_rows = len(after.rows) if after is not None else 0
+    sink_pid = _sink_pid(after)
     result = assess(scenario, report, directory, reasons)
     _write_json(
         directory / "trial.json",
@@ -366,15 +387,16 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
 
 async def _collect_sink(
     ctx: _Batch, trial: TrialId, identity: RunIdentity, directory: Path, reasons: list[str]
-) -> tuple[int, int | None]:
-    """Write the sink's history (derived from its ledger) and check the sink is unchanged."""
+) -> evidence.SinkAfter | None:
+    """Write the sink's history (derived from its ledger) and check the sink is unchanged. The
+    same read is the post-trial step's sink evidence; None when the sink could not be read."""
     try:
         health = await asyncio.to_thread(ctx.sink.health)
         rows = await asyncio.to_thread(ctx.sink.ledger, trial)
         chain = await asyncio.to_thread(ctx.sink.verify, trial)
     except SinkError as exc:
         reasons.append(f"the sink could not be read after the trial: {exc}")
-        return 0, None
+        return None
     problems = check_sink(health, ctx.sink_source)
     reasons.extend(f"the sink after the trial: {p}" for p in problems)
     if not chain.get("ok"):
@@ -387,7 +409,12 @@ async def _collect_sink(
             events = ledger_events(rows, identity, pid)
             text = "".join(event.to_line() for event in events)
             (directory / f"{SINK}.jsonl").write_bytes(text.encode("utf-8"))
-    return len(rows), pid if isinstance(pid, int) else None
+    return evidence.SinkAfter(health=health, rows=rows, verify=chain)
+
+
+def _sink_pid(after: evidence.SinkAfter | None) -> int | None:
+    pid = after.health.get("pid") if after is not None else None
+    return pid if isinstance(pid, int) and not isinstance(pid, bool) else None
 
 
 # -- assessing a trial ------------------------------------------------------------------------
@@ -743,6 +770,8 @@ def run_batch(
                 "expected_source_sha256": source_hash,
             },
             "routes": {name: route.describe() for name, route in routes.items()},
+            # The direct path the post-trial snapshot reads (the oracle's), password removed.
+            "oracle_dsn": redact(settings.direct_dsn),
             "pool": POOL_SETTINGS,
         },
     )

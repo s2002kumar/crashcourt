@@ -134,6 +134,14 @@ class ToxiproxyClient:
                 return None
             raise
 
+    def proxies(self) -> tuple[Proxy, ...]:
+        """Every proxy the server holds, in name order."""
+        data = self._request("GET", "/proxies")
+        if not isinstance(data, dict):
+            raise ToxiproxyError(f"GET /proxies: expected an object, got {type(data).__name__}")
+        found = cast("dict[str, dict[str, Any]]", data)
+        return tuple(Proxy.from_api(found[name]) for name in sorted(found))
+
     def create_proxy(self, name: str, listen: str, upstream: str) -> Proxy:
         body = {"name": name, "listen": listen, "upstream": upstream, "enabled": True}
         return Proxy.from_api(self._request("POST", "/proxies", body))
