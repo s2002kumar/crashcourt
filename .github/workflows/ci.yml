@@ -31,6 +31,7 @@ jobs:
       - run: uv run pytest
       - run: uv run crashcourt clauses check  # control C6: the registry validates offline
       - run: uv run crashcourt schema export --check  # schemas/v1 must match the models
+      - run: uv run crashcourt experiment check  # the pre-registration parses; lists what is missing
   doctor:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
