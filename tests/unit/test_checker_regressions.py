@@ -9,7 +9,6 @@ import pytest
 
 from crashcourt.checker import engine, freeze, status
 from crashcourt.checker.artifacts import (
-    ArmSpec,
     ContextRule,
     LandmarkSpec,
     LandmarkTable,
@@ -95,12 +94,11 @@ def _drop_kill(artifacts: TrialArtifacts, *, returncode: int) -> TrialArtifacts:
     return with_scenario(edited, faults=edited.scenario.faults[1:])
 
 
-def test_a_non_zero_exit_without_a_signal_is_not_a_stop() -> None:
-    """2.0 counts a worker.exit with a signal as a stop; an unplanned exit with a status cannot
-    witness the re-run permission."""
-    got = outcomes(run(_drop_kill(T.kill_mid_execute_trial(), returncode=1)))
-    assert got["I4"] == ("GAP", None)
-    assert got["I7a"] == ("GAP", None)
+def test_an_unexplained_worker_exit_is_invalid() -> None:
+    """Founder's rule of 2026-10-10: a worker that ends in a way no declared fault explains makes
+    the trial INVALID (trigger 16), and so cannot witness a re-run permission either."""
+    assert trigger(_drop_kill(T.kill_mid_execute_trial(), returncode=1)) == 16
+    assert trigger(_drop_kill(T.kill_mid_execute_trial(), returncode=-11)) == 16
 
 
 def test_an_undeclared_fault_or_hit_is_invalid() -> None:
@@ -155,7 +153,7 @@ def kill_then_second_resume() -> TrialArtifacts:
     t.w1_finish("worker-2", "resume-2", "T1", [entry], receipt=entry)
     t.ok("resume-2", "worker-2")
     t.exit("worker-2")
-    return t.build()
+    return T.with_declared_kill(t.build())
 
 
 def test_i7a_on_a_disclaimed_thread_is_gap() -> None:
@@ -225,7 +223,8 @@ def test_a_silent_dispatched_worker_must_still_exit() -> None:
 
 TABLE = LandmarkTable(
     name="DEMO-landmarks",
-    landmarks=(LandmarkSpec(id="L-X", point="put.before", rules=(ContextRule(rule="last_call"),)),),
+    status="draft",
+    landmarks=(LandmarkSpec(id="L-X", method="put", rules=(ContextRule(rule="last_call"),)),),
 )
 
 
@@ -260,12 +259,6 @@ def test_a_frozen_checker_classifies_and_stamps_its_hash(
 
 def test_arms_need_landmarks_even_with_a_table_outside_synthetic_trials() -> None:
     base = T.kill_at_writes_trial("put_writes.before")
-    arm = ArmSpec(
-        point="put_writes.before",
-        action="signal",
-        signal="SIGKILL",
-        worker="worker-1",
-        op_id="resume-1",
-    )
-    control = with_scenario(base, evidence="control", arms=(arm,), landmarks=TABLE)
+    arm = base.scenario.arms[0]
+    control = T.as_run(with_scenario(base, arms=(arm,), landmarks=TABLE), evidence="control")
     assert trigger(control) == 11

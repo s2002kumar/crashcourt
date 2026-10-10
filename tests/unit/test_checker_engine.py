@@ -149,7 +149,10 @@ def test_invalid_applies_to_every_invariant_and_names_the_trigger() -> None:
     assert out.result is not None
     assert [r.invariant for r in out.result.results] == list(INVARIANTS)
     assert {r.outcome for r in out.result.results} == {"INVALID"}
-    assert all(str(r.reason).startswith("trigger 1 (incomplete trial)") for r in out.result.results)
+    assert all(
+        str(r.reason).startswith("trigger 1 (incomplete or mismatched trial)")
+        for r in out.result.results
+    )
 
 
 def test_a_checker_that_raises_is_invalid_not_a_verdict(monkeypatch: pytest.MonkeyPatch) -> None:

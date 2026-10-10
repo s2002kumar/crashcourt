@@ -279,7 +279,13 @@ def network_fault_trial(
         t.ok("resume-2", "worker-1")
     t.exit("worker-1")
     t.arms.append(
-        ArmSpec(point="put_writes.before", action="pause", worker="worker-1", op_id="resume-1")
+        ArmSpec(
+            point="put_writes.before",
+            action="pause",
+            worker="worker-1",
+            op_id="resume-1",
+            occurrence=int(str(hit.data["occurrence"])),
+        )
     )
     t.faults.extend([FaultSpec(kind="pause", arm=0), FaultSpec(kind=kind, arm=0, fault_id="net-1")])
     return t.build(proxies={"pg-worker-1": "worker-1", "pg-worker-2": "worker-2"})
@@ -353,7 +359,8 @@ def test_delayed_ack_needs_the_return_and_the_row() -> None:
 def backend_fault_trial(
     kind: str, heal: dict[str, Any], error: str, postmaster_ns: int = 0
 ) -> TrialArtifacts:
-    """A database fault between the start and the resume; the resume's first statement fails."""
+    """A database fault while the resume is held at get_tuple.before; once released, its first
+    statement fails."""
     specs: dict[str, FaultKind] = {
         "terminate_backends": "terminate-backend",
         "restart_database": "db-restart",
@@ -365,13 +372,16 @@ def backend_fault_trial(
     t.dispatch("start-1", "worker-1")
     t.w1_start("worker-1", "start-1")
     t.ok("start-1", "worker-1")
-    t.inject("db-1", fault=kind)
-    t.heal("db-1", **heal)
     w = t.workers["worker-1"]
     resume = t.op("resume-1", "resume", resume="approve")
     t.invoke(resume)
     t.dispatch("resume-1", "worker-1")
     w.emit("saver.get_tuple.call", op_id="resume-1", thread_id="T1", checkpoint_ns="")
+    hit = t.fp(w, "get_tuple.before", "resume-1", "pause", thread_id="T1", checkpoint_ns="")
+    t.inject("db-1", fault=kind)
+    t.heal("db-1", **heal)
+    t.orch.emit("fp.release", data={"proc": "worker-1", "hit_seq": hit.seq})
+    t.act(w, hit)
     w.emit(
         "saver.get_tuple.raise",
         op_id="resume-1",
@@ -383,7 +393,12 @@ def backend_fault_trial(
     )
     t.fail("resume-1", "worker-1", error)
     t.exit("worker-1")
-    t.faults.append(FaultSpec(kind=spec, fault_id="db-1", worker="worker-1"))
+    t.arms.append(
+        ArmSpec(point="get_tuple.before", action="pause", worker="worker-1", op_id="resume-1")
+    )
+    t.faults.extend(
+        [FaultSpec(kind="pause", arm=0), FaultSpec(kind=spec, fault_id="db-1", worker="worker-1")]
+    )
     artifacts = t.build()
     return M.edit_snapshot(
         artifacts,
@@ -412,15 +427,17 @@ def test_db_restart_needs_durations_errors_and_a_new_postmaster() -> None:
 # -- landmarks ----------------------------------------------------------------------------------
 
 
-def l_in() -> LandmarkTable:
-    """A synthetic table whose one landmark uses the input-checkpoint rules of 4.2's verification
-    column. Not the audited table: that is derived from real T-09 histories."""
+def l_in(status: str = "audited") -> LandmarkTable:
+    """A test table whose first landmark uses the input-checkpoint rules of 4.2's verification
+    column. Marked audited only to exercise run-evidence verification; the repository's table is
+    derived from real T-09 histories."""
     return LandmarkTable(
         name="DEMO-landmarks",
+        status=status,  # pyright: ignore[reportArgumentType]
         landmarks=(
             LandmarkSpec(
                 id="L-IN",
-                point="put.before",
+                method="put",
                 rules=(
                     ContextRule(rule="call_data_equals", key="source", value="input"),
                     ContextRule(rule="no_kind_before", kind="node.start"),
@@ -428,20 +445,17 @@ def l_in() -> LandmarkTable:
             ),
             LandmarkSpec(
                 id="L-WRONG",
-                point="put.before",
+                method="put",
                 rules=(ContextRule(rule="after_node_end", node="plan"),),
             ),
         ),
     )
 
 
-def replication(landmark: str | None) -> TrialArtifacts:
-    return T.lost_before_first_checkpoint_trial(
-        evidence="replication",
-        replication_of="langgraph#8764",
-        landmarks=l_in(),
-        landmark=landmark,
-    )
+def replication(landmark: str | None, table: LandmarkTable | None = None) -> TrialArtifacts:
+    """The C11-8764 shape as a harness run replicating langgraph#8764."""
+    fixture = T.lost_before_first_checkpoint_trial(landmarks=table or l_in(), landmark=landmark)
+    return T.as_run(fixture, evidence="replication", replication_of="langgraph#8764")
 
 
 def test_an_unlandmarked_arm_is_invalid_outside_synthetic_trials() -> None:
@@ -454,15 +468,19 @@ def test_a_hit_at_its_landmark_passes_and_elsewhere_is_invalid() -> None:
     assert trigger(replication("L-NONE")) == 11
 
 
-def test_a_landmark_at_another_point_is_invalid() -> None:
+def test_a_landmark_of_another_method_is_invalid() -> None:
     table = LandmarkTable(
         name="DEMO-landmarks",
-        landmarks=(LandmarkSpec(id="L-IN", point="put.after", rules=l_in().landmarks[0].rules),),
+        status="audited",
+        landmarks=(LandmarkSpec(id="L-IN", method="put_writes", rules=l_in().landmarks[0].rules),),
     )
-    artifacts = T.lost_before_first_checkpoint_trial(
-        evidence="replication", replication_of="langgraph#8764", landmarks=table, landmark="L-IN"
-    )
-    assert trigger(artifacts) == 11
+    assert trigger(replication("L-IN", table)) == 11
+
+
+def test_a_draft_table_verifies_nothing_outside_synthetic_trials() -> None:
+    assert trigger(replication("L-IN", l_in("draft"))) == 11
+    synthetic = T.lost_before_first_checkpoint_trial(landmarks=l_in("draft"), landmark="L-IN")
+    assert trigger(synthetic) is None
 
 
 EXW_RULES = {
@@ -487,7 +505,8 @@ def exw(rule: ContextRule) -> TrialArtifacts:
     base = T.kill_at_writes_trial("put_writes.before")
     table = LandmarkTable(
         name="DEMO-landmarks",
-        landmarks=(LandmarkSpec(id="L-X", point="put_writes.before", rules=(rule,)),),
+        status="draft",
+        landmarks=(LandmarkSpec(id="L-X", method="put_writes", rules=(rule,)),),
     )
     arm = base.scenario.arms[0].model_copy(update={"landmark": "L-X"})
     return with_scenario(base, arms=(arm,), landmarks=table)

@@ -11,24 +11,38 @@ import pytest
 from crashcourt.checker import freeze, status
 from crashcourt.checker.artifacts import ContextRule, LandmarkSpec, LandmarkTable
 from crashcourt.checker.effect_models import EFFECT_MODELS
+from crashcourt.checker.landmarks import repository_tables
 from crashcourt.checker.status import EvidenceClass, NotAuthorized, authorize
 from tests.unit import _trials as T
 
 _, REGISTRY_SHA = T.registry()
 TABLE = LandmarkTable(
     name="DEMO-landmarks",
-    landmarks=(LandmarkSpec(id="L-X", point="put.before", rules=(ContextRule(rule="last_call"),)),),
+    status="draft",
+    landmarks=(LandmarkSpec(id="L-X", method="put", rules=(ContextRule(rule="last_call"),)),),
 )
 
 
 # -- PRE-FREEZE ---------------------------------------------------------------------------------
 
 
-def test_the_checker_is_pre_freeze_and_has_no_frozen_record() -> None:
-    """PRE-FREEZE / NOT AUTHORIZED FOR NEW-EVIDENCE CLASSIFICATION. Only the freeze commit, after
-    the landmark audit, writes FROZEN.md and flips the state."""
-    assert status.FREEZE_STATE == "PRE-FREEZE"
-    assert not freeze.FROZEN_PATH.exists()
+def test_the_frozen_record_matches_the_checker() -> None:
+    """Mandatory in both states. Before the freeze (PRE-FREEZE / NOT AUTHORIZED FOR NEW-EVIDENCE
+    CLASSIFICATION) there is no FROZEN.md; only the freeze commit, after the landmark audit,
+    writes it and flips the state. After the freeze, FROZEN.md must match the checker files, the
+    effect models, the clause registry, and every landmark table in the repository, byte for
+    byte; any change to any of them fails here and needs a new checker version."""
+    if status.FREEZE_STATE == "PRE-FREEZE":
+        assert not freeze.FROZEN_PATH.exists()
+        return
+    assert status.FREEZE_STATE == "FROZEN"
+    text = freeze.FROZEN_PATH.read_text(encoding="utf-8")
+    frozen = freeze.verify_checker(text, REGISTRY_SHA)
+    tables = repository_tables()
+    assert all(t.status == "audited" for t in tables)
+    assert set(frozen.landmark_tables) == {t.name for t in tables}
+    for table in tables:
+        freeze.verify_trial(text, REGISTRY_SHA, table)
 
 
 @pytest.mark.parametrize("evidence", ["synthetic", "artifact-mutant", "control"])

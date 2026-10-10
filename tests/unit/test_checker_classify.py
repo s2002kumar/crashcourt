@@ -20,7 +20,6 @@ from crashcourt.checker.observations import (
 )
 from crashcourt.clauses.models import Clause, Polarity
 from crashcourt.clauses.registry import ClauseRegistry
-from crashcourt.spec.events import Event
 from tests.mutants import artifacts as M
 from tests.unit import _trials as T
 from tests.unit.test_checker_engine import NAU, outcomes, run
@@ -204,15 +203,7 @@ def test_async_crash_end_to_end() -> None:
     lost = M.am1_delete_head(T.w1_trial(durability="async"))
     assert outcomes(run(lost))["I1b"] == ("GAP", None)
 
-    def crash(events: list[Event]) -> list[Event]:
-        return [
-            e.model_copy(update={"data": {**e.data, "returncode": -9, "signal": "SIGKILL"}})
-            if e.kind == "worker.exit"
-            else e
-            for e in events
-        ]
-
-    crashed = M.edit_history(lost, "orchestrator", crash)
+    crashed = T.with_declared_kill(lost)
     assert outcomes(run(crashed))["I1b"] == ("EXPECTED", "LG-DUR-ASYNC")
 
 

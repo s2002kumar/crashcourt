@@ -141,7 +141,6 @@ class TrialBuilder:
         self.ids = 0
         self.xmin = 1000
         self.version_counter = 0
-        self.hit_counts: dict[tuple[str, str, str | None], int] = {}
         self.pending: dict[str, tuple[Any, ...]] = {}
 
     # -- processes --------------------------------------------------------------------------
@@ -248,16 +247,16 @@ class TrialBuilder:
         )
 
     def fp(self, w: Proc, point: str, op: str, action: str, **ids: Any) -> Event:
-        key = (w.name, point, op)
-        self.hit_counts[key] = self.hit_counts.get(key, 0) + 1
-        hit = w.emit(
-            "fp.hit",
-            op_id=op,
-            fp=point,
-            data={"action": action, "occurrence": self.hit_counts[key]},
-            **ids,
+        """An fp.hit at `point` for the call just logged. Its occurrence counts as T-06's
+        registry does: every call of the method in this worker and op that reached the point."""
+        method = point.split(".", 1)[0]
+        occurrence = sum(1 for e in w.events if e.kind == f"saver.{method}.call" and e.op_id == op)
+        return w.emit(
+            "fp.hit", op_id=op, fp=point, data={"action": action, "occurrence": occurrence}, **ids
         )
-        return hit
+
+    def last_hit(self, worker: str) -> Event:
+        return next(e for e in reversed(self.workers[worker].events) if e.kind == "fp.hit")
 
     def act(self, w: Proc, hit: Event, *, signal: str | None = None) -> Event:
         data: dict[str, Any] = {"hit_seq": hit.seq, "action": hit.data["action"]}
@@ -795,9 +794,11 @@ def w5_fork_trial() -> TrialArtifacts:
     return t.build()
 
 
-def kill_mid_execute_trial(*, evidence: str = "synthetic") -> TrialArtifacts:
+def kill_mid_execute_trial(*, evidence: str = "artifact-mutant") -> TrialArtifacts:
     """AM7's shape: SIGKILL while execute is running (after its effect, before node.end), the
-    resume redelivered to a replacement, which runs execute again (attempt 2)."""
+    resume redelivered to a replacement, which runs execute again (attempt 2). No barrier can hold
+    a worker inside execute (it makes no saver call there), so this is an artifact mutant, not a
+    schedule a harness run could produce."""
     t = TrialBuilder(evidence=evidence)
     start, resume = t.op("start-1", "start"), t.op("resume-1", "resume", resume="approve")
     t.invoke(start)
@@ -843,7 +844,14 @@ def kill_at_writes_trial(point: Point, *, rerun: bool = True) -> TrialArtifacts:
     t.w1_approve("worker-1", "resume-1", "T1", "approve")
     t.w1_execute("worker-1", "resume-1", "T1", "approve", stop=(point, "SIGKILL"))
     t.arms.append(
-        ArmSpec(point=point, action="signal", signal="SIGKILL", worker="worker-1", op_id="resume-1")
+        ArmSpec(
+            point=point,
+            action="signal",
+            signal="SIGKILL",
+            worker="worker-1",
+            op_id="resume-1",
+            occurrence=int(str(t.last_hit("worker-1").data["occurrence"])),
+        )
     )
     t.faults.append(FaultSpec(kind="sigkill", arm=0))
     t.exit("worker-1", returncode=-9, signal="SIGKILL")
@@ -902,7 +910,12 @@ def stop_and_redeliver_fork_trial() -> TrialArtifacts:
     pending = next(iter(t.pending))
     t.arms.append(
         ArmSpec(
-            point="put.before", action="signal", signal="SIGSTOP", worker="worker-1", op_id="turn-1"
+            point="put.before",
+            action="signal",
+            signal="SIGSTOP",
+            worker="worker-1",
+            op_id="turn-1",
+            occurrence=int(str(t.last_hit("worker-1").data["occurrence"])),
         )
     )
     t.inject("stop-1", fault="stop", signal="SIGSTOP", proc="worker-1")
@@ -945,3 +958,94 @@ def lost_before_first_checkpoint_trial(
     )
     t.faults.append(FaultSpec(kind="sigkill", arm=0))
     return t.build(**changes)
+
+
+RUN_BATCH = "b-t10"
+
+
+def as_run(artifacts: TrialArtifacts, *, evidence: str, **scenario: Any) -> TrialArtifacts:
+    """A fixture rewritten as a harness run: a batch id without DEMO-, provenance run, the
+    orchestrator's valid trial record, and thread T1 scoped to the trial. For fixtures without
+    effects only (effect keys and blobs are not rewritten)."""
+    old = artifacts.scenario
+    thread = f"{RUN_BATCH}/{old.cell}/{old.trial}/T1"
+
+    def fix(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: fix(v) for k, v in value.items()}  # pyright: ignore[reportUnknownVariableType]
+        if isinstance(value, list):
+            return [fix(v) for v in value]  # pyright: ignore[reportUnknownVariableType]
+        if value == "T1":
+            return thread
+        if value == old.batch:
+            return RUN_BATCH
+        if isinstance(value, str) and value.startswith(f"{old.batch}/"):
+            return RUN_BATCH + value[len(old.batch) :]
+        return value
+
+    data = fix(artifacts.model_dump(mode="json"))
+    data["snapshots"]["pretrial_rows"] = {thread: 0}
+    data["scenario"].update(provenance="run", evidence=evidence, **scenario)
+    data["harness"] = {"valid": True}
+    return TrialArtifacts.model_validate(data)
+
+
+def with_declared_kill(artifacts: TrialArtifacts, worker: str = "worker-1") -> TrialArtifacts:
+    """An artifact mutant: the worker's exit becomes a SIGKILL the orchestrator injected (not at a
+    barrier, which only a mutant may do)."""
+    histories: list[ProcessHistory] = []
+    for history in artifacts.histories:
+        events: list[Event] = []
+        for event in history.events:
+            if event.kind == "worker.exit" and event.data.get("proc") == worker:
+                inject = event.model_copy(
+                    update={
+                        "kind": "fault.inject",
+                        "fault_id": "kill-mutant",
+                        "data": {"fault": "kill", "signal": "SIGKILL", "proc": worker},
+                    }
+                )
+                heal = event.model_copy(
+                    update={
+                        "kind": "fault.heal",
+                        "fault_id": "kill-mutant",
+                        "status": "ok",
+                        "data": {"returncode": -9},
+                    }
+                )
+                died = event.model_copy(
+                    update={"data": {**event.data, "returncode": -9, "signal": "SIGKILL"}}
+                )
+                events.extend([inject, died, heal])
+            else:
+                events.append(event)
+        renumbered = [e.model_copy(update={"seq": i}) for i, e in enumerate(events)]
+        histories.append(history.model_copy(update={"events": tuple(renumbered)}))
+    scenario = artifacts.scenario.model_copy(
+        update={
+            "evidence": "artifact-mutant",
+            "faults": (
+                *artifacts.scenario.faults,
+                FaultSpec(kind="sigkill", fault_id="kill-mutant", worker=worker),
+            ),
+        }
+    )
+    pair = artifacts.snapshots
+    assert pair is not None
+    orchestrator = next(h for h in histories if h.proc == "orchestrator")
+    last = len(orchestrator.events) - 1
+    snapshots = pair.model_copy(
+        update={
+            name: getattr(pair, name).model_copy(
+                update={
+                    "meta": getattr(pair, name).meta.model_copy(
+                        update={"after_orchestrator_seq": last}
+                    )
+                }
+            )
+            for name in ("first", "second")
+        }
+    )
+    return artifacts.model_copy(
+        update={"histories": tuple(histories), "scenario": scenario, "snapshots": snapshots}
+    )
