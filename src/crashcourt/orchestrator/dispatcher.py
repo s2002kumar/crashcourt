@@ -135,6 +135,13 @@ def describe_status(returncode: int) -> dict[str, JsonValue]:
     return {"returncode": returncode, "exit_code": None, "signal": name}
 
 
+def invoke_data(op: Op) -> dict[str, JsonValue]:
+    """`client.invoke` data: the worker, and the op's input or the value it resumes with."""
+    if op.resume is not None:
+        return {"worker": op.worker, "resume": op.resume}
+    return {"worker": op.worker, "input": op.input}
+
+
 def _status_text(returncode: int) -> str:
     status = describe_status(returncode)
     return f"status {returncode}" if status["signal"] is None else str(status["signal"])
@@ -512,7 +519,7 @@ class TrialEngine:
             "client.invoke",
             op_id=op.id,
             thread_id=record.thread_id,
-            data={"worker": op.worker, "input": op.input},
+            data=invoke_data(op),
         )
         self.history.emit(
             "dispatch.send", op_id=op.id, thread_id=record.thread_id, data={"to": op.worker}
@@ -527,6 +534,7 @@ class TrialEngine:
             thread_id=record.thread_id,
             durability=self.scenario.target.durability,
             input=op.input,
+            resume=op.resume,
         )
         await self._send(op.worker, run)  # if it fails, the worker's death ends the op as info
 

@@ -269,6 +269,35 @@ def test_a_worker_is_ended_by_one_step_at_most() -> None:
     assert "w1 is ended by steps 1 and 2; only one can act" in text
 
 
+def test_a_resume_op_carries_its_value_and_no_input() -> None:
+    ops = [
+        {"id": "start-1", "worker": "w1", "thread": "t1", "after": "start", "input": {"o": 1}},
+        {"id": "resume-1", "worker": "w1", "thread": "t1", "after": "start-1", "resume": "no"},
+    ]
+    loaded = parse_scenario(scenario(workload="w1", workers=["w1"], ops=ops, schedule=[]))
+    assert [op.resume for op in loaded.ops] == [None, "no"]
+    ops[1]["input"] = {"o": 2}
+    text = refused(scenario(workload="w1", workers=["w1"], ops=ops, schedule=[]))
+    assert "op resume-1 is a resume and also carries input" in text
+
+
+def test_a_resume_changes_the_hash() -> None:
+    def hashed_with(resume: object) -> str:
+        data = scenario(workload="w1", workers=["w1"], ops=[dict(BASE["ops"][0])], schedule=[])
+        data["ops"][0]["resume"] = resume
+        return scenario_sha256(parse_scenario(data))
+
+    assert hashed_with("approve") != hashed_with("reject") != hashed_with(None)
+
+
+def test_a_scenario_may_name_its_landmark_table() -> None:
+    assert parse_scenario(scenario()).landmarks is None
+    named = parse_scenario(scenario(landmarks="w1-approve.v1"))
+    assert named.landmarks == "w1-approve.v1"
+    assert scenario_sha256(named) != scenario_sha256(parse_scenario(scenario()))
+    assert "landmarks" in refused(scenario(landmarks="../tables/x"))
+
+
 def test_every_scenario_in_the_repository_loads() -> None:
     files = [*REPO.glob("scenarios/*.yaml"), *REPO.glob("tests/integration/scenarios/*.yaml")]
     assert len(files) >= 5
@@ -368,11 +397,12 @@ def test_a_non_finite_input_cannot_be_hashed_so_it_is_refused() -> None:
 
 
 def test_the_smoke_scenario_hash_is_pinned() -> None:
-    # A change to the smoke scenario or to how scenarios are hashed shows up here first.
+    # A change to the smoke scenario, to the scenario model (T-09 added `resume` and
+    # `landmarks`), or to how scenarios are hashed shows up here first.
     smoke = load_scenario(REPO / "scenarios" / "smoke.yaml")
     assert isinstance(smoke, Scenario)
     assert scenario_sha256(smoke) == (
-        "00de75ac9258c5af8a8b8ad44b2755364290d1ecd2cfb3ef5d427058bacf3761"
+        "93a2c09e387b1098983911700b62b09aaee0dedb7c1966f48416cbd73dcfea00"
     )
 
 

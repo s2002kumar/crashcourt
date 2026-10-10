@@ -73,6 +73,8 @@ class Run(_Message):
     thread_id: str = Field(min_length=1)
     durability: Literal["sync", "async", "exit"]
     input: dict[str, JsonValue] = Field(default_factory=dict[str, JsonValue])
+    #: Not None: resume the thread's pending interrupt with this value instead of sending input.
+    resume: JsonValue = None
 
 
 class Hit(_Message):
