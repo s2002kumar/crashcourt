@@ -7,11 +7,12 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 
 from crashcourt.checker import freeze, status
 from crashcourt.checker.artifacts import ContextRule, LandmarkSpec, LandmarkTable
 from crashcourt.checker.effect_models import EFFECT_MODELS
-from crashcourt.checker.landmarks import repository_tables
+from crashcourt.checker.landmarks import LANDMARKS_ROOT, repository_tables
 from crashcourt.checker.status import EvidenceClass, NotAuthorized, authorize
 from tests.unit import _trials as T
 
@@ -205,3 +206,39 @@ def test_no_landmark_occurrence_is_encoded_in_the_checker() -> None:
         text = path.read_text(encoding="utf-8")
         for landmark in ("L-IN", "L-PLAN", "L-INT", "L-RES", "L-EXW", "L-EXC", "L-FIN", "L-T1"):
             assert landmark not in text, (path, landmark)
+
+
+def test_a_scenario_pins_its_landmark_table(tmp_path: Path) -> None:
+    """The batch gate's per-cell check: the scenario's `landmarks` key names an audited table that
+    is one of the frozen tables; the result is the hash checker.json carries."""
+    landmarks = tmp_path / "landmarks"
+    landmarks.mkdir()
+    audited = TABLE.model_copy(update={"name": "demo", "status": "audited"})
+    (landmarks / "demo.yaml").write_text(
+        yaml.safe_dump(audited.model_dump(mode="json")), encoding="utf-8"
+    )
+    text = freeze.render(freeze.compute(REGISTRY_SHA, [audited]))
+    assert freeze.verify_landmarks(text, REGISTRY_SHA, "demo", landmarks) == freeze.landmark_hash(
+        audited
+    )
+    assert freeze.verify_landmarks(text, REGISTRY_SHA, None, landmarks) is None
+    with pytest.raises(freeze.FreezeMismatch):
+        freeze.verify_landmarks(text, REGISTRY_SHA, "missing", landmarks)
+    draft = audited.model_copy(update={"status": "draft"})
+    (landmarks / "demo.yaml").write_text(
+        yaml.safe_dump(draft.model_dump(mode="json")), encoding="utf-8"
+    )
+    with pytest.raises(freeze.FreezeMismatch):
+        freeze.verify_landmarks(text, REGISTRY_SHA, "demo", landmarks)
+    scenario = tmp_path / "cell.yaml"
+    scenario.write_text("v: 1\nlandmarks: [not, a, name]\n", encoding="utf-8")
+    with pytest.raises(freeze.FreezeMismatch):
+        freeze.verify_scenario(text, REGISTRY_SHA, scenario)
+    scenario.write_text("v: 1\nname: cell\n", encoding="utf-8")
+    assert freeze.verify_scenario(text, REGISTRY_SHA, scenario) is None
+
+
+def test_repository_tables_are_named_by_their_files() -> None:
+    assert [t.name for t in repository_tables()] == [
+        p.stem for p in sorted(LANDMARKS_ROOT.glob("*.yaml"), key=lambda p: p.name)
+    ]

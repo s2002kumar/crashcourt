@@ -17,12 +17,14 @@ import hashlib
 import json
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, cast
 
+import yaml
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from crashcourt.checker.artifacts import LandmarkTable
 from crashcourt.checker.effect_models import EFFECT_MODELS
+from crashcourt.checker.landmarks import LANDMARKS_ROOT, load_table
 from crashcourt.checker.status import CHECKER_VERSION
 from crashcourt.spec.content import content_sha256
 
@@ -157,6 +159,35 @@ def verify_trial(
     if found:
         raise FreezeMismatch("; ".join(found))
     return frozen
+
+
+def verify_landmarks(
+    text: str, registry_sha256: str, name: str | None, root: Path = LANDMARKS_ROOT
+) -> str | None:
+    """The sha256 of the named repository landmark table, if the checker matches its freeze and
+    the table is one of the frozen tables; None for a cell that names no table. FreezeMismatch
+    otherwise, including for a table that is missing or still a draft."""
+    if name is None:
+        verify_checker(text, registry_sha256)
+        return None
+    path = root / f"{name}.yaml"
+    if not path.is_file():
+        raise FreezeMismatch(f"no landmark table {name} in {root}")
+    table = load_table(path)
+    if table.name != name or table.status != "audited":
+        raise FreezeMismatch(f"landmark table {path.name} is not the audited table {name}")
+    verify_trial(text, registry_sha256, table)
+    return landmark_hash(table)
+
+
+def verify_scenario(text: str, registry_sha256: str, scenario: Path) -> str | None:
+    """verify_landmarks for the table a scenario file names in its top-level `landmarks` key."""
+    data: Any = yaml.safe_load(scenario.read_text(encoding="utf-8"))
+    fields = cast("dict[str, Any]", data) if isinstance(data, dict) else {}
+    name: object = fields.get("landmarks")
+    if name is not None and not isinstance(name, str):
+        raise FreezeMismatch(f"{scenario}: landmarks must name a table")
+    return verify_landmarks(text, registry_sha256, name)
 
 
 def verify(text: str, current: FreezeManifest) -> FreezeManifest:

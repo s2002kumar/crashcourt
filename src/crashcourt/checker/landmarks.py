@@ -36,8 +36,14 @@ def load_table(path: Path) -> LandmarkTable:
 
 
 def repository_tables(root: Path = LANDMARKS_ROOT) -> list[LandmarkTable]:
+    """Every table in the repository; a scenario names one by its file stem, which must be its
+    name."""
     paths = sorted(root.glob("*.yaml"), key=lambda p: p.name) if root.is_dir() else []
-    return [load_table(p) for p in paths]
+    tables = [load_table(p) for p in paths]
+    for path, table in zip(paths, tables, strict=True):
+        if path.stem != table.name:
+            raise ValueError(f"{path.name} holds table {table.name}; the names must agree")
+    return tables
 
 
 def rule_holds(
