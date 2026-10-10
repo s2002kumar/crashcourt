@@ -1,0 +1,12 @@
+# W1, reject: one worker starts the run (it pauses at approval's interrupt), then resumes it with
+# "reject". Expected: no effect, and decision reject saved.
+v: 1
+name: w1-reject
+cell: w1-reject
+seed: w1-reject-v1
+workload: w1
+target: {saver: postgres, driver: async, durability: sync}
+workers: [w1]
+ops:
+  - {id: start-1, worker: w1, thread: t1, after: start, input: {order: order-17}}
+  - {id: resume-1, worker: w1, thread: t1, after: start-1, resume: reject}

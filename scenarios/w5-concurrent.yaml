@@ -1,0 +1,34 @@
+# W5 concurrent continuation: w1 answers a first turn; then two new turns on the same thread go
+# to w1 and w2 at once. Each reads the thread's head and parks right after; once both are parked
+# they are released together, so both continue the same checkpoint. Both runs end; classifying
+# the forked lineage is the checker's job (T-10, control C2).
+v: 1
+name: w5-concurrent
+cell: w5-concurrent
+seed: w5-concurrent-v1
+workload: w5
+target: {saver: postgres, driver: async, durability: sync}
+workers: [w1, w2]
+ops:
+  - id: turn-1
+    worker: w1
+    thread: t1
+    after: start
+    input: {messages: [{role: user, content: First request., id: human-1}]}
+  - id: turn-2
+    worker: w1
+    thread: t1
+    after: turn-1
+    input: {messages: [{role: user, content: Second request., id: human-2}]}
+  - id: turn-3
+    worker: w2
+    thread: t1
+    after: turn-1
+    input: {messages: [{role: user, content: Third request., id: human-3}]}
+schedule:
+  - on: {fp: get_tuple.after, worker: w1, op: turn-2}
+    do: {pause: B1}
+  - on: {fp: get_tuple.after, worker: w2, op: turn-3}
+    do: {pause: B2}
+  - on: {all_paused: [B1, B2]}
+    do: {release: [B1, B2]}

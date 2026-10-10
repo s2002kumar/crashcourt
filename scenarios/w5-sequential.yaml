@@ -1,0 +1,20 @@
+# W5 in sequence: one worker takes both turns on one thread, the second after the first ends.
+# Expected: a single chain of checkpoints holding both turns and both answers.
+v: 1
+name: w5-sequential
+cell: w5-sequential
+seed: w5-sequential-v1
+workload: w5
+target: {saver: postgres, driver: async, durability: sync}
+workers: [w1]
+ops:
+  - id: turn-1
+    worker: w1
+    thread: t1
+    after: start
+    input: {messages: [{role: user, content: First request., id: human-1}]}
+  - id: turn-2
+    worker: w1
+    thread: t1
+    after: turn-1
+    input: {messages: [{role: user, content: Second request., id: human-2}]}
