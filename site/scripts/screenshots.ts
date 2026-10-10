@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "@playwright/test";
 
+import { firstPage } from "./exported.ts";
 import { serve } from "./serve.ts";
 
 type Shot = { name: string; url: string; theme: "dark" | "light"; phone?: boolean };
@@ -17,9 +18,9 @@ const SHOTS: readonly Shot[] = [
   { name: "overview-light", url: "/", theme: "light" },
   { name: "overview-phone-dark", url: "/", theme: "dark", phone: true },
   { name: "matrix-light", url: "/matrix/", theme: "light" },
-  { name: "trial-dark", url: "/trials/none/none/", theme: "dark" },
-  { name: "lineage-dark", url: "/lineage/none/none/", theme: "dark" },
-  { name: "finding-dark", url: "/findings/none/", theme: "dark" },
+  { name: "trial-dark", url: firstPage("/trials/[cell]/[trial]"), theme: "dark" },
+  { name: "lineage-dark", url: firstPage("/lineage/[trial]/[thread]"), theme: "dark" },
+  { name: "finding-dark", url: firstPage("/findings/[id]"), theme: "dark" },
   { name: "methodology-light", url: "/methodology/", theme: "light" },
 ];
 

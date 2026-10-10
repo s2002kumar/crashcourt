@@ -63,6 +63,12 @@
     text-decoration-thickness: 1px;
   }
 
+  /* The demo banner is pinned to the top; keep anything scrolled into view (a focused link, an
+     anchor) clear of it. */
+  html:has(.demo-banner) {
+    scroll-padding-top: 6rem;
+  }
+
   code,
   kbd,
   samp {

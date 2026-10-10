@@ -13,7 +13,7 @@ import "@xyflow/react/dist/base.css";
 const NODES: Node[] = [];
 const EDGES: Edge[] = [];
 
-export default function LineageCanvas() {
+export default function LineageCanvas({ note }: { note: string }) {
   return (
     <div className="lineage relative h-80 overflow-hidden rounded-panel border border-rule bg-panel">
       <ReactFlow
@@ -29,7 +29,7 @@ export default function LineageCanvas() {
         <Controls showInteractive={false} position="bottom-right" />
       </ReactFlow>
       <p className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-ink-muted">
-        No checkpoints in this build.
+        {note}
       </p>
     </div>
   );

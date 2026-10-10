@@ -1,6 +1,6 @@
-import { VerdictGlyph } from "@/components/glyphs";
-import type { VerdictProp } from "@/lib/tokens";
-import { verdictLegend, verdictToken } from "@/lib/tokens";
+import { OtherOutcomeGlyph, VerdictGlyph } from "@/components/glyphs";
+import type { OutcomeProp, VerdictProp } from "@/lib/tokens";
+import { otherOutcomeLegend, outcomeToken, verdictLegend, verdictToken } from "@/lib/tokens";
 
 /**
  * A verdict as the site shows it everywhere: glyph, label, and color together. The color goes on the
@@ -30,6 +30,40 @@ export function VerdictLegend() {
         <div key={verdict} className="grid gap-1">
           <dt>
             <VerdictBadge verdict={verdict} />
+          </dt>
+          <dd className="text-sm text-ink-muted">{token.meaning}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * An outcome from a result record: a verdict renders as its badge; the two outcomes that are not
+ * verdicts get a dashed edge, no tint, and a muted glyph, so neither reads as a verdict.
+ */
+export function OutcomeBadge({ outcome }: OutcomeProp) {
+  const t = outcomeToken(outcome);
+  if (t.kind === "verdict") return <VerdictBadge verdict={t.verdict} />;
+  return (
+    <span
+      title={t.token.meaning}
+      className="readout inline-flex items-center gap-1.5 rounded-panel border border-dashed border-rule-strong px-1.5 py-0.5 text-xs font-medium tracking-wide text-ink"
+    >
+      <OtherOutcomeGlyph glyph={t.token.glyph} size={14} />
+      {t.token.label}
+    </span>
+  );
+}
+
+/** The two outcomes that are not verdicts, with their meanings. Renders the vocabulary, never a result. */
+export function OtherOutcomeLegend() {
+  return (
+    <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-1">
+      {otherOutcomeLegend().map(({ outcome, token }) => (
+        <div key={token.label} className="grid gap-1">
+          <dt>
+            <OutcomeBadge outcome={outcome} />
           </dt>
           <dd className="text-sm text-ink-muted">{token.meaning}</dd>
         </div>

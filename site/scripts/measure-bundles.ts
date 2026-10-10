@@ -17,7 +17,7 @@
 // sources by npm package. A library's cost is the gzip size of its bytes concatenated on their own,
 // which slightly overstates what it adds in place (gzip shares context across a file); BUDGETS.md says so.
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -25,6 +25,7 @@ import { gzipSync } from "node:zlib";
 import { TraceMap, decodedMappings } from "@jridgewell/trace-mapping";
 import { chromium } from "@playwright/test";
 
+import { firstPage } from "./exported.ts";
 import { serve } from "./serve.ts";
 
 const SITE = fileURLToPath(new URL("..", import.meta.url));
@@ -42,24 +43,6 @@ export const PATTERNS: readonly { pattern: string; waitFor?: string }[] = [
   { pattern: "/compare/[scenario]" },
   { pattern: "/methodology" },
 ];
-
-/** The first exported page of a route pattern, as a URL path ending in "/". */
-function firstPage(pattern: string): string {
-  let dirs = [""];
-  for (const segment of pattern.split("/").filter(Boolean)) {
-    dirs = dirs.flatMap((d) =>
-      segment.startsWith("[")
-        ? readdirSync(path.join(OUT, d), { withFileTypes: true })
-            .filter((e) => e.isDirectory() && !e.name.startsWith("__next"))
-            .map((e) => `${d}/${e.name}`)
-            .sort()
-        : [`${d}/${segment}`],
-    );
-  }
-  const page = dirs.find((d) => existsSync(path.join(OUT, d, "index.html")));
-  if (page === undefined) throw new Error(`no exported page for ${pattern}`);
-  return `${page}/`;
-}
 
 interface Route {
   pattern: string;

@@ -69,6 +69,27 @@ Only `linear` scales are imported, so d3-time and d3-time-format are shaken out 
 brings its own copy of the d3-zoom set on the lineage route, which is why that route loads it lazily: no
 other page pays for it.
 
+### Re-measured with the demo fixtures (F-02)
+
+Measured 2026-10-09 on the same machine and toolchain. The export is now built from `site/fixtures/`, so
+each dynamic route is measured on its first exported fixture page instead of its empty-state page.
+
+| Route | initial | total | loaded |
+| --- | --- | --- | --- |
+| `/` | 138.2 kB | 138.2 kB | 147.5 kB |
+| `/matrix` | 138.2 kB | 138.2 kB | 169.7 kB |
+| `/trials/[cell]/[trial]` | 160.4 kB | 160.4 kB | 169.7 kB |
+| `/lineage/[trial]/[thread]` | 140.0 kB | 198.1 kB | 207.4 kB |
+| `/findings/[id]` | 138.2 kB | 138.2 kB | 147.5 kB |
+| `/compare/[scenario]` | 138.2 kB | 138.2 kB | 169.7 kB |
+| `/methodology` | 147.5 kB | 147.5 kB | 147.5 kB |
+
+Initial and total JavaScript are unchanged on every route: the demo banner and the pages' artifact panels
+are server components and ship no JavaScript, so no limit changes. `loaded` rose on `/matrix` and
+`/compare` because those pages now link to trial pages, whose timeline code the router fetches ahead of a
+click; it is not budgeted. The banner adds about 0.5 kB of gzipped HTML to a page (`/` went from 7.0 kB to
+7.6 kB, with its batch and finding values).
+
 ## Decisions the measurements drove
 
 - **Radix per package, and only where the platform has no equivalent.** The first build imported the

@@ -32,6 +32,7 @@ jobs:
       - run: uv run crashcourt clauses check  # control C6: the registry validates offline
       - run: uv run crashcourt schema export --check  # schemas/v1 must match the models
       - run: uv run crashcourt experiment check  # the pre-registration parses; lists what is missing
+      - run: uv run crashcourt fixtures --demo --check  # site/fixtures is the generator's output
   doctor:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -68,8 +69,10 @@ jobs:
             fault-selftest-ci.md
             runs/
   site:
-    # Tier 1 for the evidence explorer: schema sync, the verdict guard,
-    # types, unit tests, the static export, budgets, browser tests with axe, and Lighthouse.
+    # Tier 1 for the evidence explorer: schema sync, the verdict guard, types, unit tests, the static
+    # export from the demo fixtures, budgets, browser tests with axe and the demo banner, Lighthouse,
+    # and an export from no artifacts at all, whose empty pages must pass the release guard's output
+    # check. The release build and its guard run in site-release.yml.
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     defaults:
@@ -96,6 +99,12 @@ jobs:
       - run: npm run size
       - run: npm run test:e2e
       - run: npm run lighthouse
+      - name: Build from no artifacts; the empty pages hold no demo data
+        run: |
+          mkdir -p "$RUNNER_TEMP/no-artifacts"
+          CRASHCOURT_ARTIFACTS="$RUNNER_TEMP/no-artifacts" npm run build
+          npm run release:guard -- output
+          npm run test:e2e:empty
       - name: Attribute bundle bytes to libraries (source-mapped build)
         run: |
           cp .budgets/measure.json .budgets/measure-release.json

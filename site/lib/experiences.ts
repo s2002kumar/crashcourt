@@ -3,8 +3,8 @@
 export interface Experience {
   readonly name: string;
   readonly route: string;
-  /** Where the stub lives in this build. Undefined for a route that stays unlinked. */
-  readonly href?: string;
+  /** False for a route that stays unlinked: compare, until two targets have validated runs. */
+  readonly linked: boolean;
   readonly summary: string;
 }
 
@@ -12,42 +12,43 @@ export const EXPERIENCES: readonly Experience[] = [
   {
     name: "Overview",
     route: "/",
-    href: "/",
+    linked: true,
     summary: "The latest validated run, its controls and verdict counts, and the flagship finding.",
   },
   {
     name: "Fault matrix",
     route: "/matrix",
-    href: "/matrix/",
+    linked: true,
     summary: "Workload and fault against target and durability; every cell opens its trials.",
   },
   {
     name: "Failure explorer",
     route: "/trials/[cell]/[trial]",
-    href: "/trials/none/none/",
+    linked: true,
     summary: "Synchronized lanes for client, workers, database commits, and the effect sink.",
   },
   {
     name: "Checkpoint lineage",
     route: "/lineage/[trial]/[thread]",
-    href: "/lineage/none/none/",
+    linked: true,
     summary: "The checkpoint graph of one thread: forks, the chosen head, orphaned branches.",
   },
   {
     name: "Finding",
     route: "/findings/[id]",
-    href: "/findings/none/",
+    linked: true,
     summary: "One finding: the contract, the verdict, the minimal schedule, and the repro.",
   },
   {
     name: "Compare systems",
     route: "/compare/[scenario]",
+    linked: false,
     summary: "One scenario across runtimes. Hidden until two targets have validated runs.",
   },
   {
     name: "Methodology",
     route: "/methodology",
-    href: "/methodology/",
+    linked: true,
     summary: "How we know the harness did not create the bug, and what is not claimed.",
   },
 ];

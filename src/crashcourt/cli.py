@@ -4,7 +4,8 @@
 clause registry; `schema export` writes the v1 JSON Schemas; `faults selftest` checks every fault
 primitive against the compose services; `run` runs a batch of trials of one scenario (Linux only);
 `experiment` checks the pre-registration, authorizes a pre-registered batch, re-proves archived
-batches, and summarizes them into cells.json.
+batches, and summarizes them into cells.json; `fixtures --demo` writes the explorer's labeled demo
+artifacts.
 """
 
 from __future__ import annotations
@@ -201,6 +202,27 @@ def _experiment(args: argparse.Namespace) -> int:
     return commands.run(args)
 
 
+def _fixtures(args: argparse.Namespace) -> int:
+    from crashcourt import fixtures  # lazy: keeps `--help` fast
+
+    files = fixtures.generate(fixtures.DEFAULT_SEED if args.seed is None else args.seed)
+    if args.check:
+        problems = fixtures.differences(args.out, files)
+        if problems:
+            print(f"fixtures in {args.out} are out of date; run `crashcourt fixtures --demo`")
+            print("\n".join(f"  {p}" for p in problems))
+            return 1
+        print(f"fixtures in {args.out} match the generator ({len(files)} files)")
+        return 0
+    try:
+        fixtures.write(args.out, files)
+    except fixtures.FixtureDirError as exc:
+        print(f"fixtures: {exc}")
+        return 1
+    print(f"wrote {len(files)} demo files to {args.out}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="crashcourt", description=__doc__)
     parser.add_argument("--version", action="version", version=f"crashcourt {__version__}")
@@ -253,6 +275,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     from crashcourt.experiment.commands import add_arguments
 
     add_arguments(experiment)
+    fixture = commands.add_parser(
+        "fixtures", help="write the explorer's demo artifacts (DEMO- ids, provenance fixture)"
+    )
+    fixture.add_argument(
+        "--demo", action="store_true", required=True, help="demo data; never a result"
+    )
+    fixture.add_argument("--out", type=Path, default=Path("site/fixtures"))
+    fixture.add_argument("--seed", type=int, help="the output depends only on this (default 1)")
+    fixture.add_argument(
+        "--check", action="store_true", help="fail if the files differ from the generator's"
+    )
 
     run = commands.add_parser(
         "run", help="run trials of a scenario: two workers, barriers, histories (Linux only)"
@@ -285,5 +318,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run(args)
     if args.command == "experiment":
         return _experiment(args)
+    if args.command == "fixtures":
+        return _fixtures(args)
     parser.error(f"unknown command {args.command}")
     return 2
