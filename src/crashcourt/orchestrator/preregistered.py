@@ -151,8 +151,11 @@ def confirm(authorization: Authorization, manifest: Manifest, root: Path) -> Non
         )
 
 
-#: Where a revoked authorization goes: verification and aggregation never read it.
-REVOKED_FILE = "authorization.revoked.json"
+def record(directory: Path, authorization: Authorization) -> None:
+    """Put the authorization in the batch, where verification and aggregation look for it."""
+    from crashcourt.experiment.gate import AUTHORIZATION_FILE
+
+    (directory / AUTHORIZATION_FILE).write_bytes(authorization.to_json().encode("utf-8"))
 
 
 def still_authorized(authorization: Authorization, root: Path) -> list[str]:
@@ -179,12 +182,14 @@ def still_authorized(authorization: Authorization, root: Path) -> list[str]:
     return problems
 
 
-def revoke(directory: Path, authorization_file: str, reasons: Sequence[str]) -> None:
+def revoke(directory: Path, reasons: Sequence[str]) -> None:
     """Take the batch's authorization away, with the reasons: verification and aggregation then
     refuse the batch. The rename comes first and is atomic, so the authorization is never left
     in place."""
+    from crashcourt.experiment.gate import AUTHORIZATION_FILE, REVOKED_FILE
+
     revoked = directory / REVOKED_FILE
-    os.replace(directory / authorization_file, revoked)
+    os.replace(directory / AUTHORIZATION_FILE, revoked)
     record = json.loads(revoked.read_text(encoding="utf-8"))
     record["revoked"] = list(reasons)
     revoked.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")

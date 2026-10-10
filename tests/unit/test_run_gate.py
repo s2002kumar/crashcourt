@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from crashcourt.experiment import aggregate, gate
+from crashcourt.experiment import aggregate, gate, verify
 from crashcourt.experiment.gate import Authorization, NotAuthorized
 from crashcourt.orchestrator import preregistered, runner
 from crashcourt.orchestrator.preregistered import GateRefused, PreregisteredCell
@@ -263,12 +263,25 @@ def test_the_authorized_checkout_must_stay_as_it_was(tmp_path: Path) -> None:
 def test_a_revoked_authorization_is_never_left_in_place(tmp_path: Path) -> None:
     batch = tmp_path / "batch"
     batch.mkdir()
-    granted = authorization("1" * 40)
-    (batch / runner.AUTHORIZATION_FILE).write_text(granted.to_json(), encoding="utf-8")
-    preregistered.revoke(batch, runner.AUTHORIZATION_FILE, ["HEAD moved"])
-    assert not (batch / runner.AUTHORIZATION_FILE).exists()
-    revoked = json.loads((batch / preregistered.REVOKED_FILE).read_text(encoding="utf-8"))
+    preregistered.record(batch, authorization("1" * 40))
+    assert (batch / gate.AUTHORIZATION_FILE).is_file()
+    preregistered.revoke(batch, ["HEAD moved"])
+    assert not (batch / gate.AUTHORIZATION_FILE).exists()
+    revoked = json.loads((batch / gate.REVOKED_FILE).read_text(encoding="utf-8"))
     assert revoked["revoked"] == ["HEAD moved"] and revoked["cell"] == "R1"
+
+
+def test_verification_refuses_a_batch_the_runner_revoked(tmp_path: Path) -> None:
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    preregistered.record(batch, authorization("1" * 40))
+    preregistered.revoke(batch, ["HEAD moved", "the checkout changed during the batch"])
+    with pytest.raises(verify.BatchNotVerified) as refused:
+        verify.verify_batch(batch, tmp_path)
+    assert refused.value.problems == [
+        "the runner revoked this batch's authorization: HEAD moved; "
+        "the checkout changed during the batch"
+    ]
 
 
 def trial(number: int) -> runner.TrialResult:

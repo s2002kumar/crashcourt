@@ -87,8 +87,6 @@ POOL_SETTINGS: dict[str, JsonValue] = {
     "row_factory": "dict_row",
 }
 ORCHESTRATOR = "orchestrator"
-#: The gate's record in a pre-registered batch (crashcourt.experiment.gate.AUTHORIZATION_FILE).
-AUTHORIZATION_FILE = "authorization.json"
 SINK = "sink"
 _BATCH_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -692,7 +690,7 @@ def run_batch(
 
     directory.mkdir(parents=True)
     if authorization is not None:
-        (directory / AUTHORIZATION_FILE).write_bytes(authorization.to_json().encode("utf-8"))
+        preregistered.record(directory, authorization)
     manifest_bytes = manifest.to_json().encode("utf-8")
     (directory / "manifest.json").write_bytes(manifest_bytes)
     scenario_hash = scenario_sha256(scenario)
@@ -769,7 +767,7 @@ def run_batch(
         run_trials(lambda n: run_trial(ctx, n), options.trials, unchanged, progress)
     )
     if revoked:
-        preregistered.revoke(directory, AUTHORIZATION_FILE, revoked)
+        preregistered.revoke(directory, revoked)
     summary = BatchSummary(batch, directory, results, tuple(revoked))
     _write_json(directory / "summary.json", _summary_record(summary, scenario))
     return summary
