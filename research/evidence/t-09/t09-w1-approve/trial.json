@@ -1,5 +1,5 @@
 {
-  "batch": "t09-w1-approve-20261010T081351Z",
+  "batch": "t09-w1-approve-20261010T093643Z",
   "cell": "w1-approve",
   "client_outcomes": {
     "ok": 2
@@ -30,7 +30,7 @@
       "outcome": "ok",
       "reason": null,
       "sent": true,
-      "thread_id": "t09-w1-approve-20261010T081351Z/w1-approve/1/t1",
+      "thread_id": "t09-w1-approve-20261010T093643Z/w1-approve/1/t1",
       "worker": "w1"
     },
     "start-1": {
@@ -38,7 +38,7 @@
       "outcome": "ok",
       "reason": null,
       "sent": true,
-      "thread_id": "t09-w1-approve-20261010T081351Z/w1-approve/1/t1",
+      "thread_id": "t09-w1-approve-20261010T093643Z/w1-approve/1/t1",
       "worker": "w1"
     }
   },
@@ -59,7 +59,7 @@
       "exit_code": 0,
       "forced": false,
       "killed_by_step": null,
-      "pid": 32650,
+      "pid": 38924,
       "returncode": 0,
       "shutdown_sent": true,
       "signal": null

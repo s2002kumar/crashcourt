@@ -1,5 +1,5 @@
 {
-  "batch": "t09-w5-concurrent-20261010T081351Z",
+  "batch": "t09-w5-concurrent-20261010T093643Z",
   "cell": "w5-concurrent",
   "client_outcomes": {
     "ok": 3
@@ -30,7 +30,7 @@
       "outcome": "ok",
       "reason": null,
       "sent": true,
-      "thread_id": "t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1",
+      "thread_id": "t09-w5-concurrent-20261010T093643Z/w5-concurrent/1/t1",
       "worker": "w1"
     },
     "turn-2": {
@@ -38,7 +38,7 @@
       "outcome": "ok",
       "reason": null,
       "sent": true,
-      "thread_id": "t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1",
+      "thread_id": "t09-w5-concurrent-20261010T093643Z/w5-concurrent/1/t1",
       "worker": "w1"
     },
     "turn-3": {
@@ -46,7 +46,7 @@
       "outcome": "ok",
       "reason": null,
       "sent": true,
-      "thread_id": "t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1",
+      "thread_id": "t09-w5-concurrent-20261010T093643Z/w5-concurrent/1/t1",
       "worker": "w2"
     }
   },
@@ -69,7 +69,7 @@
       "exit_code": 0,
       "forced": false,
       "killed_by_step": null,
-      "pid": 34342,
+      "pid": 40613,
       "returncode": 0,
       "shutdown_sent": true,
       "signal": null
@@ -78,7 +78,7 @@
       "exit_code": 0,
       "forced": false,
       "killed_by_step": null,
-      "pid": 34343,
+      "pid": 40614,
       "returncode": 0,
       "shutdown_sent": true,
       "signal": null

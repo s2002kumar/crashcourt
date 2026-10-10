@@ -1,36 +1,36 @@
-orchestrator   0  worker.start                                               proc=w1 pid=33922
+orchestrator   0  worker.start                                               proc=w1 pid=40197
 orchestrator   1  client.invoke           turn-1                    t1       worker=w1
 orchestrator   2  dispatch.send           turn-1                    t1       to=w1
           w1   0  saver.get_tuple.call    turn-1                    t1
           w1   1  saver.get_tuple.return  turn-1                    t1  ok   found=False
           w1   2  saver.put.call          turn-1                    t1
-          w1   3  saver.put_writes.call   turn-1                    t1       task=61bde315
+          w1   3  saver.put_writes.call   turn-1                    t1       task=b2cb77af
           w1   4  saver.put.return        turn-1                    t1  ok
           w1   5  saver.put.call          turn-1                    t1
-          w1   6  saver.put_writes.return turn-1                    t1  ok   task=61bde315
+          w1   6  saver.put_writes.return turn-1                    t1  ok   task=b2cb77af
           w1   7  saver.put.return        turn-1                    t1  ok
-          w1   8  node.start              turn-1                    t1       task=a74adbf8 attempt=1 node=respond turn=0
-          w1   9  node.end                turn-1                    t1  ok   task=a74adbf8 attempt=1 node=respond turn=0 outcome=completed
-          w1  10  saver.put_writes.call   turn-1                    t1       task=a74adbf8
+          w1   8  node.start              turn-1                    t1       task=861799e9 attempt=1 node=respond turn=0
+          w1   9  node.end                turn-1                    t1  ok   task=861799e9 attempt=1 node=respond turn=0 outcome=completed
+          w1  10  saver.put_writes.call   turn-1                    t1       task=861799e9
           w1  11  saver.put.call          turn-1                    t1
           w1  12  saver.put.return        turn-1                    t1  ok
-          w1  13  saver.put_writes.return turn-1                    t1  ok   task=a74adbf8
-orchestrator   3  client.ok               turn-1                    t1  ok   worker=w1 worker_seq=13 output={'messages': [['human', 'human-1', 'First request.'], ['ai', 'ai:t09-w5-sequential-20261010T081351Z/w5-sequential/1/t1:respond:0:1', 'Hello. What would you like to do? [thread t09-w5-sequential-20261010T081351Z/w5-sequential/1/t1, node respond, turn 0, attempt 1]']]}
+          w1  13  saver.put_writes.return turn-1                    t1  ok   task=861799e9
+orchestrator   3  client.ok               turn-1                    t1  ok   worker=w1 worker_seq=13 output={'messages': [['human', 'human-1', 'First request.'], ['ai', 'ai:t09-w5-sequential-20261010T093643Z/w5-sequential/1/t1:respond:0:1', 'Hello. What would you like to do? [thread t09-w5-sequential-20261010T093643Z/w5-sequential/1/t1, node respond, turn 0, attempt 1]']]}
 orchestrator   4  client.invoke           turn-2                    t1       worker=w1
 orchestrator   5  dispatch.send           turn-2                    t1       to=w1
           w1  14  saver.get_tuple.call    turn-2                    t1
           w1  15  saver.get_tuple.return  turn-2                    t1  ok   found=True
           w1  16  saver.put.call          turn-2                    t1
-          w1  17  saver.put_writes.call   turn-2                    t1       task=813f1d0c
+          w1  17  saver.put_writes.call   turn-2                    t1       task=fc1d769f
           w1  18  saver.put.return        turn-2                    t1  ok
           w1  19  saver.put.call          turn-2                    t1
-          w1  20  saver.put_writes.return turn-2                    t1  ok   task=813f1d0c
+          w1  20  saver.put_writes.return turn-2                    t1  ok   task=fc1d769f
           w1  21  saver.put.return        turn-2                    t1  ok
-          w1  22  node.start              turn-2                    t1       task=a410ea99 attempt=1 node=respond turn=1
-          w1  23  node.end                turn-2                    t1  ok   task=a410ea99 attempt=1 node=respond turn=1 outcome=completed
-          w1  24  saver.put_writes.call   turn-2                    t1       task=a410ea99
+          w1  22  node.start              turn-2                    t1       task=4f60f6fa attempt=1 node=respond turn=1
+          w1  23  node.end                turn-2                    t1  ok   task=4f60f6fa attempt=1 node=respond turn=1 outcome=completed
+          w1  24  saver.put_writes.call   turn-2                    t1       task=4f60f6fa
           w1  25  saver.put.call          turn-2                    t1
           w1  26  saver.put.return        turn-2                    t1  ok
-          w1  27  saver.put_writes.return turn-2                    t1  ok   task=a410ea99
-orchestrator   6  client.ok               turn-2                    t1  ok   worker=w1 worker_seq=27 output={'messages': [['human', 'human-1', 'First request.'], ['ai', 'ai:t09-w5-sequential-20261010T081351Z/w5-sequential/1/t1:respond:0:1', 'Hello. What would you like to do? [thread t09-w5-sequential-20261010T081351Z/w5-sequential/1/t1, node respond, turn 0, attempt 1]'], ['human', 'human-2', 'Second request.'], ['ai', 'ai:t09-w5-sequential-20261010T081351Z/w5-sequential/1/t1:respond:1:1', 'Noted: your second request is queued. [thread t09-w5-sequential-20261010T081351Z/w5-sequential/1/t1, node respond, turn 1, attempt 1]']]}
-orchestrator   7  worker.exit                                                proc=w1 pid=33922 returncode=0 signal=None
+          w1  27  saver.put_writes.return turn-2                    t1  ok   task=4f60f6fa
+orchestrator   6  client.ok               turn-2                    t1  ok   worker=w1 worker_seq=27 output={'messages': [['human', 'human-1', 'First request.'], ['ai', 'ai:t09-w5-sequential-20261010T093643Z/w5-sequential/1/t1:respond:0:1', 'Hello. What would you like to do? [thread t09-w5-sequential-20261010T093643Z/w5-sequential/1/t1, node respond, turn 0, attempt 1]'], ['human', 'human-2', 'Second request.'], ['ai', 'ai:t09-w5-sequential-20261010T093643Z/w5-sequential/1/t1:respond:1:1', 'Noted: your second request is queued. [thread t09-w5-sequential-20261010T093643Z/w5-sequential/1/t1, node respond, turn 1, attempt 1]']]}
+orchestrator   7  worker.exit                                                proc=w1 pid=40197 returncode=0 signal=None

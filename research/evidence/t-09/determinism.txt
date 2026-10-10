@@ -1,20 +1,20 @@
-t09-w1-approve-20261010T081351Z: 50 trials, 50 valid, 1 distinct signature(s) [50]
+t09-w1-approve-20261010T093643Z: 50 trials, 50 valid, 1 distinct signature(s) [50]
   lineage <trial>/t1 {"checkpoints": 6, "roots": 1, "forked_parents": [], "dangling": 0}: 50 trial(s)
   ledger: [['charge:<trial>/t1', 'charge:<trial>/t1', 'resume-1', 1, 'w1']]
   <trial>/t1 head (most common): {"charged": [["charge:<trial>/t1", 1]], "decision": "approve", "executed": [["charge:<trial>/t1", 1]], "order": "order-17", "plan": "Charge the order once a person approves it. [thread <trial>/t1, node plan, turn 0, attempt 1]", "resume": "approve"}
-t09-w1-misuse-20261010T081351Z: 50 trials, 50 valid, 1 distinct signature(s) [50]
+t09-w1-misuse-20261010T093643Z: 50 trials, 50 valid, 1 distinct signature(s) [50]
   lineage <trial>/t1 {"checkpoints": 6, "roots": 1, "forked_parents": [], "dangling": 0}: 50 trial(s)
   ledger: [['precheck:<trial>/t1', 'precheck:<trial>/t1', 'start-1', 1, 'w1'], ['precheck:<trial>/t1', 'precheck:<trial>/t1', 'resume-1', 2, 'w1'], ['charge:<trial>/t1', 'charge:<trial>/t1', 'resume-1', 1, 'w1']]
   <trial>/t1 head (most common): {"charged": [["charge:<trial>/t1", 1]], "decision": "approve", "executed": [["charge:<trial>/t1", 1]], "order": "order-17", "plan": "Charge the order once a person approves it. [thread <trial>/t1, node plan, turn 0, attempt 1]", "resume": "approve"}
-t09-w1-reject-20261010T081351Z: 50 trials, 50 valid, 1 distinct signature(s) [50]
+t09-w1-reject-20261010T093643Z: 50 trials, 50 valid, 1 distinct signature(s) [50]
   lineage <trial>/t1 {"checkpoints": 6, "roots": 1, "forked_parents": [], "dangling": 0}: 50 trial(s)
   ledger: []
   <trial>/t1 head (most common): {"charged": [], "decision": "reject", "executed": [], "order": "order-17", "plan": "Charge the order once a person approves it. [thread <trial>/t1, node plan, turn 0, attempt 1]", "resume": "reject"}
-t09-w5-concurrent-20261010T081351Z: 50 trials, 50 valid, 1 distinct signature(s) [50]
+t09-w5-concurrent-20261010T093643Z: 50 trials, 50 valid, 1 distinct signature(s) [50]
   lineage <trial>/t1 {"checkpoints": 9, "roots": 1, "forked_parents": [2], "dangling": 0}: 50 trial(s)
   ledger: []
   <trial>/t1 head (most common): {"messages": [["human", "human-1", "First request."], ["ai", "ai:<trial>/t1:respond:0:1", "Hello. What would you like to do? [thread <trial>/t1, node respond, turn 0, attempt 1]"], ["human", "human-3", "Third request."], ["ai", "ai:<trial>/t1:respond:1:2", "Noted: your second request is queued. [thread <trial>/t1, node respond, turn 1, attempt 2]"]]}
-t09-w5-sequential-20261010T081351Z: 50 trials, 50 valid, 1 distinct signature(s) [50]
+t09-w5-sequential-20261010T093643Z: 50 trials, 50 valid, 1 distinct signature(s) [50]
   lineage <trial>/t1 {"checkpoints": 6, "roots": 1, "forked_parents": [], "dangling": 0}: 50 trial(s)
   ledger: []
   <trial>/t1 head (most common): {"messages": [["human", "human-1", "First request."], ["ai", "ai:<trial>/t1:respond:0:1", "Hello. What would you like to do? [thread <trial>/t1, node respond, turn 0, attempt 1]"], ["human", "human-2", "Second request."], ["ai", "ai:<trial>/t1:respond:1:1", "Noted: your second request is queued. [thread <trial>/t1, node respond, turn 1, attempt 1]"]]}

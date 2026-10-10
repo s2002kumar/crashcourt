@@ -1,14 +1,14 @@
 {
-  "batch": "t09-w5-concurrent-20261010T081351Z",
+  "batch": "t09-w5-concurrent-20261010T093643Z",
   "cell": "w5-concurrent",
   "clause_registry_sha256": "05cbc2b430eb60244d8bdbe46bef2580fa84c0b6d15679cb4968afeefcc00ec7",
   "clock": {
-    "batch_start_sink_offset_ns": 229363,
+    "batch_start_sink_offset_ns": 167209,
     "limit_ns": 1000000000,
-    "manifest_sink_offset_ns": 163627,
+    "manifest_sink_offset_ns": 215907,
     "warning": null
   },
-  "manifest_sha256": "f1e3c594282dc3cf06d961dd928578496553bd308f6ac65e2ca14f6994127345",
+  "manifest_sha256": "3cc597b486c59110d126485d2f473d053ce1b0b3afeb78c01b5ede3336e0255f",
   "master_seed": "w5-concurrent-v1",
   "mode": "canonical",
   "own_database": false,
@@ -39,7 +39,7 @@
   "sink": {
     "expected_source_sha256": "79b7538bd90ea9011efae790d35a5ab4165aacdef47b06d5a6d10a0bd32437bd",
     "health": {
-      "clock_offset_ns": 229363,
+      "clock_offset_ns": 167209,
       "ledger_version": 2,
       "pid": 1,
       "resume_error": null,
@@ -47,7 +47,7 @@
       "status": "ok",
       "test_hooks": false,
       "trial": {
-        "batch": "t09-w5-sequential-20261010T081351Z",
+        "batch": "t09-w5-sequential-20261010T093643Z",
         "cell": "w5-sequential",
         "seed": "28deaa7c7d486e676211842ec1a7d7eb58147c644f3692017390ae6c52e1a8df",
         "trial": 50
@@ -56,7 +56,7 @@
     },
     "url": "http://127.0.0.1:8490"
   },
-  "started": "2026-10-10T08:16:46+00:00",
+  "started": "2026-10-10T09:39:57+00:00",
   "trial_seeds": {
     "1": "a75c066a346cea8ab8f9c5736abd1b88240eec9fac8a1ec053736967e3e3c3dc",
     "10": "db717e82ffcfdb1672e42d6babba384cfdb553183d9c154cf49ec9ae6106d4b7",

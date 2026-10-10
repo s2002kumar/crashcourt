@@ -1,48 +1,48 @@
-orchestrator   0  worker.start                                               proc=w1 pid=33074
+orchestrator   0  worker.start                                               proc=w1 pid=39357
 orchestrator   1  client.invoke           start-1                   t1       worker=w1
 orchestrator   2  dispatch.send           start-1                   t1       to=w1
           w1   0  saver.get_tuple.call    start-1                   t1
           w1   1  saver.get_tuple.return  start-1                   t1  ok   found=False
           w1   2  saver.put.call          start-1                   t1
-          w1   3  saver.put_writes.call   start-1                   t1       task=3627d685
+          w1   3  saver.put_writes.call   start-1                   t1       task=f36ffab5
           w1   4  saver.put.return        start-1                   t1  ok
           w1   5  saver.put.call          start-1                   t1
-          w1   6  saver.put_writes.return start-1                   t1  ok   task=3627d685
+          w1   6  saver.put_writes.return start-1                   t1  ok   task=f36ffab5
           w1   7  saver.put.return        start-1                   t1  ok
-          w1   8  node.start              start-1                   t1       task=bfc0e3ff attempt=1 node=plan turn=0
-          w1   9  node.end                start-1                   t1  ok   task=bfc0e3ff attempt=1 node=plan turn=0 outcome=completed
-          w1  10  saver.put_writes.call   start-1                   t1       task=bfc0e3ff
+          w1   8  node.start              start-1                   t1       task=f3076232 attempt=1 node=plan turn=0
+          w1   9  node.end                start-1                   t1  ok   task=f3076232 attempt=1 node=plan turn=0 outcome=completed
+          w1  10  saver.put_writes.call   start-1                   t1       task=f3076232
           w1  11  saver.put.call          start-1                   t1
           w1  12  saver.put.return        start-1                   t1  ok
-          w1  13  saver.put_writes.return start-1                   t1  ok   task=bfc0e3ff
-          w1  14  node.start              start-1                   t1       task=be705f1e attempt=1 node=approval turn=0
-          w1  15  node.end                start-1                   t1  ok   task=be705f1e attempt=1 node=approval turn=0 outcome=interrupted
-          w1  16  saver.put_writes.call   start-1                   t1       task=be705f1e
-          w1  17  saver.put_writes.return start-1                   t1  ok   task=be705f1e
-orchestrator   3  client.ok               start-1                   t1  ok   worker=w1 worker_seq=17 output={'order': 'order-17', 'plan': 'Charge the order once a person approves it. [thread t09-w1-reject-20261010T081351Z/w1-reject/1/t1, node plan, turn 0, attempt 1]', 'interrupted': True, 'interrupt': [{'plan': 'Charge the order once a person approves it. [thread t09-w1-reject-20261010T081351Z/w1-reject/1/t1, node plan, turn 0, attempt 1]'}]}
+          w1  13  saver.put_writes.return start-1                   t1  ok   task=f3076232
+          w1  14  node.start              start-1                   t1       task=325aea9e attempt=1 node=approval turn=0
+          w1  15  node.end                start-1                   t1  ok   task=325aea9e attempt=1 node=approval turn=0 outcome=interrupted
+          w1  16  saver.put_writes.call   start-1                   t1       task=325aea9e
+          w1  17  saver.put_writes.return start-1                   t1  ok   task=325aea9e
+orchestrator   3  client.ok               start-1                   t1  ok   worker=w1 worker_seq=17 output={'order': 'order-17', 'plan': 'Charge the order once a person approves it. [thread t09-w1-reject-20261010T093643Z/w1-reject/1/t1, node plan, turn 0, attempt 1]', 'interrupted': True, 'interrupt': [{'plan': 'Charge the order once a person approves it. [thread t09-w1-reject-20261010T093643Z/w1-reject/1/t1, node plan, turn 0, attempt 1]'}]}
 orchestrator   4  client.invoke           resume-1                  t1       worker=w1 resume=reject
 orchestrator   5  dispatch.send           resume-1                  t1       to=w1
           w1  18  saver.get_tuple.call    resume-1                  t1
           w1  19  saver.get_tuple.return  resume-1                  t1  ok   found=True
           w1  20  saver.put_writes.call   resume-1                  t1       task=00000000
           w1  21  saver.put_writes.return resume-1                  t1  ok   task=00000000
-          w1  22  node.start              resume-1                  t1       task=be705f1e attempt=2 node=approval turn=0
-          w1  23  node.end                resume-1                  t1  ok   task=be705f1e attempt=2 node=approval turn=0 outcome=completed
-          w1  24  saver.put_writes.call   resume-1                  t1       task=be705f1e
+          w1  22  node.start              resume-1                  t1       task=325aea9e attempt=2 node=approval turn=0
+          w1  23  node.end                resume-1                  t1  ok   task=325aea9e attempt=2 node=approval turn=0 outcome=completed
+          w1  24  saver.put_writes.call   resume-1                  t1       task=325aea9e
           w1  25  saver.put.call          resume-1                  t1
           w1  26  saver.put.return        resume-1                  t1  ok
-          w1  27  saver.put_writes.return resume-1                  t1  ok   task=be705f1e
-          w1  28  node.start              resume-1                  t1       task=130be839 attempt=1 node=execute turn=0
-          w1  29  node.end                resume-1                  t1  ok   task=130be839 attempt=1 node=execute turn=0 outcome=completed
-          w1  30  saver.put_writes.call   resume-1                  t1       task=130be839
+          w1  27  saver.put_writes.return resume-1                  t1  ok   task=325aea9e
+          w1  28  node.start              resume-1                  t1       task=dc65c905 attempt=1 node=execute turn=0
+          w1  29  node.end                resume-1                  t1  ok   task=dc65c905 attempt=1 node=execute turn=0 outcome=completed
+          w1  30  saver.put_writes.call   resume-1                  t1       task=dc65c905
           w1  31  saver.put.call          resume-1                  t1
           w1  32  saver.put.return        resume-1                  t1  ok
-          w1  33  saver.put_writes.return resume-1                  t1  ok   task=130be839
-          w1  34  node.start              resume-1                  t1       task=09ae2410 attempt=1 node=record turn=0
-          w1  35  node.end                resume-1                  t1  ok   task=09ae2410 attempt=1 node=record turn=0 outcome=completed
-          w1  36  saver.put_writes.call   resume-1                  t1       task=09ae2410
+          w1  33  saver.put_writes.return resume-1                  t1  ok   task=dc65c905
+          w1  34  node.start              resume-1                  t1       task=5e194afc attempt=1 node=record turn=0
+          w1  35  node.end                resume-1                  t1  ok   task=5e194afc attempt=1 node=record turn=0 outcome=completed
+          w1  36  saver.put_writes.call   resume-1                  t1       task=5e194afc
           w1  37  saver.put.call          resume-1                  t1
           w1  38  saver.put.return        resume-1                  t1  ok
-          w1  39  saver.put_writes.return resume-1                  t1  ok   task=09ae2410
-orchestrator   6  client.ok               resume-1                  t1  ok   worker=w1 worker_seq=39 output={'order': 'order-17', 'plan': 'Charge the order once a person approves it. [thread t09-w1-reject-20261010T081351Z/w1-reject/1/t1, node plan, turn 0, attempt 1]', 'resume': 'reject', 'decision': 'reject', 'executed': [], 'interrupted': False}
-orchestrator   7  worker.exit                                                proc=w1 pid=33074 returncode=0 signal=None
+          w1  39  saver.put_writes.return resume-1                  t1  ok   task=5e194afc
+orchestrator   6  client.ok               resume-1                  t1  ok   worker=w1 worker_seq=39 output={'order': 'order-17', 'plan': 'Charge the order once a person approves it. [thread t09-w1-reject-20261010T093643Z/w1-reject/1/t1, node plan, turn 0, attempt 1]', 'resume': 'reject', 'decision': 'reject', 'executed': [], 'interrupted': False}
+orchestrator   7  worker.exit                                                proc=w1 pid=39357 returncode=0 signal=None
