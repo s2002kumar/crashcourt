@@ -11,7 +11,9 @@ Layout (T-07's runner, plus the two files the post-trial step adds):
 | `<trial>/snapshot.json` | `snapshots`: the two direct snapshots and the pre-trial counts |
 | `<trial>/sink-health.json` | `sink_health`: /health readings around the trial |
 
-`merged.jsonl` is a display copy of the histories and is not read.
+The process histories are the ones trial.json lists (all `.jsonl` files when there is no
+trial.json); `merged.jsonl` (a display copy) and `db-rows.jsonl` (an export of the saver rows) are
+never read as histories.
 
 A file that is absent is left absent: the checker then makes the trial INVALID (trigger 1); the
 loader never fills a gap. The scenario facts are the caller's: they come from the batch's scenario
@@ -23,7 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from crashcourt.checker.artifacts import (
     HarnessRecord,
@@ -38,11 +40,14 @@ from crashcourt.checker.engine import CheckerOutput
 from crashcourt.history.reader import HistoryError, read_history
 from crashcourt.manifest import Manifest
 
-DISPLAY_ONLY = frozenset({"merged.jsonl"})
+#: JSON-lines files in a trial directory that are not process histories.
+NOT_HISTORIES = frozenset({"merged", "db-rows"})
 
 
 def _history(path: Path) -> ProcessHistory:
     proc = path.stem
+    if not path.is_file():
+        return ProcessHistory(proc=proc, events=(), parse_error=f"{path.name} is missing")
     try:
         read = read_history(path)
     except HistoryError as exc:
@@ -64,12 +69,16 @@ def load_trial(directory: Path, scenario: TrialScenario) -> TrialArtifacts:
         raw = manifest_path.read_bytes()
         manifest = Manifest.from_json(raw.decode("utf-8"))
         manifest_sha = hashlib.sha256(raw).hexdigest()
-    histories = tuple(
-        _history(p)
-        for p in sorted(directory.glob("*.jsonl"), key=lambda p: p.name)
-        if p.name not in DISPLAY_ONLY
-    )
     trial: dict[str, Any] | None = _json(directory / "trial.json")
+    # The orchestrator's record names the histories; without it, every .jsonl but the known
+    # non-history files.
+    listed: object = trial.get("histories") if isinstance(trial, dict) else None
+    if isinstance(listed, dict):
+        found = [str(n) for n in cast("dict[object, object]", listed)]
+    else:
+        found = [p.stem for p in directory.glob("*.jsonl")]
+    names = sorted(n for n in found if n not in NOT_HISTORIES)
+    histories = tuple(_history(directory / f"{name}.jsonl") for name in names)
     ledger = _json(directory / "ledger.json")
     snapshots = _json(directory / "snapshot.json")
     health = _json(directory / "sink-health.json")
