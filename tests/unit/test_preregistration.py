@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -8,10 +9,12 @@ import pytest
 from pydantic import ValidationError
 
 from crashcourt.cli import main
+from crashcourt.experiment.gate import FROZEN_PATH, T10Checker
 from crashcourt.experiment.preregistration import (
     PREREGISTRATION_PATH,
     PUBLISHED_REPLICATIONS,
     Cell,
+    CheckerRecord,
     PreregistrationError,
     block,
     parse,
@@ -30,9 +33,8 @@ def committed() -> str:
 def test_the_committed_preregistration_is_a_valid_draft() -> None:
     prereg = parse(committed())
     assert prereg.state == "draft"
-    assert prereg.checker is None
     missing = "\n".join(prereg.missing())
-    assert "no frozen checker is named" in missing
+    assert "no frozen checker is named" not in missing
     assert "cell K1a: pending" not in missing
     assert "cell A1: pending" in missing  # no fault-free async histories audited yet
 
@@ -92,6 +94,41 @@ def test_the_draft_applies_the_rulings_of_2026_10_10() -> None:
     assert "occurrence 3" in cells["N12"].trigger  # L-T1
     assert "occurrence 3" in cells["K1a"].trigger  # L-EXW
     assert "L-GET" in cells["K2"].trigger
+
+
+def test_the_draft_pins_the_frozen_checker() -> None:
+    """Every hash pinned is the one T-10's FROZEN.md records, and the checker files verify against
+    it (freeze.verify_checker raises otherwise)."""
+    prereg = parse(committed())
+    pin = prereg.checker
+    assert pin is not None
+    t10 = T10Checker()
+    assert t10.freeze_state() == "FROZEN"
+    frozen_md = ROOT / FROZEN_PATH
+    registry = t10.registry_sha256(ROOT)
+    frozen = t10.verify_checker(frozen_md.read_text(encoding="utf-8"), registry)
+    assert (pin.version, pin.checker_sha256, pin.registry_sha256) == (
+        frozen.version,
+        frozen.checker_sha256,
+        frozen.registry_sha256,
+    )
+    assert pin.frozen_md_sha256 == hashlib.sha256(frozen_md.read_bytes()).hexdigest()
+    assert (pin.effect_models, pin.landmark_tables) == (
+        frozen.effect_models,
+        frozen.landmark_tables,
+    )
+    assert prereg.environment["clause_registry_sha256"] == registry
+
+
+def test_k4_observes_the_record_as_the_frozen_checker_words_it() -> None:
+    """K4 matches checker.json's record by its leading text, so that text is the frozen engine's,
+    with K4's op filled in."""
+    [observation] = parse(committed()).cell("K4").observations
+    assert isinstance(observation, CheckerRecord)
+    engine = (ROOT / "src/crashcourt/checker/engine.py").read_text(encoding="utf-8")
+    template = 'f"accepted run with no durable record: op {record.spec.op_id} ended "'
+    assert template in engine
+    assert observation.starts_with == "accepted run with no durable record: op start-1 ended"
 
 
 def test_the_cell_table_matches_the_data() -> None:

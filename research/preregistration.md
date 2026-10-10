@@ -15,7 +15,8 @@ The JSON block at the end is the binding part; the prose and the table explain i
 - **The checker.** `checker` names the frozen checker by two hashes: the checker files'
   (`checker_sha256`), and `src/crashcourt/checker/FROZEN.md`'s bytes (`frozen_md_sha256`), which also pin the
   clause registry, the workloads' effect models, and every scenario's landmark table. The commit that last
-  changed FROZEN.md must be an ancestor of this file's commit.
+  changed FROZEN.md must be an ancestor of this file's commit. Pinned: checker v1, frozen by T-10 in
+  2802584 (#28), with every hash its FROZEN.md records.
 - **The cells.** Each cell names its scenario file and that scenario's content hash, its master seed, N, its
   phase, and its predicted outcome per invariant. One prediction value is firm; several mean one of them, the
   same in every trial; `*` covers every invariant the cell does not name. `NOT_EXERCISED` predicts that the
@@ -96,10 +97,12 @@ It stays a draft until every one of these holds:
 - T-10 has audited the real fault-free histories: the landmarks are derived from them, not from reading the
   source.
 - T-10's FROZEN.md exists, and `checker` pins its hashes: the checker files, FROZEN.md itself, the clause
-  registry, every effect model, and every landmark table.
+  registry, every effect model, and every landmark table. Done: checker v1, freeze commit 2802584; a test
+  checks the pins against FROZEN.md and the checker files.
 - Every `pending` entry is resolved. What remains: the landmark occurrences under async (A1-A4), which
   need fault-free async histories audited as T-09's sync corpus was.
-- Every checker record a cell observes (K4's) is worded as the frozen checker writes it.
+- Every checker record a cell observes (K4's) is worded as the frozen checker writes it. Done: a test reads
+  the frozen checker's wording.
 - The environment and runner fingerprint is fixed under `environment`.
 - Every instrument requirement is represented, as a cell or as an instrument check with its evidence recorded.
 
@@ -1654,9 +1657,22 @@ affects.
       "workload": "w1"
     }
   ],
-  "checker": null,
+  "checker": {
+    "checker_sha256": "d80951681c2b8656a08647d3ba60ee3b9b025e1ff118d83796ccdb433f111097",
+    "effect_models": {
+      "w1": "7e0376323ac016537edf5b1abb4641efba36519d40df58d9762817158e857859",
+      "w1-misuse": "d750e43ba865dc834a7341def0e19727bec72e5fd96da2ddf4ec7d2f467b1b5f",
+      "w5": "74d96b6a84043e5cbd7ef8e3386bba50c191572dff16284bb1664e991dc6f8af"
+    },
+    "frozen_md_sha256": "ddff87d4d487ef211d385279951eaa2be37c71394956fcc0c4ff541667338e12",
+    "landmark_tables": {
+      "langgraph-v1": "279e5e441b14dafca556d8b8824afbcc4698ce0d073a63f324386956160682f4"
+    },
+    "registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5",
+    "version": "v1"
+  },
   "environment": {
-    "clause_registry_sha256": null,
+    "clause_registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5",
     "git_dirty": false,
     "lockfile_sha256": null,
     "os_system": "Linux",
