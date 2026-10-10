@@ -20,21 +20,22 @@ After doctor writes the manifest, `confirm_environment` checks it against the pr
 environment and the authorized commit. The authorization is written into the batch directory
 (authorization.json); `crashcourt.experiment.verify` re-checks it against git later.
 
-The checker (T-10) and the scenario loader (T-07) are reached through two small adapters that
-import them lazily. In a checkout without them, the gate refuses: no checker means no freeze.
+The checker (T-10) and the scenario loader (T-07) are reached through two small adapters, so the
+tests can stand in for them; an adapter that cannot answer raises Unavailable, and the gate refuses.
 """
 
 from __future__ import annotations
 
 import hashlib
-import importlib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal, Protocol, cast
+from typing import Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
+from crashcourt.checker import freeze, status
+from crashcourt.clauses import registry_sha256 as clause_registry_sha256
 from crashcourt.experiment import gitproof
 from crashcourt.experiment.fingerprint import (
     RULES_PATH,
@@ -118,41 +119,29 @@ class ScenarioView(Protocol):
     def load(self, path: Path) -> ScenarioFacts: ...
 
 
-def _module(name: str, owner: str) -> Any:
-    try:
-        return importlib.import_module(name)
-    except ImportError as exc:
-        raise Unavailable(f"{name} ({owner}) is not in this checkout") from exc
-
-
 class T10Checker:
     """The checker as T-10 ships it: checker.status and checker.freeze."""
 
     def freeze_state(self) -> str:
-        return str(_module("crashcourt.checker.status", "T-10").FREEZE_STATE)
+        return status.FREEZE_STATE
 
     def registry_sha256(self, root: Path) -> str:
-        registry = _module("crashcourt.clauses", "T-02")
-        return str(cast(Callable[[Path], str], registry.registry_sha256)(root / "clauses"))
+        return clause_registry_sha256(root / "clauses")
 
     def verify_checker(self, frozen_md: str, registry_sha256: str) -> FrozenChecker:
-        freeze = _module("crashcourt.checker.freeze", "T-10")
-        verify = cast(Callable[[str, str], Any], freeze.verify_checker)
-        frozen = verify(frozen_md, registry_sha256)
+        frozen = freeze.verify_checker(frozen_md, registry_sha256)
         return FrozenChecker(
-            str(frozen.checker_version),
-            str(frozen.checker_sha256),
-            str(frozen.registry_sha256),
-            {str(k): str(v) for k, v in dict(frozen.effect_models).items()},
-            {str(k): str(v) for k, v in dict(frozen.landmark_tables).items()},
+            frozen.checker_version,
+            frozen.checker_sha256,
+            frozen.registry_sha256,
+            dict(frozen.effect_models),
+            dict(frozen.landmark_tables),
         )
 
     def landmark_sha256(self, frozen_md: str, registry_sha256: str, scenario: Path) -> str | None:
         """The audited landmark table the scenario names (its `landmarks` key), verified against
         the freeze; None when the scenario names none."""
-        freeze = _module("crashcourt.checker.freeze", "T-10")
-        verify = cast(Callable[[str, str, Path], str | None], freeze.verify_scenario)
-        return verify(frozen_md, registry_sha256, scenario)
+        return freeze.verify_scenario(frozen_md, registry_sha256, scenario)
 
 
 class T07Scenarios:
