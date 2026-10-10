@@ -3,9 +3,9 @@
   "compose_version": "2.39.4-desktop.1",
   "docker_kernel": "6.6.87.2-microsoft-standard-WSL2",
   "docker_version": "28.4.0",
-  "generated_at": "2026-10-10T02:53:16+00:00",
+  "generated_at": "2026-10-10T07:41:27+00:00",
   "git_dirty": false,
-  "git_sha": "6eb436fbc790e8fa4d36158d9b90b84cb8155198",
+  "git_sha": "a2b2439147e466642a1bde265c09c94d1bd1b9b1",
   "image_ids": {
     "postgres": "sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722",
     "toxiproxy": "sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e"
@@ -16,13 +16,14 @@
   },
   "libpq_build_version": "18.4",
   "libpq_version": "18.4",
-  "lockfile_sha256": "3f4e8bc39f10b175704cecd0e2049cc599a4a4d775114c2d93c4f20867a1d1b7",
+  "lockfile_sha256": "19a0dd0df75a86126dec1b617422001fedb30ac18978c7fe31585ce52a92702e",
   "machine": "AMD64",
   "os_release": "11",
   "os_system": "Windows",
   "packages": {
     "langgraph": "1.2.12",
     "langgraph-checkpoint": "4.2.0",
+    "langgraph-checkpoint-conformance": "0.0.2",
     "langgraph-checkpoint-postgres": "3.1.2",
     "langgraph-checkpoint-sqlite": "3.1.1",
     "langgraph-prebuilt": "1.1.0",
@@ -45,7 +46,7 @@
   "python_version": "3.12.13",
   "runner": "local",
   "schema_version": 1,
-  "sink_clock_offset_ns": -34509150454558,
+  "sink_clock_offset_ns": -1765496668073,
   "spec_sha256": "c6560f855c0bf80d9d1b18cd1407157dd619d84bc7e2b14dd7e1591f3cb45258",
   "toxiproxy_version": "2.12.0"
 }
