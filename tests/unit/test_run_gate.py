@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
+import json
 from pathlib import Path
 from typing import Any
 
@@ -239,3 +241,68 @@ def test_run_refuses_a_gated_batch_before_doctor_or_any_process(
             source=repo.root / "scenarios/R1.yaml",
         )
     assert not (tmp_path / "runs").exists()
+
+
+# -- the checkout must not change during a gated batch ---------------------------------------
+
+
+def test_the_authorized_checkout_must_stay_as_it_was(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    granted = authorization(repo.prereg_commit)
+    assert preregistered.still_authorized(granted, repo.root) == []
+    (repo.root / "scenarios" / "R1.yaml").write_text("cell: R1\nedited: true\n", encoding="utf-8")
+    assert preregistered.still_authorized(granted, repo.root) == [
+        "the checkout changed during the batch (1 changed paths)"
+    ]
+    moved = commit(repo.root, {"scenarios/R1.yaml": "cell: R1\nedited: true\n"}, "edit mid-batch")
+    assert preregistered.still_authorized(granted, repo.root) == [
+        f"HEAD moved to {moved} during the batch; it was authorized at {repo.prereg_commit}"
+    ]
+
+
+def test_a_revoked_authorization_is_never_left_in_place(tmp_path: Path) -> None:
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    granted = authorization("1" * 40)
+    (batch / runner.AUTHORIZATION_FILE).write_text(granted.to_json(), encoding="utf-8")
+    preregistered.revoke(batch, runner.AUTHORIZATION_FILE, ["HEAD moved"])
+    assert not (batch / runner.AUTHORIZATION_FILE).exists()
+    revoked = json.loads((batch / preregistered.REVOKED_FILE).read_text(encoding="utf-8"))
+    assert revoked["revoked"] == ["HEAD moved"] and revoked["cell"] == "R1"
+
+
+def trial(number: int) -> runner.TrialResult:
+    return runner.TrialResult(number=number, directory=Path(f"trial-{number:05d}"), valid=True)
+
+
+def test_a_changed_checkout_stops_the_batch_before_the_next_trial() -> None:
+    answers = iter([[], [], ["HEAD moved"]])
+    ran: list[int] = []
+
+    async def run_one(number: int) -> runner.TrialResult:
+        ran.append(number)
+        return trial(number)
+
+    results, revoked = asyncio.run(runner.run_trials(run_one, 5, lambda: next(answers)))
+    assert ran == [1, 2] and [r.number for r in results] == [1, 2]
+    assert revoked == ["HEAD moved"]
+
+
+def test_the_checkout_is_checked_after_the_last_trial_too() -> None:
+    answers = iter([[], [], ["the checkout changed"]])
+
+    async def run_one(number: int) -> runner.TrialResult:
+        return trial(number)
+
+    results, revoked = asyncio.run(runner.run_trials(run_one, 2, lambda: next(answers)))
+    assert len(results) == 2 and revoked == ["the checkout changed"]
+
+
+def test_a_revoked_batch_is_not_valid_and_its_summary_says_why() -> None:
+    summary = runner.BatchSummary("b", Path("b"), [trial(1)], ("HEAD moved",))
+    assert not summary.valid
+    record = runner._summary_record(summary, scenario())  # pyright: ignore[reportPrivateUsage]
+    assert record["authorization_revoked"] == ["HEAD moved"]
+    assert "authorization_revoked" not in runner._summary_record(  # pyright: ignore[reportPrivateUsage]
+        runner.BatchSummary("b", Path("b"), [trial(1)]), scenario()
+    )

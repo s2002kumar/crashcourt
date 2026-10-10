@@ -45,7 +45,7 @@ import shutil
 import signal
 import sys
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -145,10 +145,12 @@ class BatchSummary:
     batch: str
     directory: Path
     trials: list[TrialResult]
+    #: Why a pre-registered batch's authorization was revoked mid-batch; empty when it was not.
+    revoked: tuple[str, ...] = ()
 
     @property
     def valid(self) -> bool:
-        return all(t.valid for t in self.trials)
+        return not self.revoked and all(t.valid for t in self.trials)
 
 
 # -- preflight --------------------------------------------------------------------------------
@@ -758,19 +760,38 @@ def run_batch(
         sink_source=source_hash,
     )
 
-    async def every_trial() -> list[TrialResult]:
-        results: list[TrialResult] = []
-        for number in range(1, options.trials + 1):
-            result = await run_trial(ctx, number)
-            results.append(result)
-            if progress is not None:
-                progress(result)
-        return results
+    def unchanged() -> list[str]:
+        if authorization is None:
+            return []
+        return preregistered.still_authorized(authorization, settings.root)
 
-    results = asyncio.run(every_trial())
-    summary = BatchSummary(batch, directory, results)
+    results, revoked = asyncio.run(
+        run_trials(lambda n: run_trial(ctx, n), options.trials, unchanged, progress)
+    )
+    if revoked:
+        preregistered.revoke(directory, AUTHORIZATION_FILE, revoked)
+    summary = BatchSummary(batch, directory, results, tuple(revoked))
     _write_json(directory / "summary.json", _summary_record(summary, scenario))
     return summary
+
+
+async def run_trials(
+    run_one: Callable[[int], Awaitable[TrialResult]],
+    trials: int,
+    unchanged: Callable[[], list[str]],
+    progress: Callable[[TrialResult], None] | None = None,
+) -> tuple[list[TrialResult], list[str]]:
+    """Every trial in order. `unchanged` says why the checkout is no longer the authorized one;
+    it is asked before each trial and after the last, and a reason stops the batch."""
+    results: list[TrialResult] = []
+    for number in range(1, trials + 1):
+        if problems := unchanged():
+            return results, problems
+        result = await run_one(number)
+        results.append(result)
+        if progress is not None:
+            progress(result)
+    return results, unchanged()
 
 
 def _summary_record(summary: BatchSummary, scenario: Scenario) -> dict[str, Any]:
@@ -787,4 +808,5 @@ def _summary_record(summary: BatchSummary, scenario: Scenario) -> dict[str, Any]
         "client_outcomes": dict(sorted(outcomes.items())),
         "invalid_trials": {str(t.number): t.reasons for t in summary.trials if not t.valid},
         "observations": {str(t.number): t.observations for t in summary.trials if t.observations},
+        **({"authorization_revoked": list(summary.revoked)} if summary.revoked else {}),
     }

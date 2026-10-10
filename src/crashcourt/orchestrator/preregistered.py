@@ -17,13 +17,19 @@ A pre-registered batch runs only if:
   new evidence the instrument batches' environment (`crashcourt.experiment.gate.confirm`).
 
 Every refusal names its reasons. The authorization goes into the batch directory as
-authorization.json, where verification and aggregation look for it. A batch whose scenario is not
-pre-registered (smoke runs, fault-free workload runs) runs as before and carries no authorization:
-it can never be counted as pre-registered evidence.
+authorization.json, where verification and aggregation look for it. Workers load the harness from
+the files on disk, so before each trial and after the last the checkout must still be the
+authorized commit with no change; otherwise the batch stops and its authorization is revoked
+(renamed to authorization.revoked.json, with the reasons), so it can never be counted.
+
+A batch whose scenario is not pre-registered (smoke runs, fault-free workload runs) runs as before
+and carries no authorization: it can never be counted as pre-registered evidence.
 """
 
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -143,3 +149,42 @@ def confirm(authorization: Authorization, manifest: Manifest, root: Path) -> Non
             f"cell {authorization.cell}: the environment is not the pre-registered one: "
             + "; ".join(problems)
         )
+
+
+#: Where a revoked authorization goes: verification and aggregation never read it.
+REVOKED_FILE = "authorization.revoked.json"
+
+
+def still_authorized(authorization: Authorization, root: Path) -> list[str]:
+    """Why the checkout is no longer the one the batch was authorized at; empty when it is.
+
+    Workers start from the files on disk, so a commit or an edit during the batch would run code
+    the manifest does not name.
+    """
+    from crashcourt.experiment import gitproof
+
+    try:
+        head = gitproof.head(root)
+        changed = gitproof.dirty(root)
+    except gitproof.GitError as exc:
+        return [f"cannot read the checkout's state from git: {exc}"]
+    problems: list[str] = []
+    if head != authorization.run_commit:
+        problems.append(
+            f"HEAD moved to {head} during the batch; it was authorized at "
+            f"{authorization.run_commit}"
+        )
+    if changed:
+        problems.append(f"the checkout changed during the batch ({len(changed)} changed paths)")
+    return problems
+
+
+def revoke(directory: Path, authorization_file: str, reasons: Sequence[str]) -> None:
+    """Take the batch's authorization away, with the reasons: verification and aggregation then
+    refuse the batch. The rename comes first and is atomic, so the authorization is never left
+    in place."""
+    revoked = directory / REVOKED_FILE
+    os.replace(directory / authorization_file, revoked)
+    record = json.loads(revoked.read_text(encoding="utf-8"))
+    record["revoked"] = list(reasons)
+    revoked.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")

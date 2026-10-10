@@ -189,6 +189,8 @@ def _run(args: argparse.Namespace) -> int:
     except (RunRefused, ScenarioError, TopologyError, FaultError) as exc:
         print(f"run refused: {exc}")
         return 2
+    if summary.revoked:
+        print("authorization revoked: " + "; ".join(summary.revoked), flush=True)
     valid = sum(t.valid for t in summary.trials)
     print(
         f"batch {summary.batch}: {len(summary.trials)} trials, {valid} valid; "
