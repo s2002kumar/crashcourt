@@ -24,11 +24,11 @@ version_scope:
   specifier: ">=1.2,<1.3"
 applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
 notes: >-
-  Open question: the docs frame this around a node failing (an exception) in a super-step. They
-  do not say whether it also holds when the process crashes after a sibling's writes were stored.
-  Applying it to crashes is my reading; the second quote ("already durable") supports it but does
-  not state it, and it does not hold mid-run under durability="exit": in langgraph 1.2.12,
-  per-task writes go to the saver only when durability is not "exit" (pregel/_loop.py:466), and
-  exit mode writes them when the run ends. Until that is settled, a crash-time re-run of a
-  sibling whose writes committed is a VIOLATION candidate only with that caveat attached. The
-  first quote follows the page's explicit pending-writes anchor; the second is under "Super-steps".
+  The guarantee covers only what the docs state: a node failing (an exception) in a super-step.
+  They do not say whether it also holds when the process crashes after a sibling's writes were
+  stored, so that is unresolved, and a process crash does not inherit this guarantee: no verdict
+  may cite LG-PW for a crash. The second quote ("already durable") is consistent with extending
+  it but does not state it, and it does not hold mid-run under durability="exit": in langgraph
+  1.2.12, per-task writes go to the saver only when durability is not "exit"
+  (pregel/_loop.py:466), and exit mode writes them when the run ends. The first quote follows the
+  page's explicit pending-writes anchor; the second is under "Super-steps".
