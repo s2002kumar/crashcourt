@@ -1,0 +1,64 @@
+{
+  "batch": "t09-w1-reject-20261010T081351Z",
+  "cell": "w1-reject",
+  "client_outcomes": {
+    "ok": 2
+  },
+  "histories": {
+    "merged": {
+      "lines": 48,
+      "partial_tail": false
+    },
+    "orchestrator": {
+      "lines": 8,
+      "partial_tail": false
+    },
+    "w1": {
+      "lines": 40,
+      "partial_tail": false
+    }
+  },
+  "invalid_reasons": [],
+  "observations": [],
+  "ops": {
+    "resume-1": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t09-w1-reject-20261010T081351Z/w1-reject/1/t1",
+      "worker": "w1"
+    },
+    "start-1": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t09-w1-reject-20261010T081351Z/w1-reject/1/t1",
+      "worker": "w1"
+    }
+  },
+  "seed": "565f41d33abb3eca4a7c7cfee6b762419dc7e432fd71cd0fd140a78e3f511a02",
+  "sink": {
+    "pid": 1,
+    "rows": 0
+  },
+  "steps": {
+    "barrier_fired": [],
+    "barrier_unfired": []
+  },
+  "trial": 1,
+  "v": 1,
+  "valid": true,
+  "workers": {
+    "w1": {
+      "exit_code": 0,
+      "forced": false,
+      "killed_by_step": null,
+      "pid": 33074,
+      "returncode": 0,
+      "shutdown_sent": true,
+      "signal": null
+    }
+  }
+}

@@ -1,0 +1,61 @@
+orchestrator   0  worker.start                                               proc=w1 pid=34342
+orchestrator   1  worker.start                                               proc=w2 pid=34343
+orchestrator   2  client.invoke           turn-1                    t1       worker=w1
+orchestrator   3  dispatch.send           turn-1                    t1       to=w1
+          w1   0  saver.get_tuple.call    turn-1                    t1
+          w1   1  saver.get_tuple.return  turn-1                    t1  ok   found=False
+          w1   2  saver.put.call          turn-1                    t1
+          w1   3  saver.put_writes.call   turn-1                    t1       task=01e2d9ba
+          w1   4  saver.put.return        turn-1                    t1  ok
+          w1   5  saver.put.call          turn-1                    t1
+          w1   6  saver.put_writes.return turn-1                    t1  ok   task=01e2d9ba
+          w1   7  saver.put.return        turn-1                    t1  ok
+          w1   8  node.start              turn-1                    t1       task=3a4b5d92 attempt=1 node=respond turn=0
+          w1   9  node.end                turn-1                    t1  ok   task=3a4b5d92 attempt=1 node=respond turn=0 outcome=completed
+          w1  10  saver.put_writes.call   turn-1                    t1       task=3a4b5d92
+          w1  11  saver.put.call          turn-1                    t1
+          w1  12  saver.put.return        turn-1                    t1  ok
+          w1  13  saver.put_writes.return turn-1                    t1  ok   task=3a4b5d92
+orchestrator   4  client.ok               turn-1                    t1  ok   worker=w1 worker_seq=13 output={'messages': [['human', 'human-1', 'First request.'], ['ai', 'ai:t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1:respond:0:1', 'Hello. What would you like to do? [thread t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1, node respond, turn 0, attempt 1]']]}
+orchestrator   5  client.invoke           turn-2                    t1       worker=w1
+orchestrator   6  dispatch.send           turn-2                    t1       to=w1
+orchestrator   7  client.invoke           turn-3                    t1       worker=w2
+orchestrator   8  dispatch.send           turn-3                    t1       to=w2
+          w1  14  saver.get_tuple.call    turn-2                    t1
+          w2   0  saver.get_tuple.call    turn-3                    t1
+          w1  15  fp.hit                  turn-2   get_tuple.after  t1       action=pause occurrence=1
+          w2   1  fp.hit                  turn-3   get_tuple.after  t1       action=pause occurrence=1
+orchestrator   9  fp.release                                                 proc=w1 hit_seq=15 barrier=B1
+orchestrator  10  fp.release                                                 proc=w2 hit_seq=1 barrier=B2
+          w2   2  fp.action               turn-3   get_tuple.after  t1       hit_seq=1 action=pause
+          w1  16  fp.action               turn-2   get_tuple.after  t1       hit_seq=15 action=pause
+          w2   3  saver.get_tuple.return  turn-3                    t1  ok   found=True
+          w1  17  saver.get_tuple.return  turn-2                    t1  ok   found=True
+          w1  18  saver.put.call          turn-2                    t1
+          w2   4  saver.put.call          turn-3                    t1
+          w1  19  saver.put_writes.call   turn-2                    t1       task=708c9395
+          w2   5  saver.put_writes.call   turn-3                    t1       task=017b933f
+          w1  20  saver.put.return        turn-2                    t1  ok
+          w1  21  saver.put.call          turn-2                    t1
+          w1  22  saver.put_writes.return turn-2                    t1  ok   task=708c9395
+          w2   6  saver.put.return        turn-3                    t1  ok
+          w2   7  saver.put.call          turn-3                    t1
+          w1  23  saver.put.return        turn-2                    t1  ok
+          w2   8  saver.put_writes.return turn-3                    t1  ok   task=017b933f
+          w2   9  saver.put.return        turn-3                    t1  ok
+          w1  24  node.start              turn-2                    t1       task=eb75d449 attempt=1 node=respond turn=1
+          w1  25  node.end                turn-2                    t1  ok   task=eb75d449 attempt=1 node=respond turn=1 outcome=completed
+          w1  26  saver.put_writes.call   turn-2                    t1       task=eb75d449
+          w1  27  saver.put.call          turn-2                    t1
+          w2  10  node.start              turn-3                    t1       task=882b3818 attempt=2 node=respond turn=1
+          w2  11  node.end                turn-3                    t1  ok   task=882b3818 attempt=2 node=respond turn=1 outcome=completed
+          w1  28  saver.put.return        turn-2                    t1  ok
+          w2  12  saver.put_writes.call   turn-3                    t1       task=882b3818
+          w2  13  saver.put.call          turn-3                    t1
+          w1  29  saver.put_writes.return turn-2                    t1  ok   task=eb75d449
+orchestrator  11  client.ok               turn-2                    t1  ok   worker=w1 worker_seq=29 output={'messages': [['human', 'human-1', 'First request.'], ['ai', 'ai:t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1:respond:0:1', 'Hello. What would you like to do? [thread t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1, node respond, turn 0, attempt 1]'], ['human', 'human-2', 'Second request.'], ['ai', 'ai:t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1:respond:1:1', 'Noted: your second request is queued. [thread t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1, node respond, turn 1, attempt 1]']]}
+          w2  14  saver.put.return        turn-3                    t1  ok
+          w2  15  saver.put_writes.return turn-3                    t1  ok   task=882b3818
+orchestrator  12  client.ok               turn-3                    t1  ok   worker=w2 worker_seq=15 output={'messages': [['human', 'human-1', 'First request.'], ['ai', 'ai:t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1:respond:0:1', 'Hello. What would you like to do? [thread t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1, node respond, turn 0, attempt 1]'], ['human', 'human-3', 'Third request.'], ['ai', 'ai:t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1:respond:1:2', 'Noted: your second request is queued. [thread t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1, node respond, turn 1, attempt 2]']]}
+orchestrator  13  worker.exit                                                proc=w2 pid=34343 returncode=0 signal=None
+orchestrator  14  worker.exit                                                proc=w1 pid=34342 returncode=0 signal=None

@@ -1,0 +1,13 @@
+{
+  "batch": "t09-w1-misuse-20261010T081351Z",
+  "cell": "w1-misuse",
+  "client_outcomes": {
+    "ok": 100
+  },
+  "invalid": 0,
+  "invalid_trials": {},
+  "observations": {},
+  "trials": 50,
+  "v": 1,
+  "valid": 50
+}
