@@ -14,6 +14,7 @@ const LineageCanvas = dynamic(() => import("./lineage-canvas"), {
   ),
 });
 
-export function LineageView() {
-  return <LineageCanvas />;
+/** The checkpoint graph; `note` says why it has no nodes yet. */
+export function LineageView({ note }: { note: string }) {
+  return <LineageCanvas note={note} />;
 }

@@ -1,8 +1,11 @@
 import Link from "next/link";
 
+import { DemoBanner } from "@/components/DemoBanner";
 import { EmptyState, Panel, Readout } from "@/components/panel";
-import { VerdictBadge } from "@/components/verdict";
+import { OutcomeBadge, VerdictBadge } from "@/components/verdict";
+import { evidence, findings, latestBatch, runtimeOf } from "@/lib/batches";
 import { EXPERIENCES } from "@/lib/experiences";
+import { firstPages, pagePath } from "@/lib/routes";
 import { verdictLegend } from "@/lib/tokens";
 
 const NAMEPLATE: readonly [label: string, value: string][] = [
@@ -13,8 +16,14 @@ const NAMEPLATE: readonly [label: string, value: string][] = [
 ];
 
 export default function OverviewPage() {
+  const all = evidence();
+  const batch = latestBatch(all);
+  const finding = findings(all)[0] ?? null;
+  const pages = firstPages(all);
+  const href = (route: string) => (route === "/" ? "/" : (pages[route] ?? `${route}/`));
   return (
     <div className="grid gap-12">
+      <DemoBanner sources={[batch, finding].filter((s) => s !== null)} />
       <header className="grid gap-8 border-b border-rule pb-10 lg:grid-cols-12 lg:gap-6">
         <div className="grid content-start gap-6 lg:col-span-8">
           <p className="label">Evidence explorer</p>
@@ -42,9 +51,18 @@ export default function OverviewPage() {
 
       <Panel label="Latest validated run">
         <dl className="grid grid-cols-2 gap-5 sm:grid-cols-4">
-          <Readout label="Batch" value={null} />
-          <Readout label="Date" value={null} />
-          <Readout label="Runtime" value={null} />
+          <Readout label="Batch" value={batch?.id ?? null} />
+          <Readout label="Date" value={batch?.manifest.generated_at ?? null} />
+          <Readout
+            label="Runtime"
+            value={
+              batch
+                ? runtimeOf(batch)
+                    .map((name) => `${name} ${batch.manifest.packages[name]}`)
+                    .join(", ")
+                : null
+            }
+          />
           <Readout label="Controls passing" value={null} />
         </dl>
         <dl
@@ -66,7 +84,9 @@ export default function OverviewPage() {
           ))}
         </dl>
         <p className="mt-6 border-t border-rule pt-4 text-sm text-ink-muted">
-          Pre-results. No batch has been validated, so there is nothing to count yet.
+          {batch
+            ? "Counts and controls come from the batch summary, which this build does not have."
+            : "Pre-results. No batch has been validated, so there is nothing to count yet."}
         </p>
       </Panel>
 
@@ -78,7 +98,16 @@ export default function OverviewPage() {
           </EmptyState>
         </Panel>
         <Panel label="Flagship finding" className="lg:col-span-5">
-          <EmptyState>No finding has been published.</EmptyState>
+          {finding ? (
+            <div className="grid justify-items-start gap-3">
+              <OutcomeBadge outcome={finding.occurrences[0]!.result.outcome} />
+              <Link href={pagePath("findings", finding.id)} className="readout text-sm text-ink">
+                {finding.id}
+              </Link>
+            </div>
+          ) : (
+            <EmptyState>No finding has been published.</EmptyState>
+          )}
         </Panel>
       </div>
 
@@ -105,8 +134,8 @@ export default function OverviewPage() {
               className="grid gap-1.5 px-5 py-4 md:grid-cols-[13rem_15rem_1fr] md:items-baseline md:gap-6"
             >
               <h3 className="font-semibold text-ink">
-                {e.href ? (
-                  <Link href={e.href} className="no-underline hover:underline">
+                {e.linked ? (
+                  <Link href={href(e.route)} className="no-underline hover:underline">
                     {e.name}
                   </Link>
                 ) : (
