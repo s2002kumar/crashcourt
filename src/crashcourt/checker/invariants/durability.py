@@ -21,9 +21,10 @@ def i1a(ctx: Context) -> Observation:
     """Under sync, no node.start of step k+1 precedes, in the same process, the ok
     saver.put.return of the checkpoint for step k.
 
-    A task belongs to the step after the checkpoint its writes are linked to (the checkpoint id on
-    its saver.put_writes call), so the pair is (put of checkpoint C, node.start of a task linked to
-    C), both in one process and one run (op). The first tick after the input checkpoint counts (the
+    A task belongs to the step after the checkpoint it ran from: the checkpoint id its node.start
+    carries (T-09 records it), or else the one its writes are linked to (the checkpoint id on its
+    saver.put_writes call). The pair is (put of checkpoint C, node.start of a task from C), both in
+    one process and one run (op). The first tick after the input checkpoint counts (the
     reading recorded for LG-DUR-SYNC). A node.start with no ok return of its checkpoint before it,
     in the run that called put for that checkpoint, is an anomaly; a later run that starts from the
     checkpoint is not paired with it. Exercised: at least one such pair.
@@ -49,7 +50,13 @@ def i1a(ctx: Context) -> Observation:
         for start in events:
             if start.kind != "node.start" or start.task_id is None:
                 continue
-            for linked in facts.task_checkpoints.get(start.task_id, ()):
+            own = start.thread_id or facts.thread_of(start)
+            links = (
+                ((own, start.checkpoint_ns or "", start.checkpoint_id),)
+                if start.checkpoint_id is not None and own is not None
+                else facts.task_checkpoints.get(start.task_id, ())
+            )
+            for linked in links:
                 key = (start.op_id, *linked)
                 if key not in calls:
                     continue
