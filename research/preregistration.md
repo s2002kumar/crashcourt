@@ -21,6 +21,13 @@ The JSON block at the end is the binding part; the prose and the table explain i
   same in every trial; `*` covers every invariant the cell does not name. `NOT_EXERCISED` predicts that the
   invariant is omitted from the results. Cells whose outcome is honestly unknown say `unknown`; their
   predictions record the expected shape and are compared, but not flagged.
+- **Observations.** A cell may also predict what it observes apart from any outcome: rows of the effect
+  ledger's export (by effect, with their count and attempts), a record in `checker.json` that is not an
+  outcome, or whether an invariant showed an anomaly at all, whatever its class. Each is matched in every
+  valid trial. Every replication names its published observation this way, so it is checked even where
+  its outcome is GAP or nothing is scored: langgraph#8039 (K1a) by two charge rows with attempts 1 and 2,
+  langgraph#8764 (K4) by the record of an accepted run with no durable record, and langgraph#8796 (K3) by
+  the fork.
 - **The environment.** Every batch's manifest must hold each value under `environment`.
 - **Instrument checks.** Checks that are not batches each need recorded evidence before this is final:
   artifact and saver mutants (C5), checker determinism, transparency (C4), the sequential reference (C9), the
@@ -49,9 +56,11 @@ The JSON block at the end is the binding part; the prose and the table explain i
 ## Run order
 
 The instrument runs first. Every `instrument` cell (C1, C3, C2, the misuse controls, and the three published
-replications, langgraph#8039, #8796, and #8764) must come out as predicted under this commit, the frozen
-checker, and the same environment before any `new-evidence` cell is authorized. A replication that disagrees
-with its published outcome opens a harness investigation; it is never a finding.
+replications, langgraph#8039, #8796, and #8764) must come out as predicted, in its outcomes and its
+observations, under this commit, the frozen checker, and the same environment before any `new-evidence` cell
+is authorized. A replication that disagrees with its published observation opens a harness investigation; it
+is never a finding. The specification's C11 bar is 19 of 20; these cells are deterministic, so the gate asks
+for every valid trial, and a split marks the cell UNSTABLE before it can count as a replication.
 
 ## Seeds
 
@@ -88,8 +97,9 @@ It stays a draft until every one of these holds:
   source.
 - T-10's FROZEN.md exists, and `checker` pins its hashes: the checker files, FROZEN.md itself, the clause
   registry, every effect model, and every landmark table.
-- Every `pending` entry is resolved: my ruling on the running-at-a-stop definition against the #8039
-  replication (K1a, A1, E1), and the LG-PW split into LG-PW-EXC and LG-PW-CRASH (K1b, N4, A2, A3).
+- Every `pending` entry is resolved. What remains: the landmark occurrences under async (A1-A4), which
+  need fault-free async histories audited as T-09's sync corpus was.
+- Every checker record a cell observes (K4's) is worded as the frozen checker writes it.
 - The environment and runner fingerprint is fixed under `environment`.
 - Every instrument requirement is represented, as a cell or as an instrument check with its evidence recorded.
 
@@ -98,47 +108,76 @@ Then `state` becomes `final` in my commit.
 T-09's fault-free histories, the current set and the final one after the restack, are inputs to the instrument
 and to the landmark derivation before the freeze. Neither is evidence about any cell here.
 
+## Rulings applied (2026-10-10)
+
+My rulings on T-10's readings, applied here before the freeze:
+
+- **D1.** A second run on the thread (a redelivery, a client's retry after `client.fail`, or concurrent
+  writers under LGP-DT) never suppresses I1a, I1b, or I11. It still covers I2, I4, and I5-I8, which are about
+  what a second run does. So K1a and N9 judge durability by PASS or a candidate, and the retry cells
+  (N1-N4, N9) read I4 as NO_ANOMALY_UNSPECIFIED or GAP, never PASS.
+- **D2.** I4 is PASS under LG-PW-EXC only where a node actually raised; otherwise NO_ANOMALY_UNSPECIFIED. No
+  W1 or W5 cell predicts I4 PASS; the fault-free controls, N10, and A4 predict NO_ANOMALY_UNSPECIFIED.
+- **P1.** A node whose `node.end` occurred before the stop was not running. A duplicate after a stop at L-EXW
+  is GAP on I4 and I7a, with pending-write semantics named: K1a, A1, and N3 predict GAP, and #8039 is
+  replicated on its observation, two charge rows with attempts 1 and 2.
+- **P2.** K4 scores no outcome; #8764 is replicated on `checker.json`'s record of an accepted run with no
+  durable record, in every valid trial.
+- **P4.** K3 and N8 hold a worker at a barrier (a held pause, C2's shape: the writer set is concurrent by
+  dispatch overlap) instead of SIGSTOP, which T-07 cannot schedule at a failpoint.
+- **P5.** Arms name the audited occurrences: L-IN 1, L-RES 2 (approval's RESUME write, not the null task's
+  copy), L-EXW 3, L-EXC 2, L-T1 3, and L-GET 1, which C2's barriers (K2, N5) use.
+- **P6.** K1b, N4, A2, and A3's I2 cite LG-PW-CRASH: NO_ANOMALY_UNSPECIFIED when the committed writes are
+  reused, GAP on a re-run.
+
+## Deferred from the first matrix
+
+- **E1 (K1a under exit).** Under exit durability LangGraph makes no `put_writes` call during a run and saves
+  checkpoints and writes only when the loop exits, so L-EXW never occurs and there is no kill point to arm.
+  No fault-free exit histories exist to derive one, and LG-DUR-EXIT is mapped to no invariant, so its
+  duplicate could read only GAP. It comes back only with a landmark derived from audited exit-mode histories
+  and an I4 rule under LG-DUR-EXIT, both before a freeze.
+
 ## Cells
 
 | Cell | Phase | Evidence | Workload | Durability | Fault | Workers | N | Predicted | Observed | |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| C1-w1-sync | instrument | control (C1) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w1-async | instrument | control (C1) | w1 | async | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w1-exit | instrument | control (C1) | w1 | exit | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w1-reject-sync | instrument | control (C1) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w1-reject-async | instrument | control (C1) | w1 | async | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w1-sync | instrument | control (C1) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w1-async | instrument | control (C1) | w1 | async | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w1-exit | instrument | control (C1) | w1 | exit | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w1-reject-sync | instrument | control (C1) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w1-reject-async | instrument | control (C1) | w1 | async | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
 | C1-w1-misuse-sync | instrument | control (C1) | w1-misuse | sync | - | 1 | 50 | I4: EXPECTED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
 | C1-w1-misuse-async | instrument | control (C1) | w1-misuse | async | - | 1 | 50 | I4: EXPECTED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w5-sync | instrument | control (C1) | w5 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w5-async | instrument | control (C1) | w5 | async | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C3-w1-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C3-w1-reject-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C3-w5-sync | instrument | control (C3) | w5 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w5-sync | instrument | control (C1) | w5 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w5-async | instrument | control (C1) | w5 | async | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C3-w1-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C3-w1-reject-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C3-w5-sync | instrument | control (C3) | w5 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
 | K2 | instrument | control (C2) | w5 | sync | F06 | 2 | 20 | I5a: GAP; I6a: NO_ANOMALY_UNSPECIFIED or GAP | anomaly on I5a: present |  |
 | K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 1 row, attempts [1] |  |
 | K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 0 rows, attempts [] |  |
-| K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 1 | 20 | I4: EXPECTED; I7a: EXPECTED; I1b: PASS | ledger charge: 2 rows, attempts [1, 2] | pending |
+| K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 1 | 20 | I4: GAP; I7a: GAP; I1b: PASS | ledger charge: 2 rows, attempts [1, 2] |  |
 | K3 | instrument | replication (langgraph#8796) | w5 | sync | F05 | 2 | 20 | I5a: GAP; I6a: GAP | anomaly on I5a: present |  |
 | K4 | instrument | replication (langgraph#8764) | w1 | sync | F01 | 1 | 20 | I1a: NOT_EXERCISED; I1b: NOT_EXERCISED | checker observation 'accepted run with no durable record: op start-1 ended': 1 |  |
-| K1b | new-evidence | new-evidence | w1 | sync | F01 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | pending |
+| K1b | new-evidence | new-evidence | w1 | sync | F01 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - |  |
 | N1 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: GAP; I7a: GAP | - | unknown |
-| N2 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: PASS or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown |
-| N3 | new-evidence | new-evidence | w1 | sync | F10 | 1 | 20 | I4: EXPECTED | - |  |
-| N4 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | unknown, pending |
+| N2 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown |
+| N3 | new-evidence | new-evidence | w1 | sync | F10 | 1 | 20 | I4: GAP | - |  |
+| N4 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | unknown |
 | N5 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP; I7a: GAP; I7c: GAP; I8: GAP | - |  |
 | N6 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP | - |  |
 | N7 | new-evidence | new-evidence | w1 | sync | F07 | 1 | 20 | I4: GAP | - | unknown |
 | N8 | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP | - |  |
 | N9 | new-evidence | new-evidence | w1 | sync | F13 | 1 | 20 | I1b: PASS | - |  |
-| N10 | new-evidence | new-evidence | w1 | sync | F12 | 1 | 20 | I1a: PASS; I1b: PASS; I11: PASS; I4: PASS | - |  |
+| N10 | new-evidence | new-evidence | w1 | sync | F12 | 1 | 20 | I1a: PASS; I1b: PASS; I11: PASS; I4: NO_ANOMALY_UNSPECIFIED | - |  |
 | N11 | new-evidence | new-evidence | w1 | sync | F01 | 1 | 20 | I7c: PASS or NO_ANOMALY_UNSPECIFIED | - | unknown |
 | N12 | new-evidence | new-evidence | w5 | sync | F11 | 1 | 20 | I5: NO_ANOMALY_UNSPECIFIED | - | unknown |
 | N12b | new-evidence | new-evidence | w5 | sync | F10 | 1 | 20 | I5b: GAP | - |  |
-| A1 | new-evidence | new-evidence | w1 | async | F01 | 1 | 20 | I4: EXPECTED; I1b: NOT_EXERCISED or EXPECTED | - | pending |
+| A1 | new-evidence | new-evidence | w1 | async | F01 | 1 | 20 | I4: GAP; I7a: GAP; I1b: NOT_EXERCISED or EXPECTED | - | pending |
 | A2 | new-evidence | new-evidence | w1 | async | F01 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | pending |
 | A3 | new-evidence | new-evidence | w1 | async | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown, pending |
-| A4 | new-evidence | new-evidence | w1 | async | F12 | 1 | 20 | I4: PASS; *: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| E1 | new-evidence | new-evidence | w1 | exit | F01 | 1 | 20 | I4: EXPECTED; I1a: NOT_EXERCISED; I1b: NOT_EXERCISED | - | pending |
+| A4 | new-evidence | new-evidence | w1 | async | F12 | 1 | 20 | I4: NO_ANOMALY_UNSPECIFIED; *: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | pending |
 
 ## Deviations
 
@@ -166,6 +205,13 @@ affects.
       "pending": null,
       "phase": "instrument",
       "predicted": [
+        {
+          "expect": [
+            "NO_ANOMALY_UNSPECIFIED"
+          ],
+          "invariant": "I4",
+          "note": "D2: no node raised, so LG-PW-EXC gives no PASS"
+        },
         {
           "expect": [
             "PASS",
@@ -201,6 +247,13 @@ affects.
       "predicted": [
         {
           "expect": [
+            "NO_ANOMALY_UNSPECIFIED"
+          ],
+          "invariant": "I4",
+          "note": "D2: no node raised, so LG-PW-EXC gives no PASS"
+        },
+        {
+          "expect": [
             "PASS",
             "NO_ANOMALY_UNSPECIFIED",
             "NOT_EXERCISED"
@@ -232,6 +285,14 @@ affects.
       "pending": null,
       "phase": "instrument",
       "predicted": [
+        {
+          "expect": [
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I4",
+          "note": "D2: no node raised, so LG-PW-EXC gives no PASS"
+        },
         {
           "expect": [
             "PASS",
@@ -267,6 +328,14 @@ affects.
       "predicted": [
         {
           "expect": [
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I4",
+          "note": "D2: no node raised, so LG-PW-EXC gives no PASS"
+        },
+        {
+          "expect": [
             "PASS",
             "NO_ANOMALY_UNSPECIFIED",
             "NOT_EXERCISED"
@@ -298,6 +367,14 @@ affects.
       "pending": null,
       "phase": "instrument",
       "predicted": [
+        {
+          "expect": [
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I4",
+          "note": "D2: no node raised, so LG-PW-EXC gives no PASS"
+        },
         {
           "expect": [
             "PASS",
@@ -413,6 +490,14 @@ affects.
       "predicted": [
         {
           "expect": [
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I4",
+          "note": "D2: no node raised, so LG-PW-EXC gives no PASS"
+        },
+        {
+          "expect": [
             "PASS",
             "NO_ANOMALY_UNSPECIFIED",
             "NOT_EXERCISED"
@@ -444,6 +529,14 @@ affects.
       "pending": null,
       "phase": "instrument",
       "predicted": [
+        {
+          "expect": [
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I4",
+          "note": "D2: no node raised, so LG-PW-EXC gives no PASS"
+        },
         {
           "expect": [
             "PASS",
@@ -479,6 +572,13 @@ affects.
       "predicted": [
         {
           "expect": [
+            "NO_ANOMALY_UNSPECIFIED"
+          ],
+          "invariant": "I4",
+          "note": "D2: no node raised, so LG-PW-EXC gives no PASS"
+        },
+        {
+          "expect": [
             "PASS",
             "NO_ANOMALY_UNSPECIFIED",
             "NOT_EXERCISED"
@@ -490,7 +590,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/C3-w1-sync.yaml",
       "scenario_sha256": null,
-      "trigger": "every failpoint the new-evidence cells arm on this workload armed with action none; a latency toxic of 0 ms and 0 jitter on each worker's proxy for the whole trial",
+      "trigger": "every failpoint the new-evidence cells arm on this workload, at the same landmarks and audited occurrences, armed with action none; a latency toxic of 0 ms and 0 jitter on each worker's proxy for the whole trial",
       "workers": 1,
       "workload": "w1"
     },
@@ -512,6 +612,14 @@ affects.
       "predicted": [
         {
           "expect": [
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I4",
+          "note": "D2: no node raised, so LG-PW-EXC gives no PASS"
+        },
+        {
+          "expect": [
             "PASS",
             "NO_ANOMALY_UNSPECIFIED",
             "NOT_EXERCISED"
@@ -523,7 +631,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/C3-w1-reject-sync.yaml",
       "scenario_sha256": null,
-      "trigger": "every failpoint the new-evidence cells arm on this workload armed with action none; a latency toxic of 0 ms and 0 jitter on each worker's proxy for the whole trial",
+      "trigger": "every failpoint the new-evidence cells arm on this workload, at the same landmarks and audited occurrences, armed with action none; a latency toxic of 0 ms and 0 jitter on each worker's proxy for the whole trial",
       "workers": 1,
       "workload": "w1"
     },
@@ -545,6 +653,14 @@ affects.
       "predicted": [
         {
           "expect": [
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I4",
+          "note": "D2: no node raised, so LG-PW-EXC gives no PASS"
+        },
+        {
+          "expect": [
             "PASS",
             "NO_ANOMALY_UNSPECIFIED",
             "NOT_EXERCISED"
@@ -556,7 +672,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/C3-w5-sync.yaml",
       "scenario_sha256": null,
-      "trigger": "every failpoint the new-evidence cells arm on this workload armed with action none; a latency toxic of 0 ms and 0 jitter on each worker's proxy for the whole trial",
+      "trigger": "every failpoint the new-evidence cells arm on this workload, at the same landmarks and audited occurrences, armed with action none; a latency toxic of 0 ms and 0 jitter on each worker's proxy for the whole trial",
       "workers": 1,
       "workload": "w5"
     },
@@ -602,7 +718,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/K2.yaml",
       "scenario_sha256": null,
-      "trigger": "both workers paused at get_tuple.after for their turn ops, released together",
+      "trigger": "both workers held at L-GET (occurrence 1, get_tuple.after) for their turn ops, released together",
       "workers": 2,
       "workload": "w5"
     },
@@ -725,7 +841,7 @@ affects.
       "control": "C11",
       "deterministic": true,
       "durability": "sync",
-      "escalate_if": "anything but 20 of 20 as predicted: a harness investigation, never a finding",
+      "escalate_if": "the observation in fewer than 20 of 20 valid trials, or any outcome other than predicted: a harness investigation, never a finding",
       "evidence": "replication",
       "fault": "F01",
       "hypothesis": "H4",
@@ -744,35 +860,35 @@ affects.
           "source": "ledger"
         }
       ],
-      "pending": "the founder's ruling on spec 2.0's running-at-a-stop definition against C11-8039; T-10's current reading gives I4 GAP for this shape, not EXPECTED (a)",
+      "pending": null,
       "phase": "instrument",
       "predicted": [
         {
           "expect": [
-            "EXPECTED"
+            "GAP"
           ],
           "invariant": "I4",
-          "note": "(a): duplicate charge after a crash before commit"
+          "note": "P1: execute had ended at the kill, so it was not running; pending-write semantics own the re-run, and the reason names them"
         },
         {
           "expect": [
-            "EXPECTED"
+            "GAP"
           ],
           "invariant": "I7a",
-          "note": null
+          "note": "P1: execute had ended at the kill, so it was not running; pending-write semantics own the re-run, and the reason names them"
         },
         {
           "expect": [
             "PASS"
           ],
           "invariant": "I1b",
-          "note": null
+          "note": "D1: the redelivery does not suppress I1b; every acknowledged checkpoint survives"
         }
       ],
       "replication_of": "langgraph#8039",
       "scenario": "scenarios/first-matrix/K1a.yaml",
       "scenario_sha256": null,
-      "trigger": "SIGKILL at L-EXW put_writes.before (writes not committed); resume-1 redelivered to the worker's replacement",
+      "trigger": "SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before: execute has ended and its writes are not committed; resume-1 redelivered to the worker's replacement",
       "workers": 1,
       "workload": "w1"
     },
@@ -781,7 +897,7 @@ affects.
       "control": "C11",
       "deterministic": true,
       "durability": "sync",
-      "escalate_if": "any trial without a fork",
+      "escalate_if": "the fork in fewer than 20 of 20 valid trials: a harness investigation, never a finding",
       "evidence": "replication",
       "fault": "F05",
       "hypothesis": "H3",
@@ -811,13 +927,13 @@ affects.
             "GAP"
           ],
           "invariant": "I6a",
-          "note": "head decided by clock"
+          "note": "concurrent writers: the head's writer and the larger id are named (R3)"
         }
       ],
       "replication_of": "langgraph#8796",
       "scenario": "scenarios/first-matrix/K3.yaml",
       "scenario_sha256": null,
-      "trigger": "A SIGSTOP at L-T1 put.before; turn-1 redelivered to B; after B's client.ok, SIGCONT A",
+      "trigger": "A held at L-T1 (occurrence 3 of turn-1's put: after respond), put.before; turn-1 redelivered to B; after B's client.ok, A released: a held pause in C2's shape, not SIGSTOP",
       "workers": 2,
       "workload": "w5"
     },
@@ -826,7 +942,7 @@ affects.
       "control": "C11",
       "deterministic": true,
       "durability": "sync",
-      "escalate_if": "any row present for the thread; checker.json must record the accepted run with no record",
+      "escalate_if": "the observation in fewer than 20 of 20 valid trials, or any row for the thread: a harness investigation, never a finding",
       "evidence": "replication",
       "fault": "F01",
       "hypothesis": null,
@@ -849,20 +965,20 @@ affects.
             "NOT_EXERCISED"
           ],
           "invariant": "I1a",
-          "note": null
+          "note": "no checkpoint was written, so nothing is scored (R1)"
         },
         {
           "expect": [
             "NOT_EXERCISED"
           ],
           "invariant": "I1b",
-          "note": null
+          "note": "no checkpoint was acknowledged"
         }
       ],
       "replication_of": "langgraph#8764",
       "scenario": "scenarios/first-matrix/K4.yaml",
       "scenario_sha256": null,
-      "trigger": "SIGKILL at L-IN put.before, occurrence 1 of the start op",
+      "trigger": "SIGKILL at L-IN (occurrence 1 of start-1's put), put.before",
       "workers": 1,
       "workload": "w1"
     },
@@ -879,7 +995,7 @@ affects.
       "master_seed": null,
       "n": 20,
       "observations": [],
-      "pending": "the LG-PW split into LG-PW-EXC and LG-PW-CRASH (a T-02 follow-up)",
+      "pending": null,
       "phase": "new-evidence",
       "predicted": [
         {
@@ -888,13 +1004,13 @@ affects.
             "GAP"
           ],
           "invariant": "I2",
-          "note": "writes reused, or re-run despite committed writes; cites LG-PW-CRASH (describes) after the split"
+          "note": "LG-PW-CRASH (decision 2): NO_ANOMALY_UNSPECIFIED when the committed writes are reused, GAP on a re-run"
         }
       ],
       "replication_of": null,
       "scenario": "scenarios/first-matrix/K1b.yaml",
       "scenario_sha256": null,
-      "trigger": "SIGKILL at L-EXW put_writes.after (writes committed); resume-1 redelivered",
+      "trigger": "SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.after (writes committed); resume-1 redelivered",
       "workers": 1,
       "workload": "w1"
     },
@@ -932,7 +1048,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/N1.yaml",
       "scenario_sha256": null,
-      "trigger": "pause at L-RES put_writes.before; downstream timeout toxic on A's proxy; release; heal after a fixed delay; the client retries resume-1 once as resume-2 after client.fail",
+      "trigger": "pause at L-RES (occurrence 2 of resume-1's put_writes: approval's RESUME write, not the null task's copy), put_writes.before; downstream timeout toxic on A's proxy; release; heal after a fixed delay; the client retries resume-1 once as resume-2 after client.fail",
       "workers": 1,
       "workload": "w1"
     },
@@ -954,11 +1070,11 @@ affects.
       "predicted": [
         {
           "expect": [
-            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
             "GAP"
           ],
           "invariant": "I4",
-          "note": "no duplicate, or a second resume on a non-interrupted thread"
+          "note": "no duplicate, or a duplicate on the retried thread; D1: the retry is a second resume, so I4 has no PASS"
         },
         {
           "expect": [
@@ -971,7 +1087,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/N2.yaml",
       "scenario_sha256": null,
-      "trigger": "pause at L-EXC put.before; downstream timeout; release; heal after a fixed delay; retry as resume-2",
+      "trigger": "pause at L-EXC (occurrence 2 of resume-1's put), put.before; downstream timeout; release; heal after a fixed delay; retry as resume-2",
       "workers": 1,
       "workload": "w1"
     },
@@ -980,7 +1096,7 @@ affects.
       "control": null,
       "deterministic": true,
       "durability": "sync",
-      "escalate_if": "not 20 of 20 EXPECTED",
+      "escalate_if": "not 20 of 20 GAP",
       "evidence": "new-evidence",
       "fault": "F10",
       "hypothesis": null,
@@ -993,16 +1109,16 @@ affects.
       "predicted": [
         {
           "expect": [
-            "EXPECTED"
+            "GAP"
           ],
           "invariant": "I4",
-          "note": "(a): the writes never committed, so the node re-runs"
+          "note": "P1: execute had ended before its writes failed, so the re-run is pending-write semantics' case; D1: the retry is a second resume"
         }
       ],
       "replication_of": null,
       "scenario": "scenarios/first-matrix/N3.yaml",
       "scenario_sha256": null,
-      "trigger": "pause at L-EXW put_writes.before; upstream reset_peer; release; retry",
+      "trigger": "pause at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before; upstream reset_peer; release; retry",
       "workers": 1,
       "workload": "w1"
     },
@@ -1019,7 +1135,7 @@ affects.
       "master_seed": null,
       "n": 20,
       "observations": [],
-      "pending": "the LG-PW split into LG-PW-EXC and LG-PW-CRASH (a T-02 follow-up)",
+      "pending": null,
       "phase": "new-evidence",
       "predicted": [
         {
@@ -1028,13 +1144,13 @@ affects.
             "GAP"
           ],
           "invariant": "I2",
-          "note": "committed writes reused, or execute re-run"
+          "note": "LG-PW-CRASH (decision 2): NO_ANOMALY_UNSPECIFIED when the committed writes are reused, GAP on a re-run"
         }
       ],
       "replication_of": null,
       "scenario": "scenarios/first-matrix/N4.yaml",
       "scenario_sha256": null,
-      "trigger": "pause at L-EXW put_writes.before; downstream timeout; release; heal after a fixed delay; retry",
+      "trigger": "pause at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before; downstream timeout; release; heal after a fixed delay; retry",
       "workers": 1,
       "workload": "w1"
     },
@@ -1086,7 +1202,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/N5.yaml",
       "scenario_sha256": null,
-      "trigger": "A and B paused at get_tuple.after for resume-1 (approve, A) and resume-2 (reject, B); release A; on A's L-RES put_writes.return, release B",
+      "trigger": "A and B held at L-GET (occurrence 1, get_tuple.after) for resume-1 (approve, A) and resume-2 (reject, B); release A; on A's L-RES (occurrence 2) put_writes.return, release B",
       "workers": 2,
       "workload": "w1"
     },
@@ -1200,7 +1316,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/N8.yaml",
       "scenario_sha256": null,
-      "trigger": "A SIGSTOP at L-EXC put.before (charge already fired); resume-1 redelivered to B; after B's client.ok, SIGCONT A",
+      "trigger": "A held at L-EXC (occurrence 2 of resume-1's put), put.before, with the charge already fired; resume-1 redelivered to B; after B's client.ok, A released: a held pause in C2's shape, not SIGSTOP",
       "workers": 2,
       "workload": "w1"
     },
@@ -1225,13 +1341,13 @@ affects.
             "PASS"
           ],
           "invariant": "I1b",
-          "note": "every earlier acknowledged checkpoint survives"
+          "note": "every earlier acknowledged checkpoint survives; D1: the retry does not suppress I1b"
         }
       ],
       "replication_of": null,
       "scenario": "scenarios/first-matrix/N9.yaml",
       "scenario_sha256": null,
-      "trigger": "pause at L-EXC put.before; database restart; release; the put fails; retry as resume-2",
+      "trigger": "pause at L-EXC (occurrence 2 of resume-1's put), put.before; database restart; release; the put fails; retry as resume-2",
       "workers": 1,
       "workload": "w1"
     },
@@ -1274,16 +1390,16 @@ affects.
         },
         {
           "expect": [
-            "PASS"
+            "NO_ANOMALY_UNSPECIFIED"
           ],
           "invariant": "I4",
-          "note": null
+          "note": "D2: no node raised, so LG-PW-EXC gives no PASS"
         }
       ],
       "replication_of": null,
       "scenario": "scenarios/first-matrix/N10.yaml",
       "scenario_sha256": null,
-      "trigger": "pause at L-EXC put.before; downstream latency 24 h; release; heal after a fixed delay",
+      "trigger": "pause at L-EXC (occurrence 2 of resume-1's put), put.before; downstream latency 24 h; release; heal after a fixed delay",
       "workers": 1,
       "workload": "w1"
     },
@@ -1315,7 +1431,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/N11.yaml",
       "scenario_sha256": null,
-      "trigger": "W1 with the resume rejected; SIGKILL at L-RES put_writes.after (resume committed); redeliver",
+      "trigger": "W1 with the resume rejected; SIGKILL at L-RES (occurrence 2 of resume-1's put_writes), put_writes.after (resume committed); redeliver",
       "workers": 1,
       "workload": "w1"
     },
@@ -1346,7 +1462,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/N12.yaml",
       "scenario_sha256": null,
-      "trigger": "pause at L-T1 put.before; downstream timeout; release; heal; turn-2 to the same worker",
+      "trigger": "pause at L-T1 (occurrence 3 of turn-1's put), put.before; downstream timeout; release; heal; turn-2 to the same worker",
       "workers": 1,
       "workload": "w5"
     },
@@ -1394,15 +1510,22 @@ affects.
       "master_seed": null,
       "n": 20,
       "observations": [],
-      "pending": "the founder's ruling on spec 2.0's running-at-a-stop definition against C11-8039; T-10's current reading gives I4 GAP for this shape, not EXPECTED (a)",
+      "pending": "the landmark's occurrence under async, from audited fault-free async histories (T-09's audited corpus is sync only)",
       "phase": "new-evidence",
       "predicted": [
         {
           "expect": [
-            "EXPECTED"
+            "GAP"
           ],
           "invariant": "I4",
-          "note": "(a), unchanged"
+          "note": "P1: execute had ended at the kill, so it was not running; pending-write semantics own the re-run, and the reason names them"
+        },
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I7a",
+          "note": "P1: execute had ended at the kill, so it was not running; pending-write semantics own the re-run, and the reason names them"
         },
         {
           "expect": [
@@ -1416,7 +1539,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/A1.yaml",
       "scenario_sha256": null,
-      "trigger": "K1a under async",
+      "trigger": "K1a under async: SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before; resume-1 redelivered",
       "workers": 1,
       "workload": "w1"
     },
@@ -1433,7 +1556,7 @@ affects.
       "master_seed": null,
       "n": 20,
       "observations": [],
-      "pending": "the LG-PW split into LG-PW-EXC and LG-PW-CRASH (a T-02 follow-up)",
+      "pending": "the landmark's occurrence under async, from audited fault-free async histories (T-09's audited corpus is sync only)",
       "phase": "new-evidence",
       "predicted": [
         {
@@ -1442,13 +1565,13 @@ affects.
             "GAP"
           ],
           "invariant": "I2",
-          "note": "as K1b, classified with LG-PW-CRASH"
+          "note": "LG-PW-CRASH (decision 2): NO_ANOMALY_UNSPECIFIED when the committed writes are reused, GAP on a re-run"
         }
       ],
       "replication_of": null,
       "scenario": "scenarios/first-matrix/A2.yaml",
       "scenario_sha256": null,
-      "trigger": "K1b under async",
+      "trigger": "K1b under async: SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.after; resume-1 redelivered",
       "workers": 1,
       "workload": "w1"
     },
@@ -1465,7 +1588,7 @@ affects.
       "master_seed": null,
       "n": 20,
       "observations": [],
-      "pending": "the LG-PW split into LG-PW-EXC and LG-PW-CRASH (a T-02 follow-up)",
+      "pending": "the landmark's occurrence under async, from audited fault-free async histories (T-09's audited corpus is sync only)",
       "phase": "new-evidence",
       "predicted": [
         {
@@ -1474,7 +1597,7 @@ affects.
             "GAP"
           ],
           "invariant": "I2",
-          "note": "as N4"
+          "note": "LG-PW-CRASH (decision 2): NO_ANOMALY_UNSPECIFIED when the committed writes are reused, GAP on a re-run"
         },
         {
           "expect": [
@@ -1487,7 +1610,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/A3.yaml",
       "scenario_sha256": null,
-      "trigger": "N4 under async",
+      "trigger": "N4 under async: pause at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before; downstream timeout; release; heal after a fixed delay; retry",
       "workers": 1,
       "workload": "w1"
     },
@@ -1504,15 +1627,15 @@ affects.
       "master_seed": null,
       "n": 20,
       "observations": [],
-      "pending": null,
+      "pending": "the landmark's occurrence under async, from audited fault-free async histories (T-09's audited corpus is sync only)",
       "phase": "new-evidence",
       "predicted": [
         {
           "expect": [
-            "PASS"
+            "NO_ANOMALY_UNSPECIFIED"
           ],
           "invariant": "I4",
-          "note": null
+          "note": "D2: no node raised, so LG-PW-EXC gives no PASS"
         },
         {
           "expect": [
@@ -1526,52 +1649,7 @@ affects.
       "replication_of": null,
       "scenario": "scenarios/first-matrix/A4.yaml",
       "scenario_sha256": null,
-      "trigger": "N10 under async",
-      "workers": 1,
-      "workload": "w1"
-    },
-    {
-      "confidence": "predicted",
-      "control": null,
-      "deterministic": true,
-      "durability": "exit",
-      "escalate_if": "not as predicted",
-      "evidence": "new-evidence",
-      "fault": "F01",
-      "hypothesis": null,
-      "id": "E1",
-      "master_seed": null,
-      "n": 20,
-      "observations": [],
-      "pending": "the founder's ruling on spec 2.0's running-at-a-stop definition against C11-8039; T-10's current reading gives I4 GAP for this shape, not EXPECTED (a)",
-      "phase": "new-evidence",
-      "predicted": [
-        {
-          "expect": [
-            "EXPECTED"
-          ],
-          "invariant": "I4",
-          "note": "under LG-DUR-EXIT and LG-INT-RERUN: the resume re-runs from the interrupt"
-        },
-        {
-          "expect": [
-            "NOT_EXERCISED"
-          ],
-          "invariant": "I1a",
-          "note": null
-        },
-        {
-          "expect": [
-            "NOT_EXERCISED"
-          ],
-          "invariant": "I1b",
-          "note": null
-        }
-      ],
-      "replication_of": null,
-      "scenario": "scenarios/first-matrix/E1.yaml",
-      "scenario_sha256": null,
-      "trigger": "K1a under exit",
+      "trigger": "N10 under async: pause at L-EXC (occurrence 2 of resume-1's put), put.before; downstream latency 24 h; release; heal after a fixed delay",
       "workers": 1,
       "workload": "w1"
     }

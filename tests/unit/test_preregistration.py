@@ -11,6 +11,7 @@ from crashcourt.cli import main
 from crashcourt.experiment.preregistration import (
     PREREGISTRATION_PATH,
     PUBLISHED_REPLICATIONS,
+    Cell,
     PreregistrationError,
     block,
     parse,
@@ -32,13 +33,15 @@ def test_the_committed_preregistration_is_a_valid_draft() -> None:
     assert prereg.checker is None
     missing = "\n".join(prereg.missing())
     assert "no frozen checker is named" in missing
-    assert "cell K1a: pending" in missing
+    assert "cell K1a: pending" not in missing
+    assert "cell A1: pending" in missing  # no fault-free async histories audited yet
 
 
 def test_the_draft_holds_the_first_matrix_and_its_controls() -> None:
     prereg = parse(committed())
     ids = {c.id for c in prereg.cells}
-    assert {"K1a", "K1b", "K2", "K3", "K4", "K5", "N12b", "A4", "E1"} <= ids
+    assert {"K1a", "K1b", "K2", "K3", "K4", "K5", "N12b", "A4"} <= ids
+    assert "E1" not in ids  # deferred before the freeze; the prose records why
     assert {f"N{n}" for n in range(1, 13)} <= ids
     instrument = {c.id for c in prereg.cells if c.phase == "instrument"}
     replications = {c.replication_of for c in prereg.cells if c.evidence == "replication"}
@@ -49,6 +52,46 @@ def test_the_draft_holds_the_first_matrix_and_its_controls() -> None:
     assert all(c.n == 20 for c in prereg.cells if c.id[0] in "KNAE")
     assert all(c.n == 50 for c in prereg.cells if c.control in ("C1", "C3"))
     assert all(c.deterministic for c in prereg.cells)
+
+
+def _expect(cell: Cell, invariant: str) -> tuple[str, ...] | None:
+    return next((p.expect for p in cell.predicted if p.invariant == invariant), None)
+
+
+def test_the_draft_applies_the_rulings_of_2026_10_10() -> None:
+    prereg = parse(committed())
+    cells = {c.id: c for c in prereg.cells}
+    # P1: a duplicate after a stop at L-EXW, once execute has ended, is GAP on I4 and I7a.
+    for name in ("K1a", "A1"):
+        assert (_expect(cells[name], "I4"), _expect(cells[name], "I7a")) == (("GAP",), ("GAP",))
+    assert _expect(cells["N3"], "I4") == ("GAP",)
+    # D1: a second run never suppresses the durability invariants.
+    assert _expect(cells["K1a"], "I1b") == ("PASS",)
+    assert _expect(cells["N9"], "I1b") == ("PASS",)
+    # D2: I4 PASS needs a node that raised; no W1 or W5 cell has one.
+    for c in prereg.cells:
+        assert "PASS" not in (_expect(c, "I4") or ()), c.id
+    for name in ("K1b", "N4", "A2", "A3"):
+        assert _expect(cells[name], "I2") == ("NO_ANOMALY_UNSPECIFIED", "GAP")
+        assert "LG-PW" not in (cells[name].pending or "")  # the split is decided
+    # The replications are scored on their published observations, apart from the outcome.
+    assert [o.label() for o in cells["K1a"].observations] == [
+        "ledger charge: 2 rows, attempts [1, 2]"
+    ]
+    assert [o.label() for o in cells["K4"].observations] == [
+        "checker observation 'accepted run with no durable record: op start-1 ended': 1"
+    ]
+    assert cells["K3"].observations
+    # P4: no cell is scheduled with SIGSTOP; K3 and N8 hold a worker at a barrier.
+    for c in prereg.cells:
+        assert "SIGSTOP at" not in c.trigger and "SIGCONT" not in c.trigger, c.id
+    for name in ("K3", "N8"):
+        assert "held" in cells[name].trigger
+    # P5: arms name the audited occurrences.
+    assert "occurrence 2" in cells["N1"].trigger  # L-RES
+    assert "occurrence 3" in cells["N12"].trigger  # L-T1
+    assert "occurrence 3" in cells["K1a"].trigger  # L-EXW
+    assert "L-GET" in cells["K2"].trigger
 
 
 def test_the_cell_table_matches_the_data() -> None:
@@ -150,5 +193,5 @@ def test_parse_needs_exactly_one_block() -> None:
 def test_cli_check_reports_what_is_missing(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["experiment", "check", "--root", str(ROOT)]) == 0
     out = capsys.readouterr().out
-    assert "draft, 37 cells (18 instrument, 19 new evidence)" in out
+    assert "draft, 36 cells (18 instrument, 18 new evidence)" in out
     assert "before it can be final" in out
