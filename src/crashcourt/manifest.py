@@ -6,11 +6,14 @@ import hashlib
 import json
 import re
 import tomllib
-from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
-SCHEMA_VERSION = 1
+from pydantic import BaseModel, ConfigDict, Field
+
+from crashcourt.spec.events import Version
+
+SCHEMA_VERSION: Literal[1] = 1
 
 #: Distributions under test or on the persistence path; their versions are part of every result.
 #: Every langgraph* and psycopg* distribution in uv.lock belongs here (a unit test enforces it).
@@ -79,8 +82,11 @@ class ManifestFormatError(ValueError):
     """The text is not a manifest of this schema."""
 
 
-@dataclass(frozen=True)
-class Manifest:
+class Manifest(BaseModel):
+    """Schema v1. The JSON form is sorted, two-space indented, and ends with a newline."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
     generated_at: str
     git_sha: str
     git_dirty: bool
@@ -93,6 +99,13 @@ class Manifest:
     lockfile_sha256: str
     #: The clause registry's version (crashcourt.clauses.registry_sha256); verdicts cite its files.
     clause_registry_sha256: str
+    spec_sha256: str = Field(
+        description=(
+            "sha256 of the locked project specification the code was built against, from "
+            "spec-provenance.json. Provenance only: the specification is private, and the hash "
+            "identifies it without making it public or a run reproducible from it."
+        )
+    )
     packages: dict[str, str]
     psycopg_impl: str
     #: The wheel tags of the installed psycopg-binary; the binary implementation's libpq comes
@@ -112,10 +125,18 @@ class Manifest:
     image_ids: dict[str, str]
     postgres: dict[str, str]
     toxiproxy_version: str
-    schema_version: int = SCHEMA_VERSION
+    sink_clock_offset_ns: int | None = Field(
+        default=None,
+        description=(
+            "The effect sink's monotonic clock minus this host's, measured by doctor at the "
+            "midpoint of a /health request; null when no sink was checked. Recorded, never used "
+            "to order events; a canonical benchmark batch refuses one beyond its threshold."
+        ),
+    )
+    schema_version: Version = SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return self.model_dump()
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
@@ -130,7 +151,7 @@ class Manifest:
         version = record.get("schema_version")
         if type(version) is not int or version != SCHEMA_VERSION:
             raise ManifestFormatError(f"schema_version {version!r}, expected {SCHEMA_VERSION}")
-        names = {field.name for field in fields(cls)}
+        names = set(cls.model_fields)
         missing = sorted(names - record.keys())
         unknown = sorted(record.keys() - names)
         if missing or unknown:
@@ -140,13 +161,14 @@ class Manifest:
         wrong = sorted(name for name in names if not _has_field_type(name, record[name]))
         if wrong:
             raise ManifestFormatError(f"fields with the wrong type: {wrong}")
-        return cls(**record)
+        return cls.model_validate(record)
 
 
 #: JSON types of the fields that are not strings.
 _FIELD_TYPES: dict[str, str] = {
     "git_dirty": "bool",
     "schema_version": "int",
+    "sink_clock_offset_ns": "int or null",
     "packages": "map",
     "images": "map",
     "image_ids": "map",
@@ -160,6 +182,8 @@ def _has_field_type(name: str, value: object) -> bool:
         return isinstance(value, bool)
     if kind == "int":
         return type(value) is int
+    if kind == "int or null":
+        return value is None or type(value) is int
     if kind == "map":
         if not isinstance(value, dict):
             return False
@@ -178,6 +202,8 @@ def validate_manifest(m: Manifest) -> list[str]:
     if not SHA256_HEX.fullmatch(m.clause_registry_sha256):
         digest = m.clause_registry_sha256 or "missing"
         problems.append(f"clause_registry_sha256 is not a sha256 digest: {digest}")
+    if not SHA256_HEX.fullmatch(m.spec_sha256):
+        problems.append(f"spec_sha256 is not a sha256 digest: {m.spec_sha256 or 'missing'}")
     for name in _TEXT_FIELDS:
         if not getattr(m, name):
             problems.append(f"{name} is missing")
@@ -249,6 +275,7 @@ def pinned_view(m: Manifest) -> dict[str, Any]:
         "python_implementation": m.python_implementation,
         "lockfile_sha256": m.lockfile_sha256,
         "clause_registry_sha256": m.clause_registry_sha256,
+        "spec_sha256": m.spec_sha256,
         "packages": dict(sorted(m.packages.items())),
         "psycopg_impl": m.psycopg_impl,
         "libpq_major": libpq_major(m.libpq_version),

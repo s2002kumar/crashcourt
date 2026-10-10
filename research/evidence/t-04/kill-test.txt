@@ -1,0 +1,9 @@
+Kill test procedure (tests/integration/test_history_kill.py, kill_after), run 2026-10-08
+platform: Windows 11, python 3.12.13; the kill is Popen.kill() (TerminateProcess)
+kills: 100; exit statuses seen: [1]
+complete events recovered: 14603
+events acknowledged (emit returned, seq printed): 14581, all recovered
+events in the file but not yet acknowledged when killed: 22
+files with a corrupt complete line: 0
+files with a partial final line: 0
+every file: seq contiguous from 0

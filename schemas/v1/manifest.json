@@ -1,0 +1,164 @@
+{
+  "$id": "urn:crashcourt:schema:v1:manifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Schema v1. The JSON form is sorted, two-space indented, and ends with a newline.",
+  "properties": {
+    "clause_registry_sha256": {
+      "title": "Clause Registry Sha256",
+      "type": "string"
+    },
+    "compose_version": {
+      "title": "Compose Version",
+      "type": "string"
+    },
+    "docker_kernel": {
+      "title": "Docker Kernel",
+      "type": "string"
+    },
+    "docker_version": {
+      "title": "Docker Version",
+      "type": "string"
+    },
+    "generated_at": {
+      "title": "Generated At",
+      "type": "string"
+    },
+    "git_dirty": {
+      "title": "Git Dirty",
+      "type": "boolean"
+    },
+    "git_sha": {
+      "title": "Git Sha",
+      "type": "string"
+    },
+    "image_ids": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Image Ids",
+      "type": "object"
+    },
+    "images": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Images",
+      "type": "object"
+    },
+    "libpq_build_version": {
+      "title": "Libpq Build Version",
+      "type": "string"
+    },
+    "libpq_version": {
+      "title": "Libpq Version",
+      "type": "string"
+    },
+    "lockfile_sha256": {
+      "title": "Lockfile Sha256",
+      "type": "string"
+    },
+    "machine": {
+      "title": "Machine",
+      "type": "string"
+    },
+    "os_release": {
+      "title": "Os Release",
+      "type": "string"
+    },
+    "os_system": {
+      "title": "Os System",
+      "type": "string"
+    },
+    "packages": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Packages",
+      "type": "object"
+    },
+    "postgres": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Postgres",
+      "type": "object"
+    },
+    "psycopg_impl": {
+      "title": "Psycopg Impl",
+      "type": "string"
+    },
+    "psycopg_wheel": {
+      "title": "Psycopg Wheel",
+      "type": "string"
+    },
+    "python_implementation": {
+      "title": "Python Implementation",
+      "type": "string"
+    },
+    "python_version": {
+      "title": "Python Version",
+      "type": "string"
+    },
+    "runner": {
+      "title": "Runner",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "sink_clock_offset_ns": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The effect sink's monotonic clock minus this host's, measured by doctor at the midpoint of a /health request; null when no sink was checked. Recorded, never used to order events; a canonical benchmark batch refuses one beyond its threshold.",
+      "title": "Sink Clock Offset Ns"
+    },
+    "spec_sha256": {
+      "description": "sha256 of the locked project specification the code was built against, from spec-provenance.json. Provenance only: the specification is private, and the hash identifies it without making it public or a run reproducible from it.",
+      "title": "Spec Sha256",
+      "type": "string"
+    },
+    "toxiproxy_version": {
+      "title": "Toxiproxy Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "generated_at",
+    "git_sha",
+    "git_dirty",
+    "python_version",
+    "python_implementation",
+    "os_system",
+    "os_release",
+    "machine",
+    "runner",
+    "lockfile_sha256",
+    "clause_registry_sha256",
+    "spec_sha256",
+    "packages",
+    "psycopg_impl",
+    "psycopg_wheel",
+    "libpq_version",
+    "libpq_build_version",
+    "docker_version",
+    "docker_kernel",
+    "compose_version",
+    "images",
+    "image_ids",
+    "postgres",
+    "toxiproxy_version"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}

@@ -1,0 +1,77 @@
+{
+  "$id": "urn:crashcourt:schema:v1:batch",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "batch.json: one batch, its provenance, and the manifest it ran under.\n\nA fixture's batch id starts with DEMO-, and only a fixture's.",
+  "else": {
+    "properties": {
+      "batch": {
+        "not": {
+          "pattern": "^DEMO-",
+          "type": "string"
+        }
+      }
+    },
+    "type": "object"
+  },
+  "if": {
+    "properties": {
+      "provenance": {
+        "const": "fixture"
+      }
+    },
+    "required": [
+      "provenance"
+    ],
+    "type": "object"
+  },
+  "properties": {
+    "batch": {
+      "pattern": "^\\S+$",
+      "title": "Batch",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "provenance": {
+      "enum": [
+        "run",
+        "fixture"
+      ],
+      "title": "Provenance",
+      "type": "string"
+    },
+    "scenario_sha256": {
+      "description": "Content hash of the validated scenario the batch ran: sha256 of the frozen scenario model's canonical JSON (crashcourt.spec.content), not of the YAML bytes. Equivalent YAML hashes the same; any change of meaning changes it. T-07's loader produces it; a fixture carries the hash of its demonstration scenario.",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Scenario Sha256",
+      "type": "string"
+    },
+    "v": {
+      "const": 1,
+      "title": "V",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "v",
+    "batch",
+    "provenance",
+    "manifest_sha256",
+    "scenario_sha256"
+  ],
+  "then": {
+    "properties": {
+      "batch": {
+        "pattern": "^DEMO-",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "title": "BatchRecord",
+  "type": "object"
+}

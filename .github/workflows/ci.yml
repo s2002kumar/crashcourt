@@ -30,6 +30,7 @@ jobs:
       - run: uv run pyright
       - run: uv run pytest
       - run: uv run crashcourt clauses check  # control C6: the registry validates offline
+      - run: uv run crashcourt schema export --check  # schemas/v1 must match the models
   doctor:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -46,7 +47,7 @@ jobs:
       - run: docker compose up -d --wait
       - run: >-
           uv run crashcourt doctor --manifest manifest-ci.json
-          --compare research/evidence/t-02/manifest-local.json
+          --compare research/evidence/t-04/manifest-local.json
       - name: manifest names the tested commit, checked out clean
         run: jq -e --arg sha "$HEAD_SHA" '.git_sha == $sha and .git_dirty == false' manifest-ci.json
       - run: uv run pytest -m integration

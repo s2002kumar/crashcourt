@@ -3,6 +3,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
-manifest.json
+/manifest.json
 results/*/raw/
 .cache/

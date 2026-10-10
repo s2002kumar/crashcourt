@@ -219,6 +219,14 @@ class SystemProbes:
         root = self.root / "clauses"
         return len(ClauseRegistry.load(root)), registry_sha256(root)
 
+    def spec_provenance(self) -> tuple[str, bool | None]:
+        """The recorded spec hash, and whether the local copy of the spec matches it (None when
+        this checkout has no copy, as in CI or a worktree)."""
+        record: Any = json.loads((self.root / "spec-provenance.json").read_text(encoding="utf-8"))
+        digest = str(record["sha256"])
+        local = self.root / "private" / "spec" / str(record["file"])
+        return digest, (sha256_file(local) == digest) if local.is_file() else None
+
     def python_pin(self) -> str | None:
         path = self.root / ".python-version"
         return read_python_pin(path.read_text(encoding="utf-8")) if path.exists() else None

@@ -1,0 +1,278 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "$id": "urn:crashcourt:schema:v1:event",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One history event. Field order is the order of the JSON line.\n\nSome kinds require extra fields (op_id, fault_id, data.to, data.hit_seq, and others; see\ncrashcourt.spec.events). Those rules are enforced when an event is loaded and are not\nexpressed in this JSON Schema.",
+  "properties": {
+    "attempt": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempt"
+    },
+    "batch": {
+      "minLength": 1,
+      "title": "Batch",
+      "type": "string"
+    },
+    "cell": {
+      "minLength": 1,
+      "title": "Cell",
+      "type": "string"
+    },
+    "checkpoint_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Checkpoint Id"
+    },
+    "checkpoint_ns": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Checkpoint Ns"
+    },
+    "data": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Data",
+      "type": "object"
+    },
+    "effect_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Effect Key"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    },
+    "fault_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fault Id"
+    },
+    "fp": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fp"
+    },
+    "kind": {
+      "enum": [
+        "client.invoke",
+        "client.ok",
+        "client.fail",
+        "client.info",
+        "dispatch.send",
+        "dispatch.redeliver",
+        "worker.start",
+        "worker.exit",
+        "node.start",
+        "node.end",
+        "saver.put.call",
+        "saver.put.return",
+        "saver.put.raise",
+        "saver.put_writes.call",
+        "saver.put_writes.return",
+        "saver.put_writes.raise",
+        "saver.get_tuple.call",
+        "saver.get_tuple.return",
+        "saver.get_tuple.raise",
+        "saver.list.call",
+        "saver.list.return",
+        "saver.list.raise",
+        "fp.hit",
+        "fp.release",
+        "fp.action",
+        "effect.request",
+        "effect.response",
+        "sink.append",
+        "fault.inject",
+        "fault.heal"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "logical_op": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Logical Op"
+    },
+    "mono_ns": {
+      "title": "Mono Ns",
+      "type": "integer"
+    },
+    "op_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Op Id"
+    },
+    "parent_checkpoint_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Checkpoint Id"
+    },
+    "pid": {
+      "minimum": 0,
+      "title": "Pid",
+      "type": "integer"
+    },
+    "proc": {
+      "minLength": 1,
+      "title": "Proc",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "string"
+    },
+    "seq": {
+      "minimum": 0,
+      "title": "Seq",
+      "type": "integer"
+    },
+    "status": {
+      "anyOf": [
+        {
+          "enum": [
+            "ok",
+            "fail",
+            "info"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Status"
+    },
+    "task_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Task Id"
+    },
+    "thread_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Thread Id"
+    },
+    "trial": {
+      "minimum": 0,
+      "title": "Trial",
+      "type": "integer"
+    },
+    "v": {
+      "const": 1,
+      "title": "V",
+      "type": "integer"
+    },
+    "wall_ns": {
+      "title": "Wall Ns",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "v",
+    "batch",
+    "cell",
+    "trial",
+    "seed",
+    "proc",
+    "pid",
+    "seq",
+    "mono_ns",
+    "wall_ns",
+    "kind"
+  ],
+  "title": "Event",
+  "type": "object"
+}

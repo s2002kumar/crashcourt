@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from crashcourt.manifest import (
     PINNED_DISTRIBUTIONS,
@@ -149,6 +150,8 @@ def test_every_langgraph_and_psycopg_distribution_in_the_lock_is_recorded() -> N
     [
         ({"clause_registry_sha256": "abc"}, "clause_registry_sha256 is not a sha256 digest"),
         ({"clause_registry_sha256": ""}, "clause_registry_sha256 is not a sha256 digest: missing"),
+        ({"spec_sha256": "abc"}, "spec_sha256 is not a sha256 digest: abc"),
+        ({"spec_sha256": ""}, "spec_sha256 is not a sha256 digest: missing"),
         ({"runner": "laptop"}, "runner must be one of"),
         ({"runner": "unknown"}, "runner must be one of"),
         ({"docker_kernel": "11"}, "docker_kernel does not start with a version: 11"),
@@ -264,6 +267,36 @@ def test_schema_version_must_be_the_integer_one(version: object) -> None:
         Manifest.from_json(json.dumps(data))
 
 
+@pytest.mark.parametrize("version", [True, 1.0])
+def test_the_model_rejects_a_version_that_only_compares_equal_to_one(version: object) -> None:
+    data = {**json.loads(make_manifest().to_json()), "schema_version": version}
+    with pytest.raises(ValidationError):
+        Manifest.model_validate(data)
+
+
 def test_a_different_clause_registry_fails_the_comparison() -> None:
     diffs = diff_pinned(make_manifest(), make_manifest(clause_registry_sha256="1" * 64))
     assert [d.split(":")[0] for d in diffs] == ["clause_registry_sha256"]
+
+
+def test_a_different_spec_fails_the_comparison() -> None:
+    diffs = diff_pinned(make_manifest(), make_manifest(spec_sha256="1" * 64))
+    assert [d.split(":")[0] for d in diffs] == ["spec_sha256"]
+
+
+def test_the_sink_clock_offset_is_recorded_but_not_compared() -> None:
+    diffs = diff_pinned(make_manifest(), make_manifest(sink_clock_offset_ns=-830_700_000_000))
+    assert diffs == []
+
+
+@pytest.mark.parametrize("offset", [None, 0, -830_700_000_000])
+def test_the_sink_clock_offset_is_an_integer_or_null(offset: int | None) -> None:
+    data = {**json.loads(make_manifest().to_json()), "sink_clock_offset_ns": offset}
+    assert Manifest.from_json(json.dumps(data)).sink_clock_offset_ns == offset
+
+
+@pytest.mark.parametrize("offset", [True, 1.5, "0"])
+def test_a_sink_clock_offset_of_another_type_is_refused(offset: object) -> None:
+    data = {**json.loads(make_manifest().to_json()), "sink_clock_offset_ns": offset}
+    with pytest.raises(ManifestFormatError, match="sink_clock_offset_ns"):
+        Manifest.from_json(json.dumps(data))
