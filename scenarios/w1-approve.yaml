@@ -1,0 +1,12 @@
+# W1, approve: one worker starts the run (it pauses at approval's interrupt), then resumes it with
+# "approve". Expected: exactly one charge, from execute, and decision approve saved.
+v: 1
+name: w1-approve
+cell: w1-approve
+seed: w1-approve-v1
+workload: w1
+target: {saver: postgres, driver: async, durability: sync}
+workers: [w1]
+ops:
+  - {id: start-1, worker: w1, thread: t1, after: start, input: {order: order-17}}
+  - {id: resume-1, worker: w1, thread: t1, after: start-1, resume: approve}

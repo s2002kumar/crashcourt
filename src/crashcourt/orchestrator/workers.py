@@ -139,6 +139,7 @@ class ProcessWorker:
         route: Route,
         run: RunIdentity,
         workload: str,
+        sink_url: str,
         trial_dir: Path,
         socket_dir: Path,
         history: HistoryWriter,
@@ -173,6 +174,8 @@ class ProcessWorker:
             run.seed,
             "--workload",
             workload,
+            "--sink-url",
+            sink_url,
         ]
         self.popen: subprocess.Popen[Any] = subprocess.Popen(
             argv,

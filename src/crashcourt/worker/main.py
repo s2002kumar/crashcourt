@@ -62,8 +62,14 @@ HARNESS_EXITS: Mapping[int, str] = {
 }
 
 DSN_ENV = "CRASHCOURT_WORKER_DSN"
-#: Workload modules by scenario name; each has build(checkpointer) and summarize(output).
-WORKLOADS: Mapping[str, str] = {"smoke": "crashcourt.workloads.smoke"}
+#: Each scenario workload: its module, and the function there that builds its graph from a
+#: checkpointer and the worker's harness. The module also has summarize(output).
+WORKLOADS: Mapping[str, tuple[str, str]] = {
+    "smoke": ("crashcourt.workloads.smoke", "build"),
+    "w1": ("crashcourt.workloads.w1_approval", "build"),
+    "w1-misuse": ("crashcourt.workloads.w1_approval", "build_misuse"),
+    "w5": ("crashcourt.workloads.w5_continuation", "build"),
+}
 
 
 @dataclass(frozen=True)
@@ -74,6 +80,7 @@ class WorkerConfig:
     run: RunIdentity
     workload: str
     dsn: str
+    sink_url: str
     #: How long to wait for the pool's first connections.
     connect_timeout: float = 30.0
 
@@ -179,10 +186,13 @@ async def execute(
     report, is the harness's own and is raised as HarnessError; so is any failure to write the
     history while the run went on.
     """
+    from langgraph.types import Command
+
     config = {"configurable": {"thread_id": run.thread_id}}
+    payload: Any = run.input if run.resume is None else Command(resume=run.resume)
     try:
         with operation(run.op_id):
-            output = await graph.ainvoke(run.input, config, durability=run.durability)
+            output = await graph.ainvoke(payload, config, durability=run.durability)
     except Exception as exc:
         if history.failure is not None:
             raise HarnessError(f"{run.op_id}: {history.failure}") from exc
@@ -206,11 +216,12 @@ async def execute(
         ) from exc
 
 
-def _workload(name: str) -> ModuleType:
+def _workload(name: str) -> tuple[ModuleType, str]:
     try:
-        return importlib.import_module(WORKLOADS[name])
+        module, builder = WORKLOADS[name]
     except KeyError:
         _fatal(EXIT_STARTUP, f"unknown workload {name!r}; known: {', '.join(sorted(WORKLOADS))}")
+    return importlib.import_module(module), builder
 
 
 def _arm(message: ArmMessage, worker: str) -> Arm:
@@ -241,7 +252,7 @@ async def serve(config: WorkerConfig) -> int:
 
     from crashcourt.failpoints.saver import wrap
 
-    workload = _workload(config.workload)
+    workload, builder = _workload(config.workload)
     loop = asyncio.get_running_loop()
     try:
         reader, writer = await _connect(config.socket)
@@ -262,9 +273,12 @@ async def serve(config: WorkerConfig) -> int:
     except Exception as exc:  # noqa: BLE001 - any failure to connect ends the worker the same way
         _fatal(EXIT_STARTUP, f"cannot open the connection pool: {type(exc).__name__}: {exc}")
     saver = wrap(AsyncPostgresSaver(pool), history=history, registry=registry, barrier=barrier)
-    build = cast(Callable[[Any], Any], workload.build)
+    from crashcourt.sink.client import SinkClient
+    from crashcourt.workloads.harness import Harness
+
+    build = cast(Callable[[Any, Harness], Any], getattr(workload, builder))
     summarize = cast(Callable[[Any], Any], workload.summarize)
-    graph = build(saver)
+    graph = build(saver, Harness(history, SinkClient(config.sink_url)))
 
     async def respond(run: Run) -> None:
         try:
@@ -316,6 +330,7 @@ def parse_args(argv: Sequence[str] | None = None) -> WorkerConfig:
     parser.add_argument("--trial", type=int, required=True)
     parser.add_argument("--seed", required=True)
     parser.add_argument("--workload", required=True)
+    parser.add_argument("--sink-url", required=True)
     args = parser.parse_args(argv)
     dsn = os.environ.get(DSN_ENV)
     if not dsn:
@@ -327,6 +342,7 @@ def parse_args(argv: Sequence[str] | None = None) -> WorkerConfig:
         run=RunIdentity(args.batch, args.cell, args.trial, args.seed),
         workload=args.workload,
         dsn=dsn,
+        sink_url=args.sink_url,
     )
 
 

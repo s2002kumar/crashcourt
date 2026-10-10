@@ -11,7 +11,10 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, cast
+from collections.abc import Mapping
+from typing import Any, Protocol, cast
+
+from pydantic import JsonValue
 
 from crashcourt.history.writer import HistoryWriter
 from crashcourt.sink.ledger import EffectRequest, TrialId
@@ -102,12 +105,23 @@ class SinkClient:
         return {k: answer[k] for k in ("ok", "rows", "first_bad")}
 
 
+class EffectSink(Protocol):
+    """What `record_effect` needs of a sink: a `SinkClient`, or a test double over a `Ledger`."""
+
+    def post_effect(self, trial: TrialId, effect: EffectRequest) -> dict[str, Any]: ...
+
+
 def trial_of(history: HistoryWriter) -> TrialId:
     run = history.run
     return TrialId(batch=run.batch, cell=run.cell, trial=run.trial, seed=run.seed)
 
 
-def record_effect(history: HistoryWriter, client: SinkClient, effect: EffectRequest) -> int:
+def record_effect(
+    history: HistoryWriter,
+    client: EffectSink,
+    effect: EffectRequest,
+    data: Mapping[str, JsonValue] | None = None,
+) -> int:
     """POST one effect with its request and response events; returns the sink's sink_seq.
 
     The effect's worker and pid must be the history writer's: the merge links the sink's append
@@ -117,6 +131,8 @@ def record_effect(history: HistoryWriter, client: SinkClient, effect: EffectRequ
     If the sink refuses the request (a 4xx answer), `effect.response` has status fail: the effect
     was not applied. If it does not answer, the status is info: the effect may or may not be in
     the ledger, which only the ledger can say. Either way SinkError propagates.
+
+    `data` adds fields to the request event's data: the decision the effect acts on, say.
     """
     if (effect.worker, effect.pid) != (history.proc, history.pid):
         raise ValueError(
@@ -131,9 +147,12 @@ def record_effect(history: HistoryWriter, client: SinkClient, effect: EffectRequ
         "thread_id": effect.thread_id,
         "checkpoint_id": effect.checkpoint_id_seen,
     }
-    history.emit(
-        "effect.request", **fields, data={"node": effect.node, "payload_hash": effect.payload_hash}
-    )
+    request: dict[str, JsonValue] = {
+        "node": effect.node,
+        "payload_hash": effect.payload_hash,
+        **(data or {}),
+    }
+    history.emit("effect.request", **fields, data=request)
     try:
         answer = client.post_effect(trial_of(history), effect)
     except SinkError as exc:

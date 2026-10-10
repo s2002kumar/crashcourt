@@ -1,0 +1,87 @@
+{
+  "batch": "t09-w5-concurrent-20261010T081351Z",
+  "cell": "w5-concurrent",
+  "client_outcomes": {
+    "ok": 3
+  },
+  "histories": {
+    "merged": {
+      "lines": 61,
+      "partial_tail": false
+    },
+    "orchestrator": {
+      "lines": 15,
+      "partial_tail": false
+    },
+    "w1": {
+      "lines": 30,
+      "partial_tail": false
+    },
+    "w2": {
+      "lines": 16,
+      "partial_tail": false
+    }
+  },
+  "invalid_reasons": [],
+  "observations": [],
+  "ops": {
+    "turn-1": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1",
+      "worker": "w1"
+    },
+    "turn-2": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1",
+      "worker": "w1"
+    },
+    "turn-3": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t09-w5-concurrent-20261010T081351Z/w5-concurrent/1/t1",
+      "worker": "w2"
+    }
+  },
+  "seed": "a75c066a346cea8ab8f9c5736abd1b88240eec9fac8a1ec053736967e3e3c3dc",
+  "sink": {
+    "pid": 1,
+    "rows": 0
+  },
+  "steps": {
+    "barrier_fired": [
+      2
+    ],
+    "barrier_unfired": []
+  },
+  "trial": 1,
+  "v": 1,
+  "valid": true,
+  "workers": {
+    "w1": {
+      "exit_code": 0,
+      "forced": false,
+      "killed_by_step": null,
+      "pid": 34342,
+      "returncode": 0,
+      "shutdown_sent": true,
+      "signal": null
+    },
+    "w2": {
+      "exit_code": 0,
+      "forced": false,
+      "killed_by_step": null,
+      "pid": 34343,
+      "returncode": 0,
+      "shutdown_sent": true,
+      "signal": null
+    }
+  }
+}

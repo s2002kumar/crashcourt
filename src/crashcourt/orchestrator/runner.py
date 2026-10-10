@@ -324,6 +324,7 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
             route=ctx.routes[name],
             run=identity,
             workload=scenario.workload,
+            sink_url=ctx.settings.sink_url,
             trial_dir=directory,
             socket_dir=socket_dir,
             history=history,

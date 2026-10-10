@@ -93,6 +93,9 @@ class Op(_Frozen):
     thread: PathName
     after: PathName
     input: dict[str, JsonValue] = Field(default_factory=dict[str, JsonValue])
+    #: A resume: the value the thread's pending `interrupt()` returns (`Command(resume=...)`).
+    #: An op is a resume or carries input, never both.
+    resume: JsonValue = None
 
 
 class FailpointTrigger(_Frozen):
@@ -196,12 +199,16 @@ class Scenario(_Frozen):
     cell: PathName
     #: The batch's master seed; each trial's seed is derived from it (see `trial_seed`).
     seed: Annotated[str, StringConstraints(pattern=r"^\S+$")]
-    workload: Literal["smoke"]
+    workload: Literal["smoke", "w1", "w1-misuse", "w5"]
     target: Target
     workers: tuple[WorkerName, ...] = Field(min_length=1, max_length=MAX_WORKERS)
     ops: tuple[Op, ...] = Field(min_length=1)
     schedule: tuple[Step, ...] = ()
     timeouts: Timeouts = Timeouts()
+    #: The landmark table the checker verifies this scenario's failpoint hits against, by name
+    #: (scenarios/landmarks/<name>.yaml). Only the name's form is checked here; the checker
+    #: resolves and verifies the table.
+    landmarks: PathName | None = None
 
     @model_validator(mode="after")
     def _runs_as_declared(self) -> Self:
@@ -268,6 +275,8 @@ def _problems(s: Scenario) -> list[str]:
             problems.append(f"op {op.id} is declared twice")
         if op.worker not in workers:
             problems.append(f"op {op.id} is sent to {op.worker}, which is not a worker")
+        if op.resume is not None and op.input:
+            problems.append(f"op {op.id} is a resume and also carries input")
         if op.after != START and op.after not in ops:
             problems.append(
                 f"op {op.id} runs after {op.after}, which is not an earlier op "

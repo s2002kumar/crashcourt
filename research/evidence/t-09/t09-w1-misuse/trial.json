@@ -1,0 +1,68 @@
+{
+  "batch": "t09-w1-misuse-20261010T081351Z",
+  "cell": "w1-misuse",
+  "client_outcomes": {
+    "ok": 2
+  },
+  "histories": {
+    "merged": {
+      "lines": 57,
+      "partial_tail": false
+    },
+    "orchestrator": {
+      "lines": 8,
+      "partial_tail": false
+    },
+    "sink": {
+      "lines": 3,
+      "partial_tail": false
+    },
+    "w1": {
+      "lines": 46,
+      "partial_tail": false
+    }
+  },
+  "invalid_reasons": [],
+  "observations": [],
+  "ops": {
+    "resume-1": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t09-w1-misuse-20261010T081351Z/w1-misuse/1/t1",
+      "worker": "w1"
+    },
+    "start-1": {
+      "late_result": null,
+      "outcome": "ok",
+      "reason": null,
+      "sent": true,
+      "thread_id": "t09-w1-misuse-20261010T081351Z/w1-misuse/1/t1",
+      "worker": "w1"
+    }
+  },
+  "seed": "ef1ac53b5f3355b20ed7877e3be8ecf0f8a532b73b7a4562c7828eed5d69e3bb",
+  "sink": {
+    "pid": 1,
+    "rows": 3
+  },
+  "steps": {
+    "barrier_fired": [],
+    "barrier_unfired": []
+  },
+  "trial": 1,
+  "v": 1,
+  "valid": true,
+  "workers": {
+    "w1": {
+      "exit_code": 0,
+      "forced": false,
+      "killed_by_step": null,
+      "pid": 33497,
+      "returncode": 0,
+      "shutdown_sent": true,
+      "signal": null
+    }
+  }
+}
