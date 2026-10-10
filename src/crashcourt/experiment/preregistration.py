@@ -18,6 +18,7 @@ come out as predicted.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import PurePosixPath
 from typing import Annotated, Literal, Self
@@ -137,7 +138,8 @@ class InstrumentCheck(_Model):
 
 
 class CheckerPin(_Model):
-    """The frozen checker every batch runs under (src/crashcourt/checker/FROZEN.md)."""
+    """The frozen checker every batch runs under (src/crashcourt/checker/FROZEN.md), every hash
+    the freeze records spelled out."""
 
     version: Id
     #: FreezeManifest.checker_sha256: the checker's files.
@@ -146,6 +148,17 @@ class CheckerPin(_Model):
     #: landmark tables together.
     frozen_md_sha256: Sha256
     registry_sha256: Sha256
+    #: Each workload's effect model, by name, as FROZEN.md records it.
+    effect_models: dict[Id, Sha256] = Field(min_length=1)
+    #: Each audited landmark table, by name, as FROZEN.md records it.
+    landmark_tables: dict[Id, Sha256] = Field(min_length=1)
+
+
+def derive_seed(master_seed: str, cell: str, trial: int) -> str:
+    """A trial's seed: sha256 of the JSON array [master_seed, cell, trial], compact, with
+    non-ASCII kept. Computed here independently of the runner, so verification checks it."""
+    encoded = json.dumps([master_seed, cell, trial], separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 class SeedRule(_Model):

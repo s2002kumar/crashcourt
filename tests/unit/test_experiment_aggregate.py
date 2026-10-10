@@ -8,17 +8,19 @@ import pytest
 
 from crashcourt.cli import main
 from crashcourt.experiment.aggregate import AggregationRefused, aggregate, instrument_ready
-from crashcourt.experiment.fingerprint import CompatibilityRule
-from crashcourt.experiment.gate import Authorization
+from crashcourt.experiment.fingerprint import CompatibilityRule, fingerprint
+from crashcourt.experiment.gate import Authorization, InstrumentEvidence
 from crashcourt.experiment.preregistration import PREREGISTRATION_PATH
 from crashcourt.experiment.verify import BatchNotVerified, verify_batch
 
 from ._experiment import (
+    SEEDS,
     FakeChecker,
     FakeScenarios,
     N,
     Repo,
     commit,
+    git,
     make_batch,
     make_repo,
     manifest_for,
@@ -37,7 +39,13 @@ def authorized(repo: Repo, cell: str = "R1") -> Authorization:
         repo.root,
         checker=FakeChecker(),
         scenarios=FakeScenarios(),
-        instrument_check=(lambda *_: ([], [])) if cell == "X1" else None,
+        instrument_check=(
+            lambda *_: InstrumentEvidence(
+                [], ["inst"], fingerprint(manifest_for(git(repo.root, "rev-parse", "HEAD")))
+            )
+        )
+        if cell == "X1"
+        else None,
     )
 
 
@@ -178,13 +186,20 @@ def test_a_trial_with_nothing_exercised_counts_as_not_exercised(repo: Repo) -> N
 def test_the_gate_reads_the_instrument_results(repo: Repo) -> None:
     check = instrument_ready(repo.root)
     prereg = prereg_model()
-    missing, _ = check(prereg, repo.prereg_commit, [])
-    assert missing == ["instrument cell R1 has no batch"]
-    missing, used = check(prereg, repo.prereg_commit, [batch(repo, "inst")])
-    assert (missing, used) == ([], ["inst"])
+    assert check(prereg, repo.prereg_commit, []).missing == ["instrument cell R1 has no batch"]
+    good = batch(repo, "inst")
+    evidence = check(prereg, repo.prereg_commit, [good])
+    assert (evidence.missing, evidence.batches) == ([], ["inst"])
+    assert evidence.fingerprint is not None and evidence.fingerprint["runner"] == "local"
     bad = batch(repo, "inst2", [[("I4", "GAP"), ("I1b", "PASS")]] * N)
-    missing, _ = check(prereg, repo.prereg_commit, [bad])
-    assert missing == ["instrument cell R1 is differs, not as predicted"]
+    assert check(prereg, repo.prereg_commit, [bad]).missing == [
+        "instrument cell R1 is differs, not as predicted"
+    ]
+    elsewhere = batch(repo, "inst3", manifest={"os_release": "6.11.0"})
+    assert check(prereg, repo.prereg_commit, [good, elsewhere]).missing == [
+        "instrument cell R1 ran in more than one environment",
+        "the instrument cells ran in different environments (os_release)",
+    ]
 
 
 def test_cli_verify_and_aggregate(repo: Repo, capsys: pytest.CaptureFixture[str]) -> None:
@@ -195,3 +210,72 @@ def test_cli_verify_and_aggregate(repo: Repo, capsys: pytest.CaptureFixture[str]
     args = ["experiment", "aggregate", str(d), "--root", str(repo.root), "--out", str(out)]
     assert main(args) == 0
     assert json.loads(out.read_text(encoding="utf-8"))["cells"][0]["cell"] == "R1"
+
+
+def test_the_runner_records_are_recomputed(repo: Repo) -> None:
+    assert "scenario.json hashes to" in problems(
+        repo, batch(repo, "b1", scenario_text='{"cell":"R1","seed":"other"}')
+    )
+    assert "run.json mode is 'ordinary', expected 'canonical'" in problems(
+        repo, batch(repo, "b2", run_changes={"mode": "ordinary"})
+    )
+    from crashcourt.experiment.preregistration import derive_seed
+
+    seeds = {str(n): derive_seed(SEEDS["R1"], "R1", n) for n in range(1, N + 1)}
+    seeds["2"] = "0" * 64
+    found = problems(repo, batch(repo, "b3", run_changes={"trial_seeds": seeds}))
+    assert "trial seeds are not the pre-registered derivation (trials ['2'])" in found
+
+
+def test_the_seed_rule_is_the_one_the_runner_uses() -> None:
+    from crashcourt.experiment.preregistration import derive_seed
+    from crashcourt.spec.scenario import trial_seed
+
+    for master, cell, trial in (("smoke-v1", "smoke", 1), ("s", "K1a", 20), ("é", "N12b", 7)):
+        assert derive_seed(master, cell, trial) == trial_seed(master, cell, trial)
+
+
+def test_a_freeze_changed_after_the_preregistration_breaks_the_proof(repo: Repo) -> None:
+    d = batch(repo, "b1")
+    from crashcourt.experiment.gate import FROZEN_PATH
+
+    from ._experiment import FROZEN_MD
+
+    later = commit(repo.root, {str(FROZEN_PATH): FROZEN_MD + "edited\n"}, "edit the freeze")
+    auth = json.loads((d / "authorization.json").read_text(encoding="utf-8"))
+    auth["run_commit"] = later
+    (d / "authorization.json").write_text(json.dumps(auth), encoding="utf-8")
+    (d / "manifest.json").write_bytes(manifest_for(later).to_json().encode())
+    found = problems(repo, d)
+    assert "changed between the freeze and the run" in found
+
+
+def test_a_trial_without_results_must_say_what_was_not_exercised(repo: Repo) -> None:
+    d = batch(repo, "b1", [R1_AS_PREDICTED, R1_AS_PREDICTED, None], checker_changes={})
+    # make_batch lists I5a as not exercised for a trial with no results; erase that.
+    report = d / "R1" / "trial-00003" / "checker.json"
+    data = json.loads(report.read_text(encoding="utf-8"))
+    data["not_exercised"] = []
+    report.write_text(json.dumps(data), encoding="utf-8")
+    assert "no result.json, and checker.json names nothing not exercised" in problems(repo, d)
+
+
+def test_unstable_and_escalate_are_flags_beside_the_prediction(repo: Repo) -> None:
+    rows = [
+        [("I4", "EXPECTED"), ("I1b", "PASS")],
+        [("I4", "VIOLATION_CANDIDATE"), ("I1b", "PASS")],
+        [("I4", "EXPECTED"), ("I1b", "PASS")],
+    ]
+    group = aggregate([batch(repo, "b1", rows)], repo.root).cells[0].groups[0]
+    i4 = next(i for i in group.invariants if i.invariant == "I4")
+    assert (i4.unstable, i4.escalate, i4.prediction) == (True, True, "differs")
+    assert group.status == "escalate"
+
+
+def test_the_report_lists_the_rules_it_applied(repo: Repo) -> None:
+    a = batch(repo, "b1")
+    b = batch(repo, "b2", manifest={"os_release": "6.11.0"})
+    rule = CompatibilityRule(field="os_release", values=("6.8.0", "6.11.0"), reason="kernel bump")
+    report = aggregate([a, b], repo.root, [rule])
+    assert report.compatibility_rules == (rule,)
+    assert report.cells[0].pooled and report.cells[0].n == N

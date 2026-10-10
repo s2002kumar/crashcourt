@@ -20,7 +20,12 @@ from crashcourt.experiment.gate import (
     ScenarioFacts,
     Unavailable,
 )
-from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, Preregistration, block
+from crashcourt.experiment.preregistration import (
+    PREREGISTRATION_PATH,
+    Preregistration,
+    block,
+    derive_seed,
+)
 from crashcourt.manifest import Manifest
 from crashcourt.spec.records import BatchRecord, ResultRecord
 
@@ -31,8 +36,14 @@ REGISTRY_SHA = "e" * 64
 LANDMARK_SHA = "d" * 64
 FROZEN_MD = "# Checker v1: frozen\n\nChecker hash `" + CHECKER_SHA + "`.\n"
 FROZEN_MD_SHA = hashlib.sha256(FROZEN_MD.encode()).hexdigest()
-SCENARIOS = {"R1": "1" * 64, "X1": "2" * 64}
+EFFECT_MODELS = {"w1": "a" * 64, "w5": "b" * 64}
+LANDMARK_TABLES = {"langgraph-v1": LANDMARK_SHA}
 SEEDS = {"R1": "seed-r1", "X1": "seed-x1"}
+#: Each cell's scenario in canonical form, as the runner writes scenario.json, and its hash.
+SCENARIO_JSON = {
+    c: json.dumps({"cell": c, "seed": s}, separators=(",", ":")) for c, s in SEEDS.items()
+}
+SCENARIOS = {c: hashlib.sha256(text.encode()).hexdigest() for c, text in SCENARIO_JSON.items()}
 N = 3
 
 
@@ -76,6 +87,8 @@ def prereg_model(**changes: Any) -> Preregistration:
             "checker_sha256": CHECKER_SHA,
             "frozen_md_sha256": FROZEN_MD_SHA,
             "registry_sha256": REGISTRY_SHA,
+            "effect_models": EFFECT_MODELS,
+            "landmark_tables": LANDMARK_TABLES,
         },
         "environment": {"os_system": "Linux", "runner": "local", "git_dirty": False},
         "instrument_checks": [{"id": "AM", "requirement": "mutants", "evidence": "ci run 1"}],
@@ -153,7 +166,9 @@ class FakeChecker:
 
     state: str = "FROZEN"
     frozen: FrozenChecker = field(
-        default_factory=lambda: FrozenChecker("v1", CHECKER_SHA, REGISTRY_SHA)
+        default_factory=lambda: FrozenChecker(
+            "v1", CHECKER_SHA, REGISTRY_SHA, dict(EFFECT_MODELS), dict(LANDMARK_TABLES)
+        )
     )
     mismatch: str | None = None
     landmark: str | Exception | None = LANDMARK_SHA
@@ -216,6 +231,8 @@ def make_batch(
     *,
     checker_changes: Mapping[str, Any] | None = None,
     invalid: Mapping[int, str] | None = None,
+    run_changes: Mapping[str, Any] | None = None,
+    scenario_text: str | None = None,
 ) -> Path:
     """A batch directory: records at the root, and one trial directory per entry of `trials`
     (its (invariant, outcome) pairs, or None for a trial in which nothing was exercised)."""
@@ -232,6 +249,21 @@ def make_batch(
     )
     (root / "batch.json").write_text(record.model_dump_json(), encoding="utf-8")
     (root / AUTHORIZATION_FILE).write_text(auth.to_json(), encoding="utf-8")
+    scenario = scenario_text if scenario_text is not None else SCENARIO_JSON[auth.cell]
+    (root / "scenario.json").write_bytes((scenario + "\n").encode())
+    run: dict[str, Any] = {
+        "v": 1,
+        "batch": batch,
+        "cell": auth.cell,
+        "mode": "canonical",
+        "trials": len(trials),
+        "master_seed": auth.master_seed,
+        "trial_seeds": {
+            str(n): derive_seed(auth.master_seed, auth.cell, n) for n in range(1, len(trials) + 1)
+        },
+    }
+    run.update(run_changes or {})
+    (root / "run.json").write_text(json.dumps(run), encoding="utf-8")
     for n, pairs in enumerate(trials, start=1):  # the runner numbers trials 1..N
         trial = root / auth.cell / f"trial-{n:05d}"
         trial.mkdir(parents=True)

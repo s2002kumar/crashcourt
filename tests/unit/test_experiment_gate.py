@@ -5,10 +5,14 @@ from pathlib import Path
 
 import pytest
 
+from crashcourt.experiment.fingerprint import CompatibilityRule, fingerprint
 from crashcourt.experiment.gate import (
     FROZEN_PATH,
+    FrozenChecker,
+    InstrumentEvidence,
     NotAuthorized,
     ScenarioFacts,
+    T07Scenarios,
     Unavailable,
     authorize_batch,
     confirm,
@@ -18,9 +22,12 @@ from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, Preregis
 
 from ._experiment import (
     CHECKER_SHA,
+    EFFECT_MODELS,
     FROZEN_MD,
     FROZEN_MD_SHA,
     LANDMARK_SHA,
+    LANDMARK_TABLES,
+    REGISTRY_SHA,
     SCENARIOS,
     FakeChecker,
     FakeScenarios,
@@ -46,8 +53,10 @@ def authorize(
 ):
     def instrument_check(
         prereg: Preregistration, commit_: str, dirs: Sequence[Path]
-    ) -> tuple[list[str], list[str]]:
-        return list(instrument_missing or []), ["inst-batch"]
+    ) -> InstrumentEvidence:
+        return InstrumentEvidence(
+            list(instrument_missing or []), ["inst-batch"], fingerprint(manifest_for("0" * 40))
+        )
 
     return authorize_batch(
         repo.root / f"scenarios/{cell}.yaml",
@@ -222,3 +231,48 @@ def test_a_cell_without_a_fault_may_name_no_landmark_table(tmp_path: Path) -> No
     repo = make_repo(tmp_path, prereg_model(cells=cells))
     auth = authorize(repo, checker=FakeChecker(landmark=None))
     assert auth.landmark_table_sha256 is None
+
+
+def test_every_hash_the_freeze_records_must_be_the_pinned_one(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    for changed in (
+        FrozenChecker("v1", CHECKER_SHA, REGISTRY_SHA, {"w1": "9" * 64}, dict(LANDMARK_TABLES)),
+        FrozenChecker("v1", CHECKER_SHA, REGISTRY_SHA, dict(EFFECT_MODELS), {}),
+        FrozenChecker("v2", CHECKER_SHA, REGISTRY_SHA, dict(EFFECT_MODELS), dict(LANDMARK_TABLES)),
+    ):
+        assert "the pre-registration names" in refused(
+            authorize, repo, checker=FakeChecker(frozen=changed)
+        )
+
+
+def test_the_landmark_table_must_be_a_pinned_one(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    assert "is not one the freeze pins" in refused(
+        authorize, repo, checker=FakeChecker(landmark="5" * 64)
+    )
+
+
+def test_new_evidence_must_run_where_the_instrument_ran(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    auth = authorize(repo, cell="X1", instrument_missing=[])
+    assert auth.instrument_fingerprint is not None
+    same = manifest_for(auth.run_commit)
+    prereg = prereg_model()
+    # The stand-in instrument ran at commit 000...0; everything else matches.
+    found = confirm_environment(prereg, auth, same)
+    assert found == [f"git_sha is {auth.run_commit!r}; the instrument cells ran with {'0' * 40!r}"]
+    rule = CompatibilityRule(
+        field="git_sha", values=("0" * 40, auth.run_commit), reason="docs only"
+    )
+    assert confirm_environment(prereg, auth, same, [rule]) == []
+    other = manifest_for(auth.run_commit, os_release="6.11.0")
+    assert any("os_release" in p for p in confirm_environment(prereg, auth, other, [rule]))
+
+
+def test_the_runner_scenario_loader_is_the_real_one() -> None:
+    from crashcourt.spec.scenario import load_scenario, scenario_sha256
+
+    smoke = Path(__file__).resolve().parents[2] / "scenarios" / "smoke.yaml"
+    facts = T07Scenarios().load(smoke)
+    loaded = load_scenario(smoke)
+    assert facts == ScenarioFacts(scenario_sha256(loaded), loaded.cell, loaded.seed)

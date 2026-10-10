@@ -33,10 +33,17 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, Protocol, cast
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from crashcourt.experiment import gitproof
-from crashcourt.experiment.fingerprint import mismatched
+from crashcourt.experiment.fingerprint import (
+    RULES_PATH,
+    CompatibilityRule,
+    fingerprint,
+    mismatched,
+    parse_rules,
+    unexplained_between,
+)
 from crashcourt.experiment.preregistration import (
     PREREGISTRATION_PATH,
     Cell,
@@ -45,6 +52,7 @@ from crashcourt.experiment.preregistration import (
     parse,
 )
 from crashcourt.manifest import Manifest
+from crashcourt.spec.scenario import load_scenario, scenario_sha256
 
 FROZEN_PATH = PurePosixPath("src/crashcourt/checker/FROZEN.md")
 PREREG = PREREGISTRATION_PATH.as_posix()
@@ -68,6 +76,8 @@ class FrozenChecker:
     version: str
     checker_sha256: str
     registry_sha256: str
+    effect_models: dict[str, str]
+    landmark_tables: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -128,7 +138,11 @@ class T10Checker:
         verify = cast(Callable[[str, str], Any], freeze.verify_checker)
         frozen = verify(frozen_md, registry_sha256)
         return FrozenChecker(
-            str(frozen.checker_version), str(frozen.checker_sha256), str(frozen.registry_sha256)
+            str(frozen.checker_version),
+            str(frozen.checker_sha256),
+            str(frozen.registry_sha256),
+            {str(k): str(v) for k, v in dict(frozen.effect_models).items()},
+            {str(k): str(v) for k, v in dict(frozen.landmark_tables).items()},
         )
 
     def landmark_sha256(self, frozen_md: str, registry_sha256: str, scenario: Path) -> str | None:
@@ -143,10 +157,8 @@ class T07Scenarios:
     """Scenarios as T-07 loads them: spec.scenario.load_scenario and scenario_sha256."""
 
     def load(self, path: Path) -> ScenarioFacts:
-        module = _module("crashcourt.spec.scenario", "T-07")
-        scenario = cast(Callable[[Path], Any], module.load_scenario)(path)
-        digest = cast(Callable[[Any], str], module.scenario_sha256)(scenario)
-        return ScenarioFacts(digest, str(scenario.cell), str(scenario.seed))
+        scenario = load_scenario(path)
+        return ScenarioFacts(scenario_sha256(scenario), scenario.cell, scenario.seed)
 
 
 class Authorization(BaseModel):
@@ -172,8 +184,10 @@ class Authorization(BaseModel):
     registry_sha256: str
     #: The audited landmark table the scenario names; None for a cell that arms no failpoint.
     landmark_table_sha256: str | None
-    #: For a new-evidence cell, the instrument batches whose results allowed it.
+    #: For a new-evidence cell, the instrument batches whose results allowed it, and the
+    #: environment they ran in, which the batch's own manifest must match.
     instrument_batches: tuple[str, ...] = ()
+    instrument_fingerprint: dict[str, JsonValue] | None = None
 
     def to_json(self) -> str:
         return self.model_dump_json(indent=2) + "\n"
@@ -187,7 +201,17 @@ class _Check:
         self.reasons.append(reason)
 
 
-InstrumentCheck = Callable[[Preregistration, str, Sequence[Path]], tuple[list[str], list[str]]]
+@dataclass(frozen=True)
+class InstrumentEvidence:
+    """What the instrument cells' results say: why new evidence may not run yet (empty when it
+    may), the batches that showed it, and the one environment they all ran in."""
+
+    missing: list[str]
+    batches: list[str]
+    fingerprint: dict[str, JsonValue] | None
+
+
+InstrumentCheck = Callable[[Preregistration, str, Sequence[Path]], InstrumentEvidence]
 
 
 def authorize_batch(
@@ -244,17 +268,18 @@ def authorize_batch(
     landmarks = _scenario(root / rel, cell, trials, scenarios, checker, frozen, check)
 
     # 4. instrument before new evidence
-    instrument_batches: list[str] = []
+    evidence = InstrumentEvidence([], [], None)
     if cell.phase == "new-evidence":
         if instrument_check is None:
             check.fail(
                 f"cell {cell.id} is new evidence; the instrument cells' results were not given"
             )
         else:
-            missing, used = instrument_check(prereg, prereg_commit, instrument)
-            for reason in missing:
+            evidence = instrument_check(prereg, prereg_commit, instrument)
+            for reason in evidence.missing:
                 check.fail(reason)
-            instrument_batches = used
+            if not evidence.missing and evidence.fingerprint is None:
+                check.fail("the instrument cells' environment is unknown")
 
     if check.reasons or frozen is None or landmarks is None:
         raise NotAuthorized(check.reasons or ["the frozen checker could not be read"])
@@ -275,7 +300,8 @@ def authorize_batch(
         checker_sha256=frozen.checker.checker_sha256,
         registry_sha256=frozen.checker.registry_sha256,
         landmark_table_sha256=landmarks.sha256,
-        instrument_batches=tuple(instrument_batches),
+        instrument_batches=tuple(evidence.batches),
+        instrument_fingerprint=evidence.fingerprint,
     )
 
 
@@ -323,6 +349,8 @@ def _frozen_checker(
         ("checker_sha256", frozen.checker_sha256, pin.checker_sha256),
         ("registry_sha256", frozen.registry_sha256, pin.registry_sha256),
         ("checker version", frozen.version, pin.version),
+        ("effect models", frozen.effect_models, pin.effect_models),
+        ("landmark tables", frozen.landmark_tables, pin.landmark_tables),
     ):
         if got != want:
             check.fail(f"frozen {name} is {got}, the pre-registration names {want}")
@@ -372,13 +400,21 @@ def _scenario(
             f"cell {cell.id} injects {cell.fault}, so its scenario must name a landmark table"
         )
         return None
+    if table is not None and table not in frozen.checker.landmark_tables.values():
+        check.fail(f"{path}: landmark table {table} is not one the freeze pins")
+        return None
     return _Landmarks(table)
 
 
 def confirm_environment(
-    prereg: Preregistration, authorization: Authorization, manifest: Manifest
+    prereg: Preregistration,
+    authorization: Authorization,
+    manifest: Manifest,
+    rules: Sequence[CompatibilityRule] = (),
 ) -> list[str]:
-    """Why the batch's manifest is not the pre-registered environment; empty when it is."""
+    """Why the batch's manifest is not the pre-registered environment; empty when it is. For a
+    new-evidence batch, the manifest must also match the instrument batches' environment in every
+    material field a recorded compatibility rule does not cover."""
     problems = [
         f"manifest {key} is {got!r}, the pre-registration requires {want!r}"
         for key, (want, got) in mismatched(manifest, prereg.environment).items()
@@ -389,13 +425,28 @@ def confirm_environment(
         )
     if manifest.git_dirty:
         problems.append("the manifest records a dirty checkout")
+    if authorization.phase == "new-evidence":
+        if authorization.instrument_fingerprint is None:
+            problems.append("a new-evidence batch names no instrument environment")
+        else:
+            differing = unexplained_between(
+                authorization.instrument_fingerprint, fingerprint(manifest), rules
+            )
+            for key, (then, now) in differing.items():
+                problems.append(f"{key} is {now!r}; the instrument cells ran with {then!r}")
     return problems
 
 
+def rules_at(root: Path, commit: str) -> list[CompatibilityRule]:
+    """The compatibility rules recorded in the repository at `commit`; none if there is no file."""
+    return parse_rules(gitproof.blob(root, commit, RULES_PATH))
+
+
 def confirm(authorization: Authorization, manifest: Manifest, root: Path) -> list[str]:
-    """`confirm_environment` against the pre-registration as committed at the authorized commit:
-    what the runner calls after doctor."""
+    """`confirm_environment` against the pre-registration as committed and the compatibility rules
+    as recorded at the authorized commit: what the runner calls after doctor."""
     text = gitproof.blob(root, authorization.preregistration_commit, PREREG)
     if text is None:
         return [f"{PREREG} is not in commit {authorization.preregistration_commit}"]
-    return confirm_environment(parse(text.decode("utf-8")), authorization, manifest)
+    rules = rules_at(root, authorization.run_commit)
+    return confirm_environment(parse(text.decode("utf-8")), authorization, manifest, rules)

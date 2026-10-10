@@ -17,7 +17,8 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
-from typing import Any
+from pathlib import PurePosixPath
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -71,16 +72,44 @@ def differences(a: Manifest, b: Manifest) -> dict[str, tuple[JsonValue, JsonValu
     }
 
 
-def unexplained(
-    a: Manifest, b: Manifest, rules: Iterable[CompatibilityRule] = ()
+def unexplained_between(
+    fa: Mapping[str, JsonValue],
+    fb: Mapping[str, JsonValue],
+    rules: Iterable[CompatibilityRule] = (),
 ) -> dict[str, tuple[JsonValue, JsonValue]]:
-    """The differences no recorded rule covers; empty means the batches may be pooled."""
+    """Fingerprint differences no recorded rule covers; empty means they may be pooled."""
     allowed = list(rules)
 
     def covered(key: str, pair: tuple[JsonValue, JsonValue]) -> bool:
         return any(r.field == key and pair[0] in r.values and pair[1] in r.values for r in allowed)
 
-    return {k: v for k, v in differences(a, b).items() if not covered(k, v)}
+    found = {
+        key: (fa.get(key), fb.get(key))
+        for key in sorted(fa.keys() | fb.keys())
+        if fa.get(key) != fb.get(key)
+    }
+    return {k: v for k, v in found.items() if not covered(k, v)}
+
+
+def unexplained(
+    a: Manifest, b: Manifest, rules: Iterable[CompatibilityRule] = ()
+) -> dict[str, tuple[JsonValue, JsonValue]]:
+    """The differences no recorded rule covers; empty means the batches may be pooled."""
+    return unexplained_between(fingerprint(a), fingerprint(b), rules)
+
+
+#: Where the recorded compatibility rules live: a JSON list, absent when there are none.
+RULES_PATH = PurePosixPath("research/compatibility.json")
+
+
+def parse_rules(text: str | bytes | None) -> list[CompatibilityRule]:
+    """The rules a research/compatibility.json text records; none when there is no file."""
+    if text is None:
+        return []
+    raw: Any = json.loads(text)
+    if not isinstance(raw, list):
+        raise ValueError(f"{RULES_PATH} holds a JSON list of rules")
+    return [CompatibilityRule.model_validate(r) for r in cast(list[Any], raw)]
 
 
 def mismatched(manifest: Manifest, required: Mapping[str, JsonValue]) -> dict[str, tuple[Any, Any]]:

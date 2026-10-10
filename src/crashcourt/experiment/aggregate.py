@@ -8,21 +8,27 @@ Pooling. Batches of one cell are pooled only when they share the pre-registratio
 frozen checker, and the scenario hash, and their manifests differ in no material field that a
 recorded compatibility rule does not cover (crashcourt.experiment.fingerprint). Otherwise each set
 is reported as its own group and the cell says it was not pooled and why. Nothing is pooled by
-default.
+default, and the report lists every rule it applied.
 
 Counting, per group and invariant, over the group's trials:
 - an INVALID trial (checker.json names a trigger, or every outcome is INVALID) counts toward the
-  group's INVALID share and nothing else; above the pre-registered share the group is excluded;
+  group's INVALID share, with its trigger, and nothing else; above the pre-registered share the
+  group is excluded;
 - in every other trial the invariant's value is its outcome in result.json, or NOT_EXERCISED when
   checker.json lists it so (a trial with no result.json has every invariant not exercised), or
   NOT_EVALUATED when the checker said nothing about it;
 - n is the trials where it was exercised, k those whose outcome is an anomaly (EXPECTED, GAP,
   VIOLATION_CANDIDATE, VIOLATION), with the Wilson 95% interval and, at k = 0, the rule of three.
 
-Comparison with the prediction, per invariant: `unstable` when a deterministic cell's trials do not
-all agree; `escalate` when any trial is VIOLATION_CANDIDATE; `as-predicted` when every trial shows
-one predicted value; `differs` when a predicted cell shows anything else; `recorded` for a cell
-whose outcome was honestly unknown. Nothing here decides an outcome: the checker wrote them all.
+Per invariant, three separate readings:
+- `unstable`: a deterministic cell whose valid trials do not all show one value (0 of N or N of N
+  is the expected shape; anything between hides a nondeterminism to find before reporting);
+- `escalate`: any trial is VIOLATION_CANDIDATE, which starts the escalation chain;
+- `prediction`: `as-predicted` when every valid trial shows a predicted value, `differs` when a
+  predicted cell shows anything else, `recorded` for a cell whose outcome was honestly unknown,
+  `missing` when no valid trial exists.
+A group's status is the worst of: excluded, escalate, unstable, differs, missing, recorded,
+as-predicted. Nothing here decides an outcome: the checker wrote them all.
 """
 
 from __future__ import annotations
@@ -34,8 +40,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from crashcourt.experiment.fingerprint import CompatibilityRule, fingerprint_sha256, unexplained
-from crashcourt.experiment.gate import InstrumentCheck
+from crashcourt.experiment.fingerprint import (
+    CompatibilityRule,
+    fingerprint,
+    fingerprint_sha256,
+    unexplained,
+)
+from crashcourt.experiment.gate import InstrumentCheck, InstrumentEvidence
 from crashcourt.experiment.preregistration import EVERY_INVARIANT, Cell, Preregistration
 from crashcourt.experiment.verify import TrialFiles, VerifiedBatch, verify_batch
 from crashcourt.stats import count_sentence, rule_of_three, wilson
@@ -44,6 +55,7 @@ ANOMALY: frozenset[str] = frozenset({"EXPECTED", "GAP", "VIOLATION_CANDIDATE", "
 NOT_EXERCISED = "NOT_EXERCISED"
 NOT_EVALUATED = "NOT_EVALUATED"
 
+Prediction = Literal["as-predicted", "differs", "recorded", "missing"]
 Status = Literal[
     "as-predicted", "differs", "unstable", "escalate", "recorded", "missing", "excluded"
 ]
@@ -65,7 +77,7 @@ class _Model(BaseModel):
 
 class InvariantSummary(_Model):
     invariant: str
-    #: Trials by value: an outcome, NOT_EXERCISED, or NOT_EVALUATED (INVALID trials excluded).
+    #: Valid trials by value: an outcome, NOT_EXERCISED, or NOT_EVALUATED.
     values: dict[str, int]
     exercised: int
     anomalies: int
@@ -73,7 +85,17 @@ class InvariantSummary(_Model):
     rule_of_three_95: float | None
     sentence: str | None
     predicted: tuple[str, ...] | None
-    status: Status
+    prediction: Prediction
+    unstable: bool
+    escalate: bool
+
+    @property
+    def status(self) -> Status:
+        if self.escalate:
+            return "escalate"
+        if self.unstable:
+            return "unstable"
+        return self.prediction
 
 
 class GroupSummary(_Model):
@@ -92,6 +114,7 @@ class CellSummary(_Model):
     phase: str
     evidence: str
     confidence: str
+    n: int
     pooled: bool
     #: Why groups were kept apart: material fields that differ, each with the values seen.
     not_pooled_because: dict[str, list[str]]
@@ -102,6 +125,8 @@ class CellsReport(_Model):
     v: Literal[1] = 1
     preregistration_commit: str
     checker_sha256: str
+    #: Every compatibility rule the pooling applied.
+    compatibility_rules: tuple[CompatibilityRule, ...]
     cells: tuple[CellSummary, ...]
 
     def to_json(self) -> str:
@@ -114,16 +139,16 @@ class AggregationRefused(Exception):
         self.problems = tuple(problems)
 
 
-def _is_invalid(t: TrialFiles) -> str | None:
-    """The INVALID reason of a trial, or None when it is valid."""
+def invalid_reason(t: TrialFiles) -> str | None:
+    """The INVALID trigger of a trial, or None when it is valid."""
     invalid = t.checker.get("invalid")
     if invalid:
         return str(invalid.get("name") or invalid.get("reason") or "invalid")
     if t.result is not None:
         outcomes = [r["outcome"] for r in t.result.get("results", [])]
         if outcomes and all(o == "INVALID" for o in outcomes):
-            reasons = {r.get("reason") for r in t.result["results"]}
-            return str(sorted(r for r in reasons if r)[0]) if any(reasons) else "invalid"
+            reasons = sorted({str(r["reason"]) for r in t.result["results"] if r.get("reason")})
+            return reasons[0] if reasons else "invalid"
     return None
 
 
@@ -147,7 +172,7 @@ def _invariants(cell: Cell, trials: Iterable[TrialFiles]) -> list[str]:
     return names
 
 
-def _summarize_invariant(
+def summarize_invariant(
     cell: Cell, invariant: str, valid: Sequence[TrialFiles]
 ) -> InvariantSummary:
     values = Counter(_value(t, invariant) for t in valid)
@@ -157,19 +182,15 @@ def _summarize_invariant(
         (p for p in cell.predicted if p.invariant == EVERY_INVARIANT), None
     )
     predicted = prediction.expect if prediction else None
-    status: Status
+    reading: Prediction
     if not valid:
-        status = "missing"
-    elif "VIOLATION_CANDIDATE" in values:
-        status = "escalate"
-    elif cell.deterministic and len(values) > 1:
-        status = "unstable"
+        reading = "missing"
     elif cell.confidence == "unknown" or predicted is None:
-        status = "recorded"
+        reading = "recorded"
     elif set(values) <= set(predicted):
-        status = "as-predicted"
+        reading = "as-predicted"
     else:
-        status = "differs"
+        reading = "differs"
     interval = wilson(anomalies, exercised) if exercised else None
     return InvariantSummary(
         invariant=invariant,
@@ -184,23 +205,24 @@ def _summarize_invariant(
         if exercised
         else None,
         predicted=predicted,
-        status=status,
+        prediction=reading,
+        unstable=cell.deterministic and len(values) > 1,
+        escalate="VIOLATION_CANDIDATE" in values,
     )
 
 
-def _summarize_group(
+def summarize_group(
     cell: Cell, batches: Sequence[VerifiedBatch], max_invalid: float
 ) -> GroupSummary:
     trials = [t for b in batches for t in b.trials]
-    reasons = Counter(r for r in (_is_invalid(t) for t in trials) if r is not None)
+    reasons = Counter(r for r in (invalid_reason(t) for t in trials) if r is not None)
     invalid = sum(reasons.values())
     excluded = bool(trials) and invalid / len(trials) > max_invalid
-    valid = [t for t in trials if _is_invalid(t) is None]
-    invariants = tuple(_summarize_invariant(cell, name, valid) for name in _invariants(cell, valid))
+    valid = [t for t in trials if invalid_reason(t) is None]
+    invariants = tuple(summarize_invariant(cell, name, valid) for name in _invariants(cell, valid))
     statuses: list[Status] = (
         ["excluded"] if excluded else [i.status for i in invariants] or ["missing"]
     )
-    worst = min(statuses, key=SEVERITY.index)
     return GroupSummary(
         batches=tuple(b.batch.batch for b in batches),
         fingerprint_sha256=fingerprint_sha256(batches[0].manifest),
@@ -209,7 +231,7 @@ def _summarize_group(
         invalid_reasons=dict(sorted(reasons.items())),
         excluded=excluded,
         invariants=invariants,
-        status=worst,
+        status=min(statuses, key=SEVERITY.index),
     )
 
 
@@ -239,6 +261,21 @@ def group(
         else:
             groups.append([b])
     return groups
+
+
+def _apart(
+    groups: Sequence[Sequence[VerifiedBatch]], rules: Sequence[CompatibilityRule]
+) -> dict[str, list[str]]:
+    found: dict[str, set[str]] = {}
+    first = groups[0][0]
+    for g in groups[1:]:
+        for key, (x, y) in unexplained(first.manifest, g[0].manifest, rules).items():
+            found.setdefault(key, set()).update({repr(x), repr(y)})
+        names = ("cell", "preregistration", "checker", "freeze", "scenario")
+        for name, x, y in zip(names, _pool_key(first), _pool_key(g[0]), strict=True):
+            if x != y:
+                found.setdefault(name, set()).update({x, y})
+    return {k: sorted(v) for k, v in sorted(found.items())}
 
 
 def aggregate(
@@ -271,61 +308,66 @@ def aggregate(
         if not mine:
             continue
         groups = group(mine, rules)
-        apart: dict[str, set[str]] = {}
-        for g in groups[1:]:
-            for key, (x, y) in unexplained(groups[0][0].manifest, g[0].manifest, rules).items():
-                apart.setdefault(key, set()).update({repr(x), repr(y)})
-            for name, x, y in zip(
-                ("cell", "preregistration", "checker", "freeze", "scenario"),
-                _pool_key(groups[0][0]),
-                _pool_key(g[0]),
-                strict=True,
-            ):
-                if x != y:
-                    apart.setdefault(name, set()).update({x, y})
         cells.append(
             CellSummary(
                 cell=cell.id,
                 phase=cell.phase,
                 evidence=cell.evidence,
                 confidence=cell.confidence,
+                n=cell.n,
                 pooled=len(groups) == 1,
-                not_pooled_because={k: sorted(v) for k, v in sorted(apart.items())},
-                groups=tuple(_summarize_group(cell, g, prereg.max_invalid_share) for g in groups),
+                not_pooled_because=_apart(groups, rules),
+                groups=tuple(summarize_group(cell, g, prereg.max_invalid_share) for g in groups),
             )
         )
     return CellsReport(
         preregistration_commit=commits.pop(),
         checker_sha256=checkers.pop(),
+        compatibility_rules=tuple(rules),
         cells=tuple(cells),
     )
 
 
 def instrument_ready(repo: Path, rules: Sequence[CompatibilityRule] = ()) -> InstrumentCheck:
     """The gate's instrument check: every instrument cell of the pre-registration has one pooled
-    group, from batches under the same pre-registration commit, that came out as predicted."""
+    group, from batches under the same pre-registration commit, that came out as predicted, and
+    every instrument cell ran in one environment, which new evidence must then match."""
 
     def check(
         prereg: Preregistration, prereg_commit: str, dirs: Sequence[Path]
-    ) -> tuple[list[str], list[str]]:
+    ) -> InstrumentEvidence:
+        if not dirs:
+            ids = [c.id for c in prereg.cells if c.phase == "instrument"]
+            return InstrumentEvidence([f"instrument cell {i} has no batch" for i in ids], [], None)
         try:
-            report = aggregate(dirs, repo, rules) if dirs else None
+            report = aggregate(dirs, repo, rules)
         except AggregationRefused as exc:
-            return [f"instrument batches: {p}" for p in exc.problems], []
+            return InstrumentEvidence([f"instrument batches: {p}" for p in exc.problems], [], None)
         missing: list[str] = []
-        if report is not None and report.preregistration_commit != prereg_commit:
+        if report.preregistration_commit != prereg_commit:
             missing.append("the instrument batches ran under another pre-registration")
-        found = {c.cell: c for c in (report.cells if report else ())}
+        found = {c.cell: c for c in report.cells}
         for cell in prereg.cells:
             if cell.phase != "instrument":
                 continue
             summary = found.get(cell.id)
             if summary is None:
                 missing.append(f"instrument cell {cell.id} has no batch")
-            elif not summary.pooled or summary.groups[0].status != "as-predicted":
-                status = summary.groups[0].status if summary.pooled else "not pooled"
-                missing.append(f"instrument cell {cell.id} is {status}, not as predicted")
-        used = [b for c in (report.cells if report else ()) for g in c.groups for b in g.batches]
-        return missing, sorted(used)
+            elif not summary.pooled:
+                missing.append(f"instrument cell {cell.id} ran in more than one environment")
+            elif summary.groups[0].status != "as-predicted":
+                missing.append(
+                    f"instrument cell {cell.id} is {summary.groups[0].status}, not as predicted"
+                )
+        manifests = [verify_batch(d, repo).manifest for d in dirs]
+        for other in manifests[1:]:
+            differing = unexplained(manifests[0], other, rules)
+            if differing:
+                missing.append(
+                    f"the instrument cells ran in different environments ({', '.join(differing)})"
+                )
+                break
+        used = sorted(b for c in report.cells for g in c.groups for b in g.batches)
+        return InstrumentEvidence(missing, used, fingerprint(manifests[0]))
 
     return check

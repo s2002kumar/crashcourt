@@ -8,13 +8,19 @@ batch says about itself:
 - the manifest names the authorized commit, from a clean checkout;
 - the pre-registration commit is an ancestor of that commit, the file did not change between the
   two, and its bytes at the pre-registration commit hash to the recorded value;
-- the freeze commit is an ancestor of the pre-registration commit, and FROZEN.md at the run commit
-  hashes to the recorded and pre-registered value;
-- the batch record's scenario hash, the cell, N, and the checker are the pre-registered ones, and
-  the manifest holds the pre-registered environment;
+- the freeze commit is an ancestor of the pre-registration commit, FROZEN.md did not change
+  between the freeze and the run, and its bytes hash to the recorded and pre-registered value;
+- the batch record's scenario hash, the cell, N, and the checker (every hash the freeze records,
+  and the landmark table among the pinned ones) are the pre-registered ones, and the manifest
+  holds the pre-registered environment, and for new evidence the instrument batches' environment
+  under the compatibility rules recorded at the run commit;
+- the runner's own records agree, recomputed rather than read: scenario.json hashes to the
+  pre-registered scenario hash, run.json names the cell, the master seed, N, and canonical mode,
+  and every trial's seed is sha256 of [master_seed, cell, trial];
 - there are exactly N trials, numbered 1 to N as the runner numbers them, and each trial's
   checker.json was written by the frozen checker (its checker hash, registry, and landmark table
-  are the authorized ones), authorized for new evidence.
+  are the authorized ones), authorized for new evidence; a trial without result.json lists what
+  was not exercised.
 
 An empty list of problems is the proof; anything else keeps the batch out of every summary.
 """
@@ -25,7 +31,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from crashcourt.experiment import gitproof
 from crashcourt.experiment.gate import (
@@ -33,11 +39,14 @@ from crashcourt.experiment.gate import (
     FROZEN_PATH,
     Authorization,
     confirm_environment,
+    rules_at,
 )
 from crashcourt.experiment.preregistration import (
     PREREGISTRATION_PATH,
+    Cell,
     Preregistration,
     PreregistrationError,
+    derive_seed,
     parse,
 )
 from crashcourt.manifest import Manifest
@@ -126,6 +135,8 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
         )
     if gitproof.blob_sha256(repo, run, FROZEN_PATH) != auth.frozen_md_sha256:
         problems.append(f"{FROZEN_PATH} at the run commit is not the recorded freeze")
+    if gitproof.last_commit(repo, FROZEN_PATH, at=run) != auth.freeze_commit:
+        problems.append(f"{FROZEN_PATH} changed between the freeze and the run")
 
     raw = gitproof.blob(repo, prereg_commit, PREREGISTRATION_PATH.as_posix())
     try:
@@ -142,12 +153,18 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
         ) from None
 
     pin = prereg.checker
-    if pin is None or (pin.checker_sha256, pin.frozen_md_sha256, pin.registry_sha256) != (
-        auth.checker_sha256,
-        auth.frozen_md_sha256,
-        auth.registry_sha256,
-    ):
+    if pin is None or (
+        pin.version,
+        pin.checker_sha256,
+        pin.frozen_md_sha256,
+        pin.registry_sha256,
+    ) != (auth.checker_version, auth.checker_sha256, auth.frozen_md_sha256, auth.registry_sha256):
         problems.append("the authorized checker is not the pre-registered one")
+    elif (
+        auth.landmark_table_sha256 is not None
+        and auth.landmark_table_sha256 not in pin.landmark_tables.values()
+    ):
+        problems.append("the authorized landmark table is not one the pre-registration pins")
     for name, got, want in (
         ("scenario_sha256", batch.scenario_sha256, cell.scenario_sha256),
         ("authorized scenario_sha256", auth.scenario_sha256, cell.scenario_sha256),
@@ -160,7 +177,8 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
     digest = hashlib.sha256((batch_dir / "manifest.json").read_bytes()).hexdigest()
     if digest != batch.manifest_sha256:
         problems.append("batch.json's manifest_sha256 is not the sha256 of manifest.json")
-    problems.extend(confirm_environment(prereg, auth, manifest))
+    problems.extend(confirm_environment(prereg, auth, manifest, rules_at(repo, run)))
+    problems.extend(_runner_problems(batch_dir, cell, auth))
 
     trials = read_trials(batch_dir)
     if sorted(t.trial for t in trials) != list(range(1, cell.n + 1)):
@@ -190,6 +208,8 @@ def _trial_problems(t: TrialFiles, batch: BatchRecord, auth: Authorization) -> l
     for key, want in expected.items():
         if c.get(key) != want:
             found.append(f"{where}: checker.json {key} is {c.get(key)!r}, expected {want!r}")
+    if t.result is None and not c.get("not_exercised") and not c.get("invalid"):
+        found.append(f"{where}: no result.json, and checker.json names nothing not exercised")
     if t.result is not None:
         r = t.result
         try:
@@ -200,4 +220,31 @@ def _trial_problems(t: TrialFiles, batch: BatchRecord, auth: Authorization) -> l
             found.append(f"{where}: result.json names another trial")
         if r.get("manifest_sha256") != batch.manifest_sha256 or r.get("provenance") != "run":
             found.append(f"{where}: result.json is not this batch's run record")
+    return found
+
+
+def _runner_problems(batch_dir: Path, cell: Cell, auth: Authorization) -> list[str]:
+    """The runner's own records, recomputed: the scenario it ran, its mode, and its seeds."""
+    found: list[str] = []
+    try:
+        scenario = (batch_dir / "scenario.json").read_bytes()
+        run = _json(batch_dir / "run.json")
+    except (OSError, ValueError) as exc:
+        return [f"the runner's records are missing or unreadable: {exc}"]
+    digest = hashlib.sha256(scenario.rstrip(b"\n")).hexdigest()
+    if digest != cell.scenario_sha256:
+        found.append(f"scenario.json hashes to {digest}, pre-registered {cell.scenario_sha256}")
+    for key, want in (
+        ("cell", auth.cell),
+        ("master_seed", auth.master_seed),
+        ("trials", cell.n),
+        ("mode", "canonical"),
+    ):
+        if run.get(key) != want:
+            found.append(f"run.json {key} is {run.get(key)!r}, expected {want!r}")
+    seeds = cast(dict[str, str], run.get("trial_seeds") or {})
+    expected = {str(n): derive_seed(auth.master_seed, auth.cell, n) for n in range(1, cell.n + 1)}
+    wrong = sorted(k for k in seeds.keys() | expected.keys() if seeds.get(k) != expected.get(k))
+    if wrong:
+        found.append(f"run.json trial seeds are not the pre-registered derivation (trials {wrong})")
     return found
