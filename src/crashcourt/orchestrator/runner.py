@@ -58,7 +58,7 @@ from crashcourt.history.merge import merge
 from crashcourt.history.reader import HistoryError, read_history
 from crashcourt.history.writer import HistoryWriter, RunIdentity
 from crashcourt.manifest import Manifest
-from crashcourt.orchestrator import topology
+from crashcourt.orchestrator import preregistered, topology
 from crashcourt.orchestrator.dispatcher import EngineReport, Note, TrialEngine, describe_status
 from crashcourt.orchestrator.workers import ProcessWorker, socket_directory
 from crashcourt.probes import DEFAULT_PG_DSN, DEFAULT_SINK_URL, DEFAULT_TOXIPROXY_URL, SystemProbes
@@ -87,6 +87,8 @@ POOL_SETTINGS: dict[str, JsonValue] = {
     "row_factory": "dict_row",
 }
 ORCHESTRATOR = "orchestrator"
+#: The gate's record in a pre-registered batch (crashcourt.experiment.gate.AUTHORIZATION_FILE).
+AUTHORIZATION_FILE = "authorization.json"
 SINK = "sink"
 _BATCH_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -124,6 +126,8 @@ class RunOptions:
     batch: str | None = None
     canonical: bool = False
     own_database: bool = False
+    #: Instrument batch directories a pre-registered new-evidence cell rests on.
+    instrument: tuple[Path, ...] = ()
 
 
 @dataclass
@@ -628,12 +632,34 @@ def run_batch(
     directory = options.out / batch
     if directory.exists():
         raise RunRefused(f"{directory} already exists; batch ids are never reused")
+    # A pre-registered cell runs only through T-13's gate (crashcourt.orchestrator.preregistered).
+    try:
+        cell = preregistered.preregistered_cell(scenario, source, settings.root)
+        authorization = (
+            None
+            if cell is None
+            else preregistered.authorize(
+                cell,
+                source,
+                options.trials,
+                settings.root,
+                canonical=options.canonical,
+                instrument=options.instrument,
+            )
+        )
+    except preregistered.GateRefused as exc:
+        raise RunRefused(str(exc)) from exc
 
     probes = SystemProbes(settings.root)
     report = run_doctor(probes)
     manifest: Manifest | None = report.manifest
     if manifest is None:
         raise RunRefused("doctor did not pass:\n" + format_report(report))
+    if authorization is not None:
+        try:
+            preregistered.confirm(authorization, manifest, settings.root)
+        except preregistered.GateRefused as exc:
+            raise RunRefused(str(exc)) from exc
     if options.canonical and manifest.git_dirty:
         raise RunRefused("canonical batch refused: the checkout has uncommitted changes")
 
@@ -663,6 +689,8 @@ def run_batch(
     asyncio.run(_setup_tables(settings.direct_dsn))
 
     directory.mkdir(parents=True)
+    if authorization is not None:
+        (directory / AUTHORIZATION_FILE).write_bytes(authorization.to_json().encode("utf-8"))
     manifest_bytes = manifest.to_json().encode("utf-8")
     (directory / "manifest.json").write_bytes(manifest_bytes)
     scenario_hash = scenario_sha256(scenario)
@@ -686,6 +714,8 @@ def run_batch(
             "batch": batch,
             "cell": scenario.cell,
             "mode": "canonical" if options.canonical else "ordinary",
+            "preregistered_cell": authorization.cell if authorization else None,
+            "phase": authorization.phase if authorization else None,
             "own_database": options.own_database,
             "started": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
             "trials": options.trials,

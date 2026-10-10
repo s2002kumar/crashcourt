@@ -176,6 +176,7 @@ def _run(args: argparse.Namespace) -> int:
             batch=args.batch,
             canonical=args.canonical,
             own_database=args.i_own_this_database,
+            instrument=tuple(args.instrument),
         )
         summary = run_batch(
             scenario,
@@ -298,6 +299,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--canonical",
         action="store_true",
         help="a publishable batch: refuse a dirty checkout or a sink clock off by over 1 s",
+    )
+    run.add_argument(
+        "--instrument",
+        type=Path,
+        nargs="+",
+        action="extend",
+        default=[],
+        metavar="BATCH",
+        help="instrument batch directories a pre-registered new-evidence cell rests on",
     )
     run.add_argument(
         "--i-own-this-database",
