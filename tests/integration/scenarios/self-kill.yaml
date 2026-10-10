@@ -1,0 +1,14 @@
+# A worker that sends itself SIGKILL at a failpoint, before its first checkpoint is written.
+v: 1
+name: self-kill
+cell: self-kill
+seed: self-kill-v1
+workload: smoke
+target: {saver: postgres, driver: async, durability: sync}
+workers: [w1, w2]
+ops:
+  - {id: op-1, worker: w1, thread: t1, after: start}
+  - {id: op-2, worker: w2, thread: t2, after: op-1}
+schedule:
+  - on: {fp: put.before, worker: w1, op: op-1}
+    do: {signal: SIGKILL}

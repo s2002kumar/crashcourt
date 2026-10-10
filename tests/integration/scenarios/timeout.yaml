@@ -1,0 +1,16 @@
+# A run that exceeds its timeout: w1 parks after its first read and nothing releases it. The
+# client stops waiting after run_s, records info, and the trial goes on to op-2 and ends.
+v: 1
+name: timeout
+cell: timeout
+seed: timeout-v1
+workload: smoke
+target: {saver: postgres, driver: async, durability: sync}
+workers: [w1, w2]
+ops:
+  - {id: op-1, worker: w1, thread: t1, after: start}
+  - {id: op-2, worker: w2, thread: t2, after: op-1}
+schedule:
+  - on: {fp: get_tuple.after, worker: w1, op: op-1}
+    do: {pause: B1}
+timeouts: {run_s: 3}

@@ -1,0 +1,111 @@
+# Two workers, 100 sequential operations: each op is sent once the one before it has its
+# terminal event. Workers alternate, and every ten ops share a thread, so each worker keeps
+# continuing threads the other one wrote.
+v: 1
+name: sequential-100
+cell: sequential-100
+seed: sequential-100-v1
+workload: smoke
+target: {saver: postgres, driver: async, durability: sync}
+workers: [w1, w2]
+ops:
+  - {id: op-001, worker: w1, thread: t0, after: start}
+  - {id: op-002, worker: w2, thread: t0, after: op-001}
+  - {id: op-003, worker: w1, thread: t0, after: op-002}
+  - {id: op-004, worker: w2, thread: t0, after: op-003}
+  - {id: op-005, worker: w1, thread: t0, after: op-004}
+  - {id: op-006, worker: w2, thread: t0, after: op-005}
+  - {id: op-007, worker: w1, thread: t0, after: op-006}
+  - {id: op-008, worker: w2, thread: t0, after: op-007}
+  - {id: op-009, worker: w1, thread: t0, after: op-008}
+  - {id: op-010, worker: w2, thread: t0, after: op-009}
+  - {id: op-011, worker: w1, thread: t1, after: op-010}
+  - {id: op-012, worker: w2, thread: t1, after: op-011}
+  - {id: op-013, worker: w1, thread: t1, after: op-012}
+  - {id: op-014, worker: w2, thread: t1, after: op-013}
+  - {id: op-015, worker: w1, thread: t1, after: op-014}
+  - {id: op-016, worker: w2, thread: t1, after: op-015}
+  - {id: op-017, worker: w1, thread: t1, after: op-016}
+  - {id: op-018, worker: w2, thread: t1, after: op-017}
+  - {id: op-019, worker: w1, thread: t1, after: op-018}
+  - {id: op-020, worker: w2, thread: t1, after: op-019}
+  - {id: op-021, worker: w1, thread: t2, after: op-020}
+  - {id: op-022, worker: w2, thread: t2, after: op-021}
+  - {id: op-023, worker: w1, thread: t2, after: op-022}
+  - {id: op-024, worker: w2, thread: t2, after: op-023}
+  - {id: op-025, worker: w1, thread: t2, after: op-024}
+  - {id: op-026, worker: w2, thread: t2, after: op-025}
+  - {id: op-027, worker: w1, thread: t2, after: op-026}
+  - {id: op-028, worker: w2, thread: t2, after: op-027}
+  - {id: op-029, worker: w1, thread: t2, after: op-028}
+  - {id: op-030, worker: w2, thread: t2, after: op-029}
+  - {id: op-031, worker: w1, thread: t3, after: op-030}
+  - {id: op-032, worker: w2, thread: t3, after: op-031}
+  - {id: op-033, worker: w1, thread: t3, after: op-032}
+  - {id: op-034, worker: w2, thread: t3, after: op-033}
+  - {id: op-035, worker: w1, thread: t3, after: op-034}
+  - {id: op-036, worker: w2, thread: t3, after: op-035}
+  - {id: op-037, worker: w1, thread: t3, after: op-036}
+  - {id: op-038, worker: w2, thread: t3, after: op-037}
+  - {id: op-039, worker: w1, thread: t3, after: op-038}
+  - {id: op-040, worker: w2, thread: t3, after: op-039}
+  - {id: op-041, worker: w1, thread: t4, after: op-040}
+  - {id: op-042, worker: w2, thread: t4, after: op-041}
+  - {id: op-043, worker: w1, thread: t4, after: op-042}
+  - {id: op-044, worker: w2, thread: t4, after: op-043}
+  - {id: op-045, worker: w1, thread: t4, after: op-044}
+  - {id: op-046, worker: w2, thread: t4, after: op-045}
+  - {id: op-047, worker: w1, thread: t4, after: op-046}
+  - {id: op-048, worker: w2, thread: t4, after: op-047}
+  - {id: op-049, worker: w1, thread: t4, after: op-048}
+  - {id: op-050, worker: w2, thread: t4, after: op-049}
+  - {id: op-051, worker: w1, thread: t5, after: op-050}
+  - {id: op-052, worker: w2, thread: t5, after: op-051}
+  - {id: op-053, worker: w1, thread: t5, after: op-052}
+  - {id: op-054, worker: w2, thread: t5, after: op-053}
+  - {id: op-055, worker: w1, thread: t5, after: op-054}
+  - {id: op-056, worker: w2, thread: t5, after: op-055}
+  - {id: op-057, worker: w1, thread: t5, after: op-056}
+  - {id: op-058, worker: w2, thread: t5, after: op-057}
+  - {id: op-059, worker: w1, thread: t5, after: op-058}
+  - {id: op-060, worker: w2, thread: t5, after: op-059}
+  - {id: op-061, worker: w1, thread: t6, after: op-060}
+  - {id: op-062, worker: w2, thread: t6, after: op-061}
+  - {id: op-063, worker: w1, thread: t6, after: op-062}
+  - {id: op-064, worker: w2, thread: t6, after: op-063}
+  - {id: op-065, worker: w1, thread: t6, after: op-064}
+  - {id: op-066, worker: w2, thread: t6, after: op-065}
+  - {id: op-067, worker: w1, thread: t6, after: op-066}
+  - {id: op-068, worker: w2, thread: t6, after: op-067}
+  - {id: op-069, worker: w1, thread: t6, after: op-068}
+  - {id: op-070, worker: w2, thread: t6, after: op-069}
+  - {id: op-071, worker: w1, thread: t7, after: op-070}
+  - {id: op-072, worker: w2, thread: t7, after: op-071}
+  - {id: op-073, worker: w1, thread: t7, after: op-072}
+  - {id: op-074, worker: w2, thread: t7, after: op-073}
+  - {id: op-075, worker: w1, thread: t7, after: op-074}
+  - {id: op-076, worker: w2, thread: t7, after: op-075}
+  - {id: op-077, worker: w1, thread: t7, after: op-076}
+  - {id: op-078, worker: w2, thread: t7, after: op-077}
+  - {id: op-079, worker: w1, thread: t7, after: op-078}
+  - {id: op-080, worker: w2, thread: t7, after: op-079}
+  - {id: op-081, worker: w1, thread: t8, after: op-080}
+  - {id: op-082, worker: w2, thread: t8, after: op-081}
+  - {id: op-083, worker: w1, thread: t8, after: op-082}
+  - {id: op-084, worker: w2, thread: t8, after: op-083}
+  - {id: op-085, worker: w1, thread: t8, after: op-084}
+  - {id: op-086, worker: w2, thread: t8, after: op-085}
+  - {id: op-087, worker: w1, thread: t8, after: op-086}
+  - {id: op-088, worker: w2, thread: t8, after: op-087}
+  - {id: op-089, worker: w1, thread: t8, after: op-088}
+  - {id: op-090, worker: w2, thread: t8, after: op-089}
+  - {id: op-091, worker: w1, thread: t9, after: op-090}
+  - {id: op-092, worker: w2, thread: t9, after: op-091}
+  - {id: op-093, worker: w1, thread: t9, after: op-092}
+  - {id: op-094, worker: w2, thread: t9, after: op-093}
+  - {id: op-095, worker: w1, thread: t9, after: op-094}
+  - {id: op-096, worker: w2, thread: t9, after: op-095}
+  - {id: op-097, worker: w1, thread: t9, after: op-096}
+  - {id: op-098, worker: w2, thread: t9, after: op-097}
+  - {id: op-099, worker: w1, thread: t9, after: op-098}
+  - {id: op-100, worker: w2, thread: t9, after: op-099}
