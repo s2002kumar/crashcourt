@@ -14,6 +14,9 @@ dependencies = [
   "langgraph-checkpoint-sqlite==3.1.1",
   "psycopg[binary]==3.3.6",
   "psycopg-pool==3.3.3",
+  # The official checkpointer conformance suite. Control C4 runs it through the failpoint wrapper,
+  # and its version is in every manifest, so it is installed wherever the harness is.
+  "langgraph-checkpoint-conformance==0.0.2",
   # Harness libraries: lower bounds here, exact versions in uv.lock.
   "packaging>=26.3",
   "pydantic>=2.13.5",
