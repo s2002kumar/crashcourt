@@ -23,6 +23,11 @@ Layout of one batch (`<out>/<batch>/`):
 | `<cell>/trial-NNNNN/` | every process's history, the merged history, worker logs, trial.json |
 | summary.json | every trial's validity and client outcomes |
 
+Each trial must also start fresh: its sink ledger empty, and no row in the saver's tables for
+any of its threads (thread ids embed the batch, so rows there mean a batch id was reused and the
+trial would continue another one's threads). That check reads only row counts, before anything
+is dispatched; nothing reads the target database to decide an outcome.
+
 A trial is valid when every history parses, the merge finds no contradiction, every
 `client.invoke` has exactly one terminal event, every scheduled step fired, every worker's exit is
 explained, and nothing broke the protocol. Validity is about the harness, never about the target.
@@ -210,6 +215,24 @@ def check_sink(health: Mapping[str, object], source: str) -> list[str]:
     return problems
 
 
+#: The saver's tables that hold a thread's rows.
+THREAD_TABLES: tuple[str, ...] = ("checkpoints", "checkpoint_writes", "checkpoint_blobs")
+
+
+def rows_for_threads(dsn: str, thread_ids: Sequence[str]) -> dict[str, int]:
+    """How many rows each of the saver's tables already holds for these threads (direct path)."""
+    import psycopg
+    from psycopg import sql
+
+    query = sql.SQL("SELECT count(*) FROM {} WHERE thread_id = ANY(%s)")
+    found: dict[str, int] = {}
+    with psycopg.connect(dsn, autocommit=True, connect_timeout=5) as conn:
+        for table in THREAD_TABLES:
+            row = conn.execute(query.format(sql.Identifier(table)), (list(thread_ids),)).fetchone()
+            found[table] = int(row[0]) if row else 0
+    return found
+
+
 async def _setup_tables(dsn: str) -> None:
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
@@ -257,10 +280,29 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
     reasons: list[str] = []
     report: EngineReport | None = None
 
+    prefix = f"{ctx.batch}/{scenario.cell}/{number}"
     try:
-        await asyncio.to_thread(ctx.sink.open_trial, trial)
+        opened = await asyncio.to_thread(ctx.sink.open_trial, trial)
     except SinkError as exc:
         reasons.append(f"the sink did not open the trial: {exc}")
+    else:
+        if opened.get("rows") != 0:
+            reasons.append(
+                f"the sink's ledger for this trial already holds {opened.get('rows')} row(s); "
+                "was the batch id reused?"
+            )
+    threads = sorted({f"{prefix}/{op.thread}" for op in scenario.ops})
+    try:
+        existing = await asyncio.to_thread(rows_for_threads, ctx.settings.direct_dsn, threads)
+    except Exception as exc:  # noqa: BLE001 - an unchecked start is not a fresh start
+        reasons.append(f"could not check that the trial's threads are new: {exc}")
+    else:
+        if any(existing.values()):
+            held = ", ".join(f"{table} {n}" for table, n in existing.items() if n)
+            reasons.append(
+                f"the target database already holds rows for this trial's threads ({held}); "
+                "was the batch id reused?"
+            )
     reasons.extend(await asyncio.to_thread(topology.unclean, ctx.toxiproxy, ctx.routes))
 
     history = HistoryWriter(directory / f"{ORCHESTRATOR}.jsonl", run=identity, proc=ORCHESTRATOR)
@@ -287,7 +329,7 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
             engine = TrialEngine(
                 scenario,
                 history=history,
-                thread_prefix=f"{ctx.batch}/{scenario.cell}/{number}",
+                thread_prefix=prefix,
                 spawn=spawn,
             )
             report = await engine.run()

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -137,6 +138,28 @@ def test_a_worker_that_kills_itself_at_a_failpoint_is_explained_by_its_step(
     w1 = history(summary, "w1")
     assert [e.kind for e in w1[-2:]] == ["fp.hit", "fp.action"]
     assert trial_record(summary)["workers"]["w1"]["signal"] == "SIGKILL"
+
+
+def test_a_reused_batch_id_never_continues_another_batchs_threads(tmp_path: Path) -> None:
+    # The output directory differs, so only the database and the sink can tell.
+    path = REPO / "scenarios" / "smoke.yaml"
+    batch = f"t07-reuse-{uuid.uuid4().hex[:12]}"  # unique to this run, then given twice
+    first = run_batch(
+        load_scenario(path),
+        RunOptions(trials=1, out=tmp_path / "first", batch=batch),
+        Settings.from_environment(REPO),
+    )
+    assert first.trials[0].valid, first.trials[0].reasons
+    second = run_batch(
+        load_scenario(path),
+        RunOptions(trials=1, out=tmp_path / "second", batch=batch),
+        Settings.from_environment(REPO),
+    )
+    [trial] = second.trials
+    assert not trial.valid
+    assert any("already holds rows for this trial's threads" in r for r in trial.reasons)
+    # Nothing ran: no client event at all.
+    assert not any(e.kind.startswith("client.") for e in history(second, "orchestrator"))
 
 
 def test_a_run_past_its_timeout_yields_info_and_the_trial_still_finishes_cleanly(
