@@ -15,6 +15,8 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph  # pyright: ignore[reportMissingTypeStubs]
 from pydantic import JsonValue
 
+from crashcourt.workloads.harness import Harness
+
 
 class SmokeState(TypedDict):
     trace: Annotated[list[str], operator.add]
@@ -28,8 +30,9 @@ def second(state: SmokeState) -> dict[str, list[str]]:
     return {"trace": ["second"]}
 
 
-def build(checkpointer: BaseCheckpointSaver[Any]) -> Any:
-    """The compiled graph. langgraph's graph module ships no type information."""
+def build(checkpointer: BaseCheckpointSaver[Any], harness: Harness | None = None) -> Any:
+    """The compiled graph; it records nothing itself, so it ignores the harness. langgraph's
+    graph module ships no type information."""
     graph: Any = StateGraph(SmokeState)
     graph.add_node("first", first)
     graph.add_node("second", second)
