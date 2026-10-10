@@ -49,7 +49,7 @@ jobs:
       - run: docker compose up -d --wait
       - run: >-
           uv run crashcourt doctor --manifest manifest-ci.json
-          --compare research/evidence/t-08/manifest-local.json
+          --compare research/evidence/t-10/manifest-local.json
       - name: manifest names the tested commit, checked out clean
         run: jq -e --arg sha "$HEAD_SHA" '.git_sha == $sha and .git_dirty == false' manifest-ci.json
       - run: uv run pytest -m integration
