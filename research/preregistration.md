@@ -22,8 +22,11 @@ The JSON block at the end is the binding part; the prose and the table explain i
   invariant is omitted from the results. Cells whose outcome is honestly unknown say `unknown`; their
   predictions record the expected shape and are compared, but not flagged.
 - **The environment.** Every batch's manifest must hold each value under `environment`.
-- **Instrument checks.** Checks that are not batches (artifact and saver mutants, checker determinism,
-  transparency, the sequential reference) each need recorded evidence before this is final.
+- **Instrument checks.** Checks that are not batches each need recorded evidence before this is final:
+  artifact and saver mutants (C5), checker determinism, transparency (C4), the sequential reference (C9), the
+  clause registry (C6), environment equality (C7), the fault primitives' self-test, and the oracle's
+  independence from the faults. Replay fidelity (C8) and the fixed-variant control (C10) apply to a candidate
+  finding during escalation, not to a batch, so they are not listed here.
 
 ## How it is enforced
 
@@ -1503,6 +1506,26 @@ affects.
       "evidence": null,
       "id": "C9",
       "requirement": "sequential reference: InMemorySaver final state equals Postgres for single-writer fault-free runs"
+    },
+    {
+      "evidence": null,
+      "id": "C6",
+      "requirement": "the clause registry validates offline at the run commit (crashcourt clauses check)"
+    },
+    {
+      "evidence": null,
+      "id": "C7",
+      "requirement": "batches pool only across identical environments: the fingerprint rule, with every exception recorded in research/compatibility.json"
+    },
+    {
+      "evidence": null,
+      "id": "fault-selftest",
+      "requirement": "every fault primitive passes its self-test (crashcourt faults selftest) in the environment the batches run in"
+    },
+    {
+      "evidence": null,
+      "id": "oracle-independence",
+      "requirement": "doctor shows the effect sink and the oracle connection are not behind Toxiproxy, and the sink reports no test hooks and the manifest's source hash"
     }
   ],
   "max_invalid_share": 0.02,
