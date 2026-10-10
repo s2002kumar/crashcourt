@@ -34,7 +34,7 @@
         "I11 PASS LG-DUR-SYNC": 50,
         "I1a PASS LG-DUR-SYNC": 50,
         "I1b PASS LG-DUR-SYNC": 50,
-        "I4 PASS LG-PW-EXC": 50,
+        "I4 NO_ANOMALY_UNSPECIFIED -": 50,
         "I5a NO_ANOMALY_UNSPECIFIED -": 50,
         "I5b NO_ANOMALY_UNSPECIFIED -": 50,
         "I5c NO_ANOMALY_UNSPECIFIED -": 50,
@@ -149,9 +149,9 @@
         "w2 seq 3 observed": 50
       },
       "outcomes": {
-        "I11 NO_ANOMALY_UNSPECIFIED -": 50,
-        "I1a NO_ANOMALY_UNSPECIFIED -": 50,
-        "I1b NO_ANOMALY_UNSPECIFIED -": 50,
+        "I11 PASS LG-DUR-SYNC": 50,
+        "I1a PASS LG-DUR-SYNC": 50,
+        "I1b PASS LG-DUR-SYNC": 50,
         "I5a GAP -": 50,
         "I5b NO_ANOMALY_UNSPECIFIED -": 50,
         "I5c NO_ANOMALY_UNSPECIFIED -": 50,
@@ -200,8 +200,8 @@
     "ledger rows from a copy of the sink's SQLite file, verified with T-08's Ledger.verify",
     "first snapshot from db-rows.jsonl, second from a live dump; metadata from the live dump",
     "pre-trial emptiness not recorded by the runner; set to zero (thread ids are trial-scoped)",
-    "the sink reading after the trial taken from the batch's /health reading in run.json",
-    "the draft landmark table applied as if audited"
+    "both sink readings taken from the batch's /health reading in run.json",
+    "the first snapshot's time is the trial's last orchestrator event (export time not recorded)"
   ],
   "registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5"
 }
