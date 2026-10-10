@@ -40,13 +40,22 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from crashcourt.experiment import gitproof
 from crashcourt.experiment.fingerprint import (
     CompatibilityRule,
     fingerprint,
     fingerprint_sha256,
     unexplained,
 )
-from crashcourt.experiment.gate import InstrumentCheck, InstrumentEvidence
+from crashcourt.experiment.gate import (
+    Authorization,
+    CheckerView,
+    InstrumentCheck,
+    InstrumentEvidence,
+    ScenarioView,
+    authorize_batch,
+    rules_at,
+)
 from crashcourt.experiment.preregistration import EVERY_INVARIANT, Cell, Preregistration
 from crashcourt.experiment.verify import TrialFiles, VerifiedBatch, verify_batch
 from crashcourt.stats import count_sentence, rule_of_three, wilson
@@ -371,3 +380,26 @@ def instrument_ready(repo: Path, rules: Sequence[CompatibilityRule] = ()) -> Ins
         return InstrumentEvidence(missing, used, fingerprint(manifests[0]))
 
     return check
+
+
+def authorize(
+    source: Path | None,
+    trials: int,
+    root: Path,
+    instrument: Sequence[Path] = (),
+    *,
+    checker: CheckerView | None = None,
+    scenarios: ScenarioView | None = None,
+) -> Authorization:
+    """`authorize_batch` as the runner and the CLI call it: for a new-evidence cell, the
+    instrument batches given are checked under the compatibility rules recorded at HEAD."""
+    rules = rules_at(root, gitproof.head(root))
+    return authorize_batch(
+        source,
+        trials,
+        root,
+        checker=checker,
+        scenarios=scenarios,
+        instrument=instrument,
+        instrument_check=instrument_ready(root, rules),
+    )

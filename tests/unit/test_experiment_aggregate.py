@@ -279,3 +279,19 @@ def test_the_report_lists_the_rules_it_applied(repo: Repo) -> None:
     report = aggregate([a, b], repo.root, [rule])
     assert report.compatibility_rules == (rule,)
     assert report.cells[0].pooled and report.cells[0].n == N
+
+
+def test_the_runner_entry_point_authorizes_new_evidence_from_instrument_batches(
+    repo: Repo,
+) -> None:
+    from crashcourt.experiment.aggregate import authorize
+    from crashcourt.experiment.gate import NotAuthorized
+
+    x1 = repo.root / "scenarios/X1.yaml"
+    with pytest.raises(NotAuthorized, match="instrument cell R1 has no batch"):
+        authorize(x1, N, repo.root, checker=FakeChecker(), scenarios=FakeScenarios())
+    inst = batch(repo, "inst")
+    auth = authorize(x1, N, repo.root, [inst], checker=FakeChecker(), scenarios=FakeScenarios())
+    assert auth.instrument_batches == ("inst",)
+    assert auth.instrument_fingerprint is not None
+    assert auth.instrument_fingerprint["git_sha"] == auth.run_commit

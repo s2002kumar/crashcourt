@@ -73,17 +73,11 @@ def _check(args: argparse.Namespace) -> int:
 
 
 def _authorize(args: argparse.Namespace) -> int:
-    from crashcourt.experiment.aggregate import instrument_ready
-    from crashcourt.experiment.gate import NotAuthorized, authorize_batch
+    from crashcourt.experiment.aggregate import authorize
+    from crashcourt.experiment.gate import NotAuthorized
 
     try:
-        auth = authorize_batch(
-            args.scenario,
-            args.trials,
-            args.root,
-            instrument=args.instrument,
-            instrument_check=instrument_ready(args.root),
-        )
+        auth = authorize(args.scenario, args.trials, args.root, args.instrument)
     except NotAuthorized as exc:
         print(f"not authorized ({len(exc.reasons)}):")
         print("\n".join(f"  {r}" for r in exc.reasons))
