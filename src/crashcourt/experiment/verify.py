@@ -12,9 +12,9 @@ batch says about itself:
   hashes to the recorded and pre-registered value;
 - the batch record's scenario hash, the cell, N, and the checker are the pre-registered ones, and
   the manifest holds the pre-registered environment;
-- there are exactly N trials, and each trial's checker.json was written by the frozen checker
-  (its checker hash, registry, and landmark table are the authorized ones), authorized for new
-  evidence.
+- there are exactly N trials, numbered 1 to N as the runner numbers them, and each trial's
+  checker.json was written by the frozen checker (its checker hash, registry, and landmark table
+  are the authorized ones), authorized for new evidence.
 
 An empty list of problems is the proof; anything else keeps the batch out of every summary.
 """
@@ -163,8 +163,8 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
     problems.extend(confirm_environment(prereg, auth, manifest))
 
     trials = read_trials(batch_dir)
-    if sorted(t.trial for t in trials) != list(range(cell.n)):
-        problems.append(f"trials {[t.trial for t in trials]} are not exactly 0..{cell.n - 1}")
+    if sorted(t.trial for t in trials) != list(range(1, cell.n + 1)):
+        problems.append(f"trials {[t.trial for t in trials]} are not exactly 1..{cell.n}")
     for t in trials:
         problems.extend(_trial_problems(t, batch, auth))
     if problems:

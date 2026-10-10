@@ -232,7 +232,7 @@ def make_batch(
     )
     (root / "batch.json").write_text(record.model_dump_json(), encoding="utf-8")
     (root / AUTHORIZATION_FILE).write_text(auth.to_json(), encoding="utf-8")
-    for n, pairs in enumerate(trials):
+    for n, pairs in enumerate(trials, start=1):  # the runner numbers trials 1..N
         trial = root / auth.cell / f"trial-{n:05d}"
         trial.mkdir(parents=True)
         report: dict[str, Any] = {

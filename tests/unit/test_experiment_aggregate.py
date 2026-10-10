@@ -104,7 +104,7 @@ def test_a_trial_classified_by_another_checker_is_refused(repo: Repo) -> None:
 
 def test_a_batch_must_hold_exactly_n_trials(repo: Repo) -> None:
     d = batch(repo, "b1", [R1_AS_PREDICTED] * (N - 1))
-    assert f"are not exactly 0..{N - 1}" in problems(repo, d)
+    assert f"are not exactly 1..{N}" in problems(repo, d)
 
 
 def test_the_environment_must_be_the_preregistered_one(repo: Repo) -> None:
@@ -161,7 +161,7 @@ def test_statuses(repo: Repo, rows: list[list[tuple[str, str]]], status: str) ->
 
 
 def test_invalid_trials_are_counted_and_exclude_a_cell_above_the_threshold(repo: Repo) -> None:
-    d = batch(repo, "b1", invalid={0: "fault not fired"})
+    d = batch(repo, "b1", invalid={1: "fault not fired"})
     group = aggregate([d], repo.root).cells[0].groups[0]
     assert (group.invalid, group.invalid_reasons) == (1, {"fault not fired": 1})
     assert group.excluded and group.status == "excluded"
