@@ -36,6 +36,10 @@ RESUME_AFTER_INTERRUPT = "resume_after_interrupt"
 COMMITTED_BEFORE_STOP = "committed_before_stop"
 #: Any stop of a worker on the thread is witnessed (used to flag harness investigations).
 STOP_WITNESSED = "stop_witnessed"
+#: The producing node had ended (its node.end) and its task's regular writes had not committed
+#: when its worker stopped: not "running" (founder ruling of 2026-10-10); pending-write
+#: semantics own the re-run.
+WRITES_PENDING_AT_STOP = "writes_pending_at_stop"
 
 
 class Witness(BaseModel):

@@ -19,7 +19,7 @@ are "already durable"), so a crash never inherits the guarantee and carries no v
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from crashcourt.checker.artifacts import Durability
@@ -34,6 +34,7 @@ from crashcourt.checker.observations import (
     STOP_WHILE_RUNNING,
     STOP_WITNESSED,
     WRITER_CRASHED,
+    WRITES_PENDING_AT_STOP,
 )
 
 Grade = Literal["G3", "G2", "G1", "P", "D"]
@@ -44,6 +45,11 @@ SYNC_G2_CAVEAT = (
     "G2 caveat: LG-DUR-SYNC says when the write happens, not that an acknowledged write "
     "survives or that the final write precedes the return; the escalation chain must settle "
     "this reading before any VIOLATION"
+)
+PENDING_AT_STOP = (
+    "its node had ended and its writes had not committed when its worker stopped, so it was not "
+    "running (founder ruling, 2026-10-10): pending-write semantics own the re-run, LG-PW-CRASH "
+    "describes them, and no clause permits it"
 )
 SYNC_READING = (
     "reading: 'next step' includes the first tick after the input checkpoint, and 'writes' "
@@ -92,6 +98,8 @@ class InvariantRules:
     investigate: bool = False
     #: ...unless this witness holds.
     investigate_unless: str | None = None
+    #: Notes the fallback GAP's reason carries when the named witness holds.
+    fallback_notes: Mapping[str, str] = field(default_factory=dict[str, str])
     #: Check the disclaimer before the permissions (I7: "Multi-writer or conflicting resume: GAP
     #: (LGP-DT)"). I4 keeps its fixed cause order, (a) and (b) before (c).
     disclaim_first: bool = False
@@ -151,6 +159,7 @@ RULES: dict[str, InvariantRules] = {
             fallback="duplicate with no documented cause",
             investigate=True,
             investigate_unless=STOP_WITNESSED,
+            fallback_notes={WRITES_PENDING_AT_STOP: PENDING_AT_STOP},
         ),
         InvariantRules(
             "I5a",
@@ -184,6 +193,7 @@ RULES: dict[str, InvariantRules] = {
             investigate=True,
             investigate_unless=STOP_WITNESSED,
             disclaim_first=True,
+            fallback_notes={WRITES_PENDING_AT_STOP: PENDING_AT_STOP},
         ),
         InvariantRules("I7b", fallback="no clause covers a phantom effect"),
         InvariantRules("I7c", fallback="no clause covers approval and effect agreement"),

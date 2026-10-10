@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from crashcourt.checker.artifacts import ContextRule, LandmarkSpec, LandmarkTable
+from crashcourt.checker.artifacts import LandmarkTable
 from crashcourt.checker.landmarks import repository_tables
 from tests.controls.prefreeze import validate
 from tests.mutants import artifacts as M
@@ -13,16 +13,10 @@ from tests.unit.test_checker_engine import REGISTRY, REGISTRY_SHA
 
 
 def _w1_table() -> LandmarkTable:
-    """The draft table without its W5 landmark, and L-RES narrowed to the first call, as an audit
-    might settle it; only so that synthetic W1 trials can pass."""
-    keep: list[LandmarkSpec] = []
-    for spec in TABLE.landmarks:
-        if spec.id == "L-T1":
-            continue
-        if spec.id == "L-RES":
-            spec = spec.model_copy(update={"rules": (*spec.rules, ContextRule(rule="first_call"))})
-        keep.append(spec)
-    return TABLE.model_copy(update={"landmarks": tuple(keep)})
+    """The repository table without its W5 landmark, so synthetic W1 trials can pass."""
+    return TABLE.model_copy(
+        update={"landmarks": tuple(s for s in TABLE.landmarks if s.id != "L-T1")}
+    )
 
 
 def test_fault_free_trials_validate() -> None:
@@ -37,9 +31,18 @@ def test_the_documented_misuse_duplicate_is_not_a_false_anomaly() -> None:
     assert report.passed, report.problems
 
 
-def test_the_draft_table_as_written_fails_validation() -> None:
-    """4.2's L-RES matches two calls; validation reports it rather than choosing one."""
-    report = validate([T.w1_trial()], TABLE, REGISTRY, REGISTRY_SHA)
+def test_an_ambiguous_landmark_fails_validation() -> None:
+    """A rule that matches two calls in a run is not a landmark; validation reports it."""
+    spec = next(s for s in TABLE.landmarks if s.id == "L-RES")
+    loose = _w1_table().model_copy(
+        update={
+            "landmarks": tuple(
+                spec.model_copy(update={"rules": spec.rules[:1]}) if s.id == "L-RES" else s
+                for s in _w1_table().landmarks
+            )
+        }
+    )
+    report = validate([T.w1_trial()], loose, REGISTRY, REGISTRY_SHA)
     assert any("L-RES: 2 calls match" in p for p in report.problems)
 
 

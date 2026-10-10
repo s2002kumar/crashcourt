@@ -212,6 +212,18 @@ class TrialFacts:
         for row in snapshot.writes:
             if row.task_id != NULL_TASK_ID:
                 links[row.task_id].add((row.thread_id, row.checkpoint_ns, row.checkpoint_id))
+        # node.start names the checkpoint its task ran from (T-09); it agrees with the put_writes
+        # link wherever both exist, and covers a task stopped before it wrote.
+        for w in self.workers:
+            for e in by_proc[w]:
+                thread_id = self.thread_of(e)
+                if (
+                    e.kind == "node.start"
+                    and e.task_id is not None
+                    and e.checkpoint_id is not None
+                    and thread_id is not None
+                ):
+                    links[e.task_id].add((thread_id, e.checkpoint_ns or "", e.checkpoint_id))
         #: task_id -> the checkpoint(s) its writes are linked to (the checkpoint whose next step
         #: the task belongs to).
         self.task_checkpoints: dict[str, tuple[tuple[str, str, str], ...]] = {
@@ -388,6 +400,35 @@ class TrialFacts:
             elif event.kind == "node.end":
                 open_runs.pop(key, None)
         return tuple(open_runs.values())
+
+    def pending_at_stop(self, run: NodeRun) -> tuple[Event, Stop] | None:
+        """(node.end, stop) if the run's node had ended and its task's regular writes had not
+        committed when a stop of its worker came: the node was not running at that stop."""
+        events = self.order.by_proc[run.start.proc]
+        end = next(
+            (
+                e
+                for e in events[run.start.seq + 1 :]
+                if e.kind == "node.end" and e.task_id == run.task_id
+            ),
+            None,
+        )
+        if end is None or run.task_id is None:
+            return None
+        for stop in self.stops_of(run.start.proc):
+            if stop.position is None or stop.position < end.seq:
+                continue
+            committed = any(
+                e.task_id == run.task_id
+                and (
+                    (e.kind == "saver.put_writes.return" and e.status == "ok")
+                    or (e.kind == "fp.hit" and e.fp == "put_writes.after" and e.status != "fail")
+                )
+                for e in events[end.seq + 1 : stop.position + 1]
+            )
+            if not committed:
+                return end, stop
+        return None
 
     def after(self, earlier: Event, later: Event) -> bool:
         """Whether `earlier` happens before `later` in the trusted order."""

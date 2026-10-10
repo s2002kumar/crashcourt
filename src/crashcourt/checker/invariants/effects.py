@@ -14,6 +14,7 @@ from crashcourt.checker.invariants._common import Context, thread_witnesses, tri
 from crashcourt.checker.observations import (
     RESUME_AFTER_STOP,
     STOP_WHILE_RUNNING,
+    WRITES_PENDING_AT_STOP,
     Anomaly,
     Observation,
     Witness,
@@ -51,9 +52,15 @@ def _rerun_witnesses(ctx: Context, row: LedgerRow) -> tuple[Witness, ...]:
             if later:
                 resume_evidence = (pointer(later[0]),)
                 break
+    pending = facts.pending_at_stop(producing) if producing is not None else None
     return (
         Witness(name=STOP_WHILE_RUNNING, held=bool(stop_evidence), evidence=stop_evidence),
         Witness(name=RESUME_AFTER_STOP, held=bool(resume_evidence), evidence=resume_evidence),
+        Witness(
+            name=WRITES_PENDING_AT_STOP,
+            held=pending is not None,
+            evidence=(pointer(pending[0]), pointer(pending[1].source)) if pending else (),
+        ),
     )
 
 

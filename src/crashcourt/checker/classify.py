@@ -172,6 +172,9 @@ def classify_anomaly(
         reason += f" ({', '.join(rules.guarantee.requires)} witnessed; for {case}, {carrier})"
     elif use is not None and forbids:
         reason += f" ({use.clause} is not a carrying guarantee for this scenario)"
+    for witness, note in rules.fallback_notes.items():
+        if anomaly.held(witness):
+            reason += f"; {note}"
     investigate = rules.investigate and (
         rules.investigate_unless is None or not anomaly.held(rules.investigate_unless)
     )

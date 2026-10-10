@@ -15,6 +15,7 @@ from crashcourt.checker.observations import (
     RESUME_AFTER_INTERRUPT,
     RESUME_AFTER_STOP,
     STOP_WHILE_RUNNING,
+    WRITES_PENDING_AT_STOP,
     Anomaly,
     Observation,
     Witness,
@@ -181,9 +182,15 @@ def _cause_witnesses(ctx: Context, prev: LedgerRow, dup: LedgerRow) -> tuple[Wit
                 committed = (*commit.evidence, pointer(interruption))
                 break
 
+    pending = facts.pending_at_stop(producing) if producing is not None else None
     return (
         Witness(name=STOP_WHILE_RUNNING, held=bool(stop_evidence), evidence=stop_evidence),
         Witness(name=RESUME_AFTER_STOP, held=bool(resume_evidence), evidence=resume_evidence),
+        Witness(
+            name=WRITES_PENDING_AT_STOP,
+            held=pending is not None,
+            evidence=(pointer(pending[0]), pointer(pending[1].source)) if pending else (),
+        ),
         Witness(
             name=BEFORE_INTERRUPT_IN_MODEL,
             held=spec is not None and spec.before_interrupt,

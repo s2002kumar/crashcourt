@@ -7,7 +7,8 @@ fault-free T-09 histories; nothing here asserts one.
 
 from __future__ import annotations
 
-from crashcourt.checker.artifacts import ContextRule, TrialArtifacts
+from crashcourt.checker.artifacts import TrialArtifacts
+from crashcourt.checker.facts import data_list
 from crashcourt.checker.landmarks import Site, locate, occurrences, repository_tables
 from crashcourt.history.merge import group_by_process
 from crashcourt.spec.events import Event
@@ -49,27 +50,36 @@ def test_extraction_agrees_with_how_hits_are_counted() -> None:
     assert trigger(with_scenario(killed, arms=(arm,), landmarks=TABLE)) is None
 
 
-def test_each_w1_landmark_is_one_call_per_run_except_l_res() -> None:
+def test_each_w1_landmark_is_one_call_per_run() -> None:
     found, problems = sites(T.w1_trial())
     located = {(s.landmark, s.op_id) for s in found}
-    assert {("L-IN", "start-1"), ("L-EXW", "resume-1"), ("L-EXC", "resume-1")} <= located
-    # 4.2's L-RES rule matches both the null task's resume write and the interrupted node's own
-    # RESUME list: open for the audit (recorded in the table).
-    assert any(p.startswith("L-RES: 2 calls match in worker-1 resume-1") for p in problems)
+    assert {
+        ("L-IN", "start-1"),
+        ("L-RES", "resume-1"),
+        ("L-EXW", "resume-1"),
+        ("L-EXC", "resume-1"),
+    } <= located
+    assert [p for p in problems if "no call matches" not in p] == []
     # W5's landmark has no call in W1.
     assert "L-T1: no call matches" in problems
 
 
-def test_first_call_would_make_l_res_the_null_task_write() -> None:
-    spec = next(s for s in TABLE.landmarks if s.id == "L-RES")
-    narrowed = spec.model_copy(update={"rules": (*spec.rules, ContextRule(rule="first_call"))})
-    table = TABLE.model_copy(update={"landmarks": (narrowed,)})
-    found, problems = locate(table, by_proc(T.w1_trial()))
-    assert problems == []
-    (site,) = found
+def test_l_res_is_the_interrupted_tasks_resume_write() -> None:
+    """Founder ruling of 2026-10-10: the put_writes carrying the RESUME special write for the
+    interrupted task, not the null task's copy of the Command's value written before it."""
+    found, _ = sites(T.w1_trial())
+    site = next(s for s in found if s.landmark == "L-RES")
     trial = by_proc(T.w1_trial())
     call = trial[site.worker][int(site.pointer.rsplit("=", 1)[1])]
-    assert call.task_id == "00000000-0000-0000-0000-000000000000"
+    assert call.task_id == "task-approval-T1"
+    assert "__resume__" in data_list(call, "channels")
+    # Without the task rule, 4.2's channel rule alone matches both writes.
+    spec = next(s for s in TABLE.landmarks if s.id == "L-RES")
+    loose = TABLE.model_copy(
+        update={"landmarks": (spec.model_copy(update={"rules": spec.rules[:1]}),)}
+    )
+    _, problems = locate(loose, trial)
+    assert any(p.startswith("L-RES: 2 calls match in worker-1 resume-1") for p in problems)
 
 
 def test_w5_landmarks_are_found_in_every_turn() -> None:

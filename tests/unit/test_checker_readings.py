@@ -14,20 +14,25 @@ from tests.unit.test_checker_engine import NAU, outcomes, run
 from tests.unit.test_checker_faults import trigger
 
 
-def test_contradiction_running_at_a_stop_and_the_c11_8039_shape() -> None:
-    """CONTRADICTION (open). Section 2.0 defines a node as running at a stop when its node.start
-    has no node.end before the stop; I4(a) and I7a's permission need the producing node running.
-    LangGraph saves a task's writes only after its node returns (langgraph 1.2.12,
-    pregel/_runner.py, commit(), whose success branch calls put_writes), so node.end precedes the
-    task's put_writes; landmark L-EXW is defined as "after node.end execute". K1a / C11-8039 kills
-    the worker at L-EXW's put_writes.before. By 2.0 execute is no longer running there, so (a)
-    cannot hold and the duplicate falls to "none of the above": GAP, where K1a predicts EXPECTED
-    (a) and C11-8039 must match its published outcome in 19 of 20 trials."""
+def test_ruling_a_node_that_had_ended_was_not_running_at_the_stop() -> None:
+    """Founder ruling of 2026-10-10. "Running when execution stopped" means node.start occurred and
+    its matching node.end had not occurred before the stop; a node whose node.end occurred but whose
+    task write was still in flight was not running, and pending-write semantics own that case.
+
+    LangGraph saves a task's writes after its node returns (langgraph 1.2.12, pregel/_runner.py,
+    commit(), success branch), so at the C11-8039 shape's kill (L-EXW's put_writes.before) execute
+    had ended: I4(a) and I7a's re-run permission do not apply, no clause permits the re-run
+    (LG-PW-CRASH describes it), and both are GAP, with the reason saying why. A kill before
+    node.end (AM7's shape) is still EXPECTED under LG-DE-RERUN."""
     out = run(T.kill_at_writes_trial("put_writes.before"))
     got = outcomes(out)
     assert got["I4"] == ("GAP", None)
     assert got["I7a"] == ("GAP", None)
-    # The same duplicate with the kill before node.end (AM7's shape) is EXPECTED under (a).
+    assert out.result is not None
+    for r in out.result.results:
+        if r.invariant in {"I4", "I7a"}:
+            assert "pending-write semantics own the re-run" in str(r.reason)
+    assert not out.report.harness_investigations
     assert outcomes(run(T.kill_mid_execute_trial()))["I4"] == ("EXPECTED", "LG-DE-RERUN")
 
 

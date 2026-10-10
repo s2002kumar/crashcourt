@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from crashcourt.checker.decode import decode
 from crashcourt.checker.effect_models import EffectModel
-from crashcourt.checker.facts import RESUME, checkpoint_pointer
+from crashcourt.checker.facts import NULL_TASK_ID, RESUME, checkpoint_pointer
 from crashcourt.checker.lineage import ChannelReader, Lineage, LineageKey
 
 Entry = tuple[str, int]
@@ -68,7 +68,9 @@ def decode_states(
                 if checkpoint_id not in on_path:
                     continue
                 for write in writes:
-                    if write.channel == RESUME:
+                    # The RESUME write for the interrupted task (founder ruling, 2026-10-10), not
+                    # the null task's copy of the Command's value.
+                    if write.channel == RESUME and write.task_id != NULL_TASK_ID:
                         decision = model.decision_of(decode(write.type, write.blob))
                         resumes.append(
                             (

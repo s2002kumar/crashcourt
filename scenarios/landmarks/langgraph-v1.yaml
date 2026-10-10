@@ -6,11 +6,11 @@
 # becomes "audited". Until then the checker verifies hits against it only in synthetic trials and
 # artifact mutants.
 #
-# Open before the audit:
-# - L-RES as written matches two put_writes calls in a resume run: the null task's write of the
-#   Command's resume value, and the interrupted node's own RESUME list (langgraph 1.2.12,
-#   pregel/_io.py:75 and types.py:1018). 4.2 hypothesizes "occurrence 1"; the audit decides
-#   whether the landmark is the first of them (rule first_call) or names the task.
+# Settled:
+# - L-RES is the put_writes carrying the RESUME special write for the interrupted task (founder
+#   ruling, 2026-10-10): channel __resume__ and the approval node's task. A resume run also writes
+#   the null task's copy of the Command's value (langgraph 1.2.12, pregel/_io.py:75), which is not
+#   the landmark; nor is the checkpoint put after it.
 # - L-T1 follows W5's model node, which T-09 names "respond" (its real fault-free histories,
 #   2026-10-10).
 # - L-GET is not in 4.2's table: control C2 holds both workers at their turn's first read
@@ -28,6 +28,7 @@ landmarks:
     method: put_writes
     rules:
       - {rule: call_channels_include, channel: __resume__}
+      - {rule: call_task_of_node, node: approval}
   - id: L-EXW
     method: put_writes
     rules:
