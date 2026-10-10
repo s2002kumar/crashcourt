@@ -4,7 +4,7 @@
 
 | Endpoint | Does |
 | --- | --- |
-| GET /health | liveness, version, source hash, clock, open trial, and whether a test hook is on |
+| GET /health | liveness, version, source hash, pid, clock, open trial, and any test hook |
 | POST /trials | open, or reopen after a restart, the ledger for one trial |
 | POST /effects | append one effect (never deduplicated); answers only after the commit |
 | POST /attempts/next | increment and return an attempt counter |
@@ -166,6 +166,7 @@ def create_app(
             "status": "ok",
             "version": __version__,
             "source_sha256": source,
+            "pid": os.getpid(),
             "mono_ns": host_monotonic_ns(),
             "ledger_version": LEDGER_VERSION,
             "trial": trial,

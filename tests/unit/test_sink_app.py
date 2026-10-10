@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,8 @@ def test_health_reports_no_trial_and_no_hooks(client: TestClient) -> None:
     assert body["status"] == "ok" and body["trial"] is None and body["test_hooks"] is False
     assert body["source_sha256"] == source_sha256()
     assert isinstance(body["mono_ns"], int)
+    # The sink's history (derived from its ledger) names the process that kept the ledger.
+    assert body["pid"] == os.getpid()
 
 
 def test_effects_need_an_open_trial(client: TestClient) -> None:
