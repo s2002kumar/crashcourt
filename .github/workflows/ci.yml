@@ -66,3 +66,46 @@ jobs:
             manifest-ci.json
             fault-selftest-ci.md
             runs/
+  site:
+    # Tier 1 for the evidence explorer: schema sync, the verdict guard,
+    # types, unit tests, the static export, budgets, browser tests with axe, and Lighthouse.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: site/.node-version
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+      - run: npm run check:schema  # lib/schema matches schemas/v1
+      - run: npm run guard
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm run test:unit
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run measure
+      - run: npm run size
+      - run: npm run test:e2e
+      - run: npm run lighthouse
+      - name: Attribute bundle bytes to libraries (source-mapped build)
+        run: |
+          cp .budgets/measure.json .budgets/measure-release.json
+          CRASHCOURT_SOURCEMAPS=1 npm run build
+          npm run measure
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: site-reports
+          path: |
+            site/.budgets/
+            site/.lighthouse/
+            site/playwright-report/
+          if-no-files-found: ignore
