@@ -48,7 +48,13 @@ from crashcourt.checker.invariants import INVARIANTS, PREDICATES, Context, i3_al
 from crashcourt.checker.lineage import ChannelReader, build_lineages
 from crashcourt.checker.mapping import RULES
 from crashcourt.checker.order import Order
-from crashcourt.checker.report import CheckerReport, InvalidTrigger, NotExercised, to_json
+from crashcourt.checker.report import (
+    CheckerReport,
+    InvalidTrigger,
+    InvariantDetail,
+    NotExercised,
+    to_json,
+)
 from crashcourt.checker.state import decode_states
 from crashcourt.checker.status import CHECKER_VERSION, FREEZE_STATE, authorize
 from crashcourt.clauses.registry import ClauseRegistry
@@ -196,6 +202,7 @@ def check_trial(
         results: list[InvariantResult] = []
         missing: list[NotExercised] = []
         investigations: list[str] = []
+        details: list[InvariantDetail] = []
         for name, predicate in PREDICATES:
             observation = predicate(context)
             classified = classify(observation, RULES[name], registry, scope)
@@ -204,6 +211,7 @@ def check_trial(
                 continue
             results.append(classified.result)
             investigations.extend(classified.investigations)
+            details.append(classified.detail)
         checker = CheckerReport.model_validate(
             {
                 **report,
@@ -211,6 +219,7 @@ def check_trial(
                 "observations": (*context.notes, *_observations(context)),
                 "harness_investigations": tuple(investigations),
                 "fault_notes": faults.notes,
+                "details": tuple(details),
             }
         )
     except Invalid as invalid:

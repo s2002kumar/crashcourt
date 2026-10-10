@@ -16,8 +16,16 @@ It never reads raw records. The order, for each anomaly (red-team specification 
 
 No anomaly is PASS only under a carrying guaranteeing clause in a scenario that is not
 disclaimed; otherwise NO_ANOMALY_UNSPECIFIED. NOT_EXERCISED produces no outcome at all. The
-checker never writes VIOLATION. Where an invariant has several anomalies in one trial, the result
-is the strongest: VIOLATION_CANDIDATE over GAP over EXPECTED, citing the first anomaly that has it.
+checker never writes VIOLATION.
+
+The disclaimer and harness-originated events apply only to the invariants about what a second run
+does (`InvariantRules.second_run`; founder ruling D1): the durability invariants are judged on
+every thread.
+
+One outcome per invariant (founder ruling D3): the most severe, in the order VIOLATION_CANDIDATE,
+GAP, EXPECTED, PASS, NO_ANOMALY_UNSPECIFIED, citing the first anomaly that has it. INVALID is the
+trial's validity, decided before Layer B, and is not in this order. Every anomaly's own outcome,
+clause, evidence, and witnesses are kept in checker.json's detail.
 """
 
 from __future__ import annotations
@@ -27,12 +35,26 @@ from dataclasses import dataclass
 
 from crashcourt.checker.artifacts import Durability
 from crashcourt.checker.mapping import CARRYING, ClauseUse, InvariantRules
-from crashcourt.checker.observations import DISCLAIMED, HARNESS_EXPLAINED, Anomaly, Observation
+from crashcourt.checker.observations import (
+    DISCLAIMED,
+    HARNESS_EXPLAINED,
+    Anomaly,
+    Observation,
+    Witness,
+)
+from crashcourt.checker.report import AnomalyDetail, InvariantDetail, WitnessDetail
 from crashcourt.clauses.models import Clause, Polarity
 from crashcourt.clauses.registry import ClauseRegistry
 from crashcourt.spec.records import InvariantResult, Outcome
 
-_RANK: dict[str, int] = {"EXPECTED": 0, "GAP": 1, "VIOLATION_CANDIDATE": 2}
+#: Most severe first (founder ruling D3). Anomalies give the first three; no anomaly the last two.
+PRECEDENCE: tuple[Outcome, ...] = (
+    "VIOLATION_CANDIDATE",
+    "GAP",
+    "EXPECTED",
+    "PASS",
+    "NO_ANOMALY_UNSPECIFIED",
+)
 
 
 @dataclass(frozen=True)
@@ -64,6 +86,8 @@ class Classified:
     result: InvariantResult
     #: Reasons for a harness investigation this outcome raises.
     investigations: tuple[str, ...]
+    #: Everything the outcome was chosen from, for checker.json.
+    detail: InvariantDetail
 
 
 def applicable(
@@ -124,9 +148,17 @@ def _evidence(anomaly: Anomaly, *names: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(items))
 
 
+def _witnesses(witnesses: tuple[Witness, ...]) -> tuple[WitnessDetail, ...]:
+    return tuple(
+        WitnessDetail(name=w.name, held=w.held, evidence=tuple(w.evidence)) for w in witnesses
+    )
+
+
 def classify_anomaly(
     anomaly: Anomaly, rules: InvariantRules, registry: ClauseRegistry, scope: Scope
 ) -> Decision:
+    is_disclaimed = rules.second_run and anomaly.held(DISCLAIMED)
+    explained = rules.second_run and anomaly.held(HARNESS_EXPLAINED)
     disclaimed = Decision(
         "GAP",
         None,
@@ -134,7 +166,7 @@ def classify_anomaly(
         f"{anomaly.sub_reason}; more than one writer or more than one resume on the thread, "
         "which LGP-DT disclaims",
     )
-    if rules.disclaim_first and anomaly.held(DISCLAIMED):
+    if rules.disclaim_first and is_disclaimed:
         return disclaimed
     for permit in rules.permits:
         clause = applicable(registry, permit.use, scope, Polarity.PERMITS)
@@ -145,12 +177,12 @@ def classify_anomaly(
                 _evidence(anomaly, *permit.requires),
                 f"{anomaly.sub_reason}; {permit.label}; every condition of {clause.id} witnessed",
             )
-    if anomaly.held(DISCLAIMED):
+    if is_disclaimed:
         return disclaimed
     use, clause = _guarantee(registry, rules, anomaly.case, scope)
     forbids = rules.guarantee is not None and all(anomaly.held(w) for w in rules.guarantee.requires)
     if clause is not None and use is not None and forbids:
-        if anomaly.held(HARNESS_EXPLAINED) or not scope.faults_verified:
+        if explained or not scope.faults_verified:
             return Decision(
                 "GAP",
                 None,
@@ -192,7 +224,8 @@ def classify(
         return None
     if observation.status == "NO_ANOMALY":
         use, clause = _guarantee(registry, rules, observation.case, scope)
-        if clause is not None and use is not None and not observation.held(DISCLAIMED):
+        is_disclaimed = rules.second_run and observation.held(DISCLAIMED)
+        if clause is not None and use is not None and not is_disclaimed:
             result = InvariantResult(
                 invariant=name,
                 outcome="PASS",
@@ -200,18 +233,27 @@ def classify(
                 reason=f"no anomaly under {clause.id} ({use.grade}){_notes(use)}",
             )
         else:
-            why = (
-                "more than one writer or more than one resume on the thread (LGP-DT)"
-                if observation.held(DISCLAIMED) and clause is not None
-                else "no carrying guaranteeing clause applies"
-            )
+            uncovered = rules.guarantee.uncovered if rules.guarantee is not None else None
+            if is_disclaimed and clause is not None:
+                why = "more than one writer or more than one resume on the thread (LGP-DT)"
+            elif use is None and uncovered is not None:
+                why = uncovered
+            else:
+                why = "no carrying guaranteeing clause applies"
             result = InvariantResult(
                 invariant=name, outcome="NO_ANOMALY_UNSPECIFIED", reason=f"no anomaly; {why}"
             )
-        return Classified(result, ())
+        detail = InvariantDetail(
+            invariant=name,
+            outcome=result.outcome,
+            clause=result.clause,
+            case=observation.case,
+            witnesses=_witnesses(observation.witnesses),
+        )
+        return Classified(result, (), detail)
     decisions = [classify_anomaly(a, rules, registry, scope) for a in observation.anomalies]
-    top = max(_RANK[d.outcome] for d in decisions)
-    chosen = [d for d in decisions if _RANK[d.outcome] == top]
+    top = min(PRECEDENCE.index(d.outcome) for d in decisions)
+    chosen = [d for d in decisions if PRECEDENCE.index(d.outcome) == top]
     first = chosen[0]
     evidence = tuple(dict.fromkeys(item for d in chosen for item in d.evidence))
     reason = first.reason
@@ -231,4 +273,21 @@ def classify(
         reason=reason,
     )
     investigations = tuple(f"{name}: {d.reason}" for d in decisions if d.investigate)
-    return Classified(result, investigations)
+    detail = InvariantDetail(
+        invariant=name,
+        outcome=result.outcome,
+        clause=result.clause,
+        witnesses=_witnesses(observation.witnesses),
+        anomalies=tuple(
+            AnomalyDetail(
+                outcome=d.outcome,
+                clause=d.clause,
+                reason=d.reason,
+                case=a.case,
+                evidence=tuple(a.evidence),
+                witnesses=_witnesses(a.witnesses),
+            )
+            for a, d in zip(observation.anomalies, decisions, strict=True)
+        ),
+    )
+    return Classified(result, investigations, detail)

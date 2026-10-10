@@ -70,20 +70,21 @@ def test_reading_multi_writer_head_is_always_a_gap_observation() -> None:
     assert outcomes(out)["I6a"] == ("GAP", None)
 
 
-def test_reading_a_disclaimed_thread_has_no_durability_pass() -> None:
-    """The PASS row needs the invariant's applicability guard; the GAP row makes any anomaly in a
-    disclaimed scenario (more than one writer or resume on the thread) GAP. Read symmetrically: a
-    disclaimed thread carries neither PASS nor a candidate."""
+def test_ruling_a_disclaimed_thread_keeps_its_durability_verdicts() -> None:
+    """Founder ruling D1 (2026-10-10): LGP-DT's disclaimer and harness-originated events apply to
+    the invariants about what a second run does (I2, I4-I8), never to I1a, I1b, or I11. A thread
+    with a second resume keeps durability PASS; I4 there has no PASS."""
     from tests.unit.test_checker_faults import two_resumes
 
     got = outcomes(run(two_resumes()))
-    assert got["I1b"] == got["I11"] == NAU
+    assert got["I1b"] == got["I11"] == ("PASS", "LG-DUR-SYNC")
+    assert got["I4"] == NAU
 
 
 def test_reading_a_retry_after_client_fail_is_a_second_resume() -> None:
     """I4(c) counts "two `client.invoke` with resume commands after one interrupt"; a client's
-    retry after client.fail is one, so the retry cells' threads are disclaimed like F07's (D1 in
-    the task record decides whether that holds for the durability invariants)."""
+    retry after client.fail is one, so the retry cells' threads are disclaimed like F07's for I2
+    and I4-I8. Durability is still judged (founder ruling D1)."""
     t = T.TrialBuilder()
     start = t.op("start-1", "start")
     first = t.op("resume-1", "resume", resume="approve")
@@ -101,5 +102,9 @@ def test_reading_a_retry_after_client_fail_is_a_second_resume() -> None:
     t.get_tuple(t.workers["worker-1"], "resume-2", "T1")
     t.ok("resume-2", "worker-1")
     t.exit("worker-1")
-    got = outcomes(run(t.build()))
-    assert got["I1a"] == got["I1b"] == got["I11"] == NAU
+    out = run(t.build())
+    got = outcomes(out)
+    assert got["I1a"] == got["I1b"] == got["I11"] == ("PASS", "LG-DUR-SYNC")
+    assert got["I4"] == NAU
+    i4 = next(d for d in out.report.details if d.invariant == "I4")
+    assert any(w.name == "disclaimed" and w.held for w in i4.witnesses)

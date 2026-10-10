@@ -3,7 +3,9 @@
 Schema v1's result record has no field for the checker version, so each trial's checker.json
 carries it: the version, the freeze state, the hashes the classification rests on, the trigger
 that made the trial INVALID, the invariants that were not exercised (omitted from result.json,
-never PASS), and observations that are not outcomes.
+never PASS), observations that are not outcomes, and the detail behind each outcome. result.json
+holds one outcome per invariant (the most severe, founder ruling D3); the detail keeps every
+anomaly with its own outcome, clause, evidence, and every witness Layer A named, held or not.
 """
 
 from __future__ import annotations
@@ -33,6 +35,41 @@ class InvalidTrigger(BaseModel):
     reason: str
 
 
+class WitnessDetail(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    held: bool
+    evidence: tuple[str, ...] = ()
+
+
+class AnomalyDetail(BaseModel):
+    """One anomaly as Layer B classified it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    outcome: str
+    clause: str | None
+    reason: str
+    case: str | None = None
+    evidence: tuple[str, ...] = ()
+    witnesses: tuple[WitnessDetail, ...] = ()
+
+
+class InvariantDetail(BaseModel):
+    """An exercised invariant: its outcome, and everything the outcome was chosen from."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    invariant: str
+    outcome: str
+    clause: str | None
+    case: str | None = None
+    #: The observation's own witnesses (for no anomaly, the ones its PASS rests on).
+    witnesses: tuple[WitnessDetail, ...] = ()
+    anomalies: tuple[AnomalyDetail, ...] = ()
+
+
 class CheckerReport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -57,6 +94,7 @@ class CheckerReport(BaseModel):
     #: Anomalies that point at the harness first (a duplicate with no fault, for one).
     harness_investigations: tuple[str, ...] = ()
     fault_notes: tuple[str, ...] = ()
+    details: tuple[InvariantDetail, ...] = ()
 
 
 def to_json(model: BaseModel) -> str:

@@ -6,7 +6,7 @@ from __future__ import annotations
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from crashcourt.checker.classify import Scope, classify
+from crashcourt.checker.classify import PRECEDENCE, Scope, classify
 from crashcourt.checker.mapping import CARRYING, RULES
 from crashcourt.checker.observations import (
     DISCLAIMED,
@@ -151,13 +151,14 @@ def test_the_pending_writes_split_is_followed() -> None:
 
 
 def test_candidate_requirements_each_withhold_it() -> None:
-    assert outcome(obs("I1b", anomaly()))[0] == "VIOLATION_CANDIDATE"
+    raised = "exception"
+    assert outcome(obs("I2", anomaly(case=raised)))[0] == "VIOLATION_CANDIDATE"
     # Disclaimed scenario: GAP.
-    assert outcome(obs("I1b", anomaly(DISCLAIMED)))[:2] == ("GAP", None)
+    assert outcome(obs("I2", anomaly(DISCLAIMED, case=raised)))[:2] == ("GAP", None)
     # A harness-originated event on the thread: withheld, and said so.
-    result, _, reason = outcome(obs("I1b", anomaly(HARNESS_EXPLAINED)))
+    result, _, reason = outcome(obs("I2", anomaly(HARNESS_EXPLAINED, case=raised)))
     assert result == "GAP" and "withheld" in reason
-    # Fault verification not passed: withheld.
+    # Fault verification not passed: withheld, for every invariant.
     unverified = Scope(
         target="AsyncPostgresSaver", durability="sync", packages=T.PACKAGES, faults_verified=False
     )
@@ -170,16 +171,60 @@ def test_candidate_requirements_each_withhold_it() -> None:
 
 
 def test_disclaimed_scenario_has_no_pass() -> None:
-    assert outcome(obs("I1b", disclaimed=True))[:2] == NAU
+    assert outcome(obs("I2", case="exception", disclaimed=True))[:2] == NAU
+
+
+def test_durability_is_judged_on_every_thread() -> None:
+    """Founder ruling D1: LGP-DT's disclaimer and harness-originated events apply only to the
+    invariants about what a second run does (I2, I4-I8). I1a, I1b, and I11 keep PASS and their
+    candidates on a disclaimed thread and beside a redelivery."""
+    for name in ("I1a", "I1b", "I11"):
+        assert outcome(obs(name, disclaimed=True))[:2] == ("PASS", "LG-DUR-SYNC")
+        for witness in (DISCLAIMED, HARNESS_EXPLAINED):
+            assert outcome(obs(name, anomaly(witness)))[:2] == (
+                "VIOLATION_CANDIDATE",
+                "LG-DUR-SYNC",
+            )
+    for name in ("I2", "I4", "I5a", "I6a", "I7a", "I8"):
+        assert RULES[name].second_run
+    assert not any(RULES[name].second_run for name in ("I1a", "I1b", "I11"))
+
+
+def test_i4_passes_only_where_a_node_raised() -> None:
+    """Founder ruling D2: with no duplicate, I4 is PASS under LG-PW-EXC only where a node raised
+    (the exception case); with no node raised and no crash it is NO_ANOMALY_UNSPECIFIED, and the
+    reason says why."""
+    assert outcome(obs("I4", case="exception"))[:2] == ("PASS", "LG-PW-EXC")
+    got, clause, reason = outcome(obs("I4"))
+    assert (got, clause) == NAU and "no node raised" in reason
+    assert outcome(obs("I4", case="crash"))[:2] == NAU
 
 
 def test_strongest_outcome_wins_across_anomalies() -> None:
+    """Founder ruling D3: one outcome per invariant, the most severe; checker.json's detail keeps
+    every anomaly with its own outcome, clause, evidence, and witnesses."""
+    assert PRECEDENCE == (
+        "VIOLATION_CANDIDATE",
+        "GAP",
+        "EXPECTED",
+        "PASS",
+        "NO_ANOMALY_UNSPECIFIED",
+    )
     expected = anomaly("stop_while_running", "resume_after_stop", "single_writer")
     gap = anomaly(STOP_WITNESSED)
     candidate = anomaly("committed_before_stop", case="exception")
     assert outcome(obs("I4", expected, gap))[0] == "GAP"
     assert outcome(obs("I4", expected, gap, candidate))[:2] == ("VIOLATION_CANDIDATE", "LG-PW-EXC")
     assert outcome(obs("I4", expected, expected))[0] == "EXPECTED"
+    c = classify(obs("I4", expected, gap, candidate), RULES["I4"], REGISTRY, SCOPE)
+    assert c is not None
+    assert [(a.outcome, a.clause) for a in c.detail.anomalies] == [
+        ("EXPECTED", "LG-DE-RERUN"),
+        ("GAP", None),
+        ("VIOLATION_CANDIDATE", "LG-PW-EXC"),
+    ]
+    assert c.detail.anomalies[0].witnesses[0].name == "stop_while_running"
+    assert c.detail.anomalies[2].case == "exception"
 
 
 def test_not_exercised_produces_nothing() -> None:
@@ -267,17 +312,23 @@ def test_classification_properties(case: tuple[Observation, ClauseRegistry, Scop
         assert all(u.durability in (None, scope.durability) for u in uses)
         if any(u.grade == "G2" for u in uses):
             assert "G2 caveat" in str(result.reason)
+    # The disclaimer and harness-originated events bind the second-run invariants only (D1).
     if result.outcome == "PASS":
-        assert o.status == "NO_ANOMALY" and not o.held(DISCLAIMED)
+        assert o.status == "NO_ANOMALY"
+        assert not (rules.second_run and o.held(DISCLAIMED))
     if result.outcome == "VIOLATION_CANDIDATE":
         assert scope.faults_verified
         assert rules.guarantee is not None
         assert any(
-            not a.held(DISCLAIMED)
-            and not a.held(HARNESS_EXPLAINED)
+            not (rules.second_run and (a.held(DISCLAIMED) or a.held(HARNESS_EXPLAINED)))
             and all(a.held(w) for w in rules.guarantee.requires)
             for a in o.anomalies
         )
+    # One outcome per invariant, the most severe of its anomalies' (D3), all kept in the detail.
+    assert len(classified.detail.anomalies) == len(o.anomalies)
+    if o.anomalies:
+        ranks = [PRECEDENCE.index(a.outcome) for a in classified.detail.anomalies]
+        assert PRECEDENCE.index(result.outcome) == min(ranks)
     if result.outcome == "EXPECTED":
         clause = registry.get(str(result.clause))
         assert clause.polarity is Polarity.PERMITS

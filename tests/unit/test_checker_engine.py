@@ -37,8 +37,8 @@ def test_fault_free_approve_under_sync() -> None:
     out = run(T.w1_trial())
     got = outcomes(out)
     assert got["I1a"] == got["I1b"] == got["I11"] == SYNC_PASS
-    # No duplicates and no crash: LG-PW's guarantee (2.3: "I4 PASS (no duplicates)").
-    assert got["I4"] == ("PASS", "LG-PW-EXC")
+    # No duplicates, but no node raised: LG-PW-EXC's situation never occurred (ruling D2).
+    assert got["I4"] == NAU
     for name in ("I5a", "I5b", "I5c", "I6a", "I6b", "I7a", "I7b", "I7c", "I8"):
         assert got[name] == NAU, name
     assert omitted(out) == {"I2"}
@@ -81,8 +81,8 @@ def test_forced_fork_is_detected_and_the_head_recorded() -> None:
     assert out.result is not None
     i6a = next(r for r in out.result.results if r.invariant == "I6a")
     assert "largest id" in str(i6a.reason) and "worker-2" in str(i6a.reason)
-    # Two writers: no durability PASS, since LGP-DT disclaims the scenario.
-    assert got["I1b"] == NAU
+    # Two writers: LGP-DT disclaims what a second run does, not durability (ruling D1).
+    assert got["I1a"] == got["I1b"] == got["I11"] == SYNC_PASS
 
 
 def test_nothing_exercised_writes_no_result_and_says_why() -> None:

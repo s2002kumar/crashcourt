@@ -11,9 +11,14 @@ it. The grades are the red-team specification's (section 2):
 - P: a permission with conditions; carries EXPECTED when every condition is witnessed.
 
 A disclaimed scenario (LGP-DT: more than one writer or more than one resume on a thread) makes
-any anomaly GAP. Pending writes (founder decision 2): the registry splits the page's two sentences
-into LG-PW-EXC (guarantees: a node failed in the super-step) and LG-PW-CRASH (describes: the writes
-are "already durable"), so a crash never inherits the guarantee and carries no verdict.
+any anomaly GAP, and a harness-originated event withholds a candidate, for the invariants about
+what a second run does: I2, I4, and I5-I8 (founder ruling D1, 2026-10-10). The durability
+invariants I1a, I1b, and I11 are judged on every thread: they state no writer condition, and no
+second run can produce their anomalies (I1a is one process's own order; no graph run deletes saver
+rows). Pending writes (founder decision 2): the registry splits the page's two sentences into
+LG-PW-EXC (guarantees: a node failed in the super-step) and LG-PW-CRASH (describes: the writes are
+"already durable"), so a crash never inherits the guarantee and carries no verdict, and I4 passes
+under LG-PW-EXC only where a node raised (founder ruling D2, 2026-10-10).
 """
 
 from __future__ import annotations
@@ -51,6 +56,10 @@ PENDING_AT_STOP = (
     "running (founder ruling, 2026-10-10): pending-write semantics own the re-run, LG-PW-CRASH "
     "describes them, and no clause permits it"
 )
+NO_NODE_RAISED = (
+    "no node raised in the trial, so LG-PW-EXC's situation did not occur (founder ruling D2, "
+    "2026-10-10)"
+)
 SYNC_READING = (
     "reading: 'next step' includes the first tick after the input checkpoint, and 'writes' "
     "means the saver's put returned; the escalation chain must settle both before any VIOLATION"
@@ -84,6 +93,8 @@ class GuaranteeRule:
     cases: Mapping[str | None, tuple[ClauseUse, ...]]
     #: Witnesses an anomaly must hold for the clause to forbid it.
     requires: tuple[str, ...] = ()
+    #: Why no clause applies to a case the table has no clause for (recorded in `reason`).
+    uncovered: str | None = None
 
 
 @dataclass(frozen=True)
@@ -103,12 +114,15 @@ class InvariantRules:
     #: Check the disclaimer before the permissions (I7: "Multi-writer or conflicting resume: GAP
     #: (LGP-DT)"). I4 keeps its fixed cause order, (a) and (b) before (c).
     disclaim_first: bool = False
+    #: Whether LGP-DT's disclaimer and harness-originated events apply: true for the invariants
+    #: about what a second run does, false for the durability invariants (founder ruling D1).
+    second_run: bool = True
 
 
 _LATEST = (ClauseUse("LG-LATEST", "G1"),)
 _PENDING_WRITES: Mapping[str | None, tuple[ClauseUse, ...]] = {
-    # No crash witnessed: the pending-writes guarantee applies (I4's "PASS (no duplicates)").
-    None: (ClauseUse("LG-PW-EXC", "G3"),),
+    # A node raised in the super-step: LG-PW-EXC's own situation. With no node raised and no
+    # crash (case None), no clause applies (founder ruling D2).
     EXCEPTION: (ClauseUse("LG-PW-EXC", "G3"),),
     CRASH: (ClauseUse("LG-PW-CRASH", "G1"),),
 }
@@ -126,6 +140,7 @@ RULES: dict[str, InvariantRules] = {
             guarantee=GuaranteeRule(
                 {None: (ClauseUse("LG-DUR-SYNC", "G3", "sync", reading=SYNC_READING),)}
             ),
+            second_run=False,
         ),
         InvariantRules(
             "I1b",
@@ -139,6 +154,7 @@ RULES: dict[str, InvariantRules] = {
             guarantee=GuaranteeRule(
                 {None: (ClauseUse("LG-DUR-SYNC", "G2", "sync", caveat=SYNC_G2_CAVEAT),)}
             ),
+            second_run=False,
         ),
         InvariantRules(
             "I2",
@@ -155,7 +171,9 @@ RULES: dict[str, InvariantRules] = {
                     "an effect before interrupt() repeated by the resume",
                 ),
             ),
-            guarantee=GuaranteeRule(_PENDING_WRITES, requires=(COMMITTED_BEFORE_STOP,)),
+            guarantee=GuaranteeRule(
+                _PENDING_WRITES, requires=(COMMITTED_BEFORE_STOP,), uncovered=NO_NODE_RAISED
+            ),
             fallback="duplicate with no documented cause",
             investigate=True,
             investigate_unless=STOP_WITNESSED,
@@ -207,6 +225,7 @@ RULES: dict[str, InvariantRules] = {
             guarantee=GuaranteeRule(
                 {None: (ClauseUse("LG-DUR-SYNC", "G2", "sync", caveat=SYNC_G2_CAVEAT),)}
             ),
+            second_run=False,
         ),
     )
 }
