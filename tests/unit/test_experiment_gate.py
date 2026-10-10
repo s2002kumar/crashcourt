@@ -11,6 +11,7 @@ from crashcourt.experiment.gate import (
     ScenarioFacts,
     Unavailable,
     authorize_batch,
+    confirm,
     confirm_environment,
 )
 from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, Preregistration
@@ -196,3 +197,13 @@ def test_the_environment_is_confirmed_after_doctor(tmp_path: Path) -> None:
     assert any("runner" in p for p in problems)
     assert any("authorized" in p for p in problems)
     assert "the manifest records a dirty checkout" in problems
+
+
+def test_the_runner_confirms_against_the_committed_preregistration(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    auth = authorize(repo)
+    assert confirm(auth, manifest_for(auth.run_commit), repo.root) == []
+    assert any(
+        "os_system" in p
+        for p in confirm(auth, manifest_for(auth.run_commit, os_system="Darwin"), repo.root)
+    )

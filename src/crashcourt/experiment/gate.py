@@ -372,3 +372,12 @@ def confirm_environment(
     if manifest.git_dirty:
         problems.append("the manifest records a dirty checkout")
     return problems
+
+
+def confirm(authorization: Authorization, manifest: Manifest, root: Path) -> list[str]:
+    """`confirm_environment` against the pre-registration as committed at the authorized commit:
+    what the runner calls after doctor."""
+    text = gitproof.blob(root, authorization.preregistration_commit, PREREG)
+    if text is None:
+        return [f"{PREREG} is not in commit {authorization.preregistration_commit}"]
+    return confirm_environment(parse(text.decode("utf-8")), authorization, manifest)
