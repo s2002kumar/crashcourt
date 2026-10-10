@@ -11,9 +11,9 @@ it. The grades are the red-team specification's (section 2):
 - P: a permission with conditions; carries EXPECTED when every condition is witnessed.
 
 A disclaimed scenario (LGP-DT: more than one writer or more than one resume on a thread) makes
-any anomaly GAP. Founder decision 2 and the registry's LG-PW note: a process crash does not
-inherit LG-PW's guarantee, so the crash case cites LG-PW-CRASH (a describes clause) once the
-registry splits LG-PW, and no clause until then.
+any anomaly GAP. Pending writes (founder decision 2): the registry splits the page's two sentences
+into LG-PW-EXC (guarantees: a node failed in the super-step) and LG-PW-CRASH (describes: the writes
+are "already durable"), so a crash never inherits the guarantee and carries no verdict.
 """
 
 from __future__ import annotations
@@ -99,9 +99,9 @@ class InvariantRules:
 
 _LATEST = (ClauseUse("LG-LATEST", "G1"),)
 _PENDING_WRITES: Mapping[str | None, tuple[ClauseUse, ...]] = {
-    # No crash witnessed: LG-PW's guarantee applies (I4's "PASS (no duplicates)").
-    None: (ClauseUse("LG-PW-EXC", "G3"), ClauseUse("LG-PW", "G3")),
-    EXCEPTION: (ClauseUse("LG-PW-EXC", "G3"), ClauseUse("LG-PW", "G3")),
+    # No crash witnessed: the pending-writes guarantee applies (I4's "PASS (no duplicates)").
+    None: (ClauseUse("LG-PW-EXC", "G3"),),
+    EXCEPTION: (ClauseUse("LG-PW-EXC", "G3"),),
     CRASH: (ClauseUse("LG-PW-CRASH", "G1"),),
 }
 _RERUN_AFTER_STOP = PermitRule(

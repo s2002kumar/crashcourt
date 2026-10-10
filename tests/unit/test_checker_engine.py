@@ -38,7 +38,7 @@ def test_fault_free_approve_under_sync() -> None:
     got = outcomes(out)
     assert got["I1a"] == got["I1b"] == got["I11"] == SYNC_PASS
     # No duplicates and no crash: LG-PW's guarantee (2.3: "I4 PASS (no duplicates)").
-    assert got["I4"] == ("PASS", "LG-PW")
+    assert got["I4"] == ("PASS", "LG-PW-EXC")
     for name in ("I5a", "I5b", "I5c", "I6a", "I6b", "I7a", "I7b", "I7c", "I8"):
         assert got[name] == NAU, name
     assert omitted(out) == {"I2"}

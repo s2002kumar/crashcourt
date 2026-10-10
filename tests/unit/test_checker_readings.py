@@ -49,7 +49,7 @@ def test_reading_a_crash_never_inherits_the_pending_writes_guarantee() -> None:
     assert outcomes(run(T.kill_at_writes_trial("put_writes.after", rerun=False)))["I2"] == NAU
     assert outcomes(run(T.kill_at_writes_trial("put_writes.after")))["I2"] == ("GAP", None)
     # LG-PW's own case (a node raised in the super-step) still carries PASS and a candidate.
-    assert outcomes(run(T.exception_case_trial(rerun=False)))["I2"] == ("PASS", "LG-PW")
+    assert outcomes(run(T.exception_case_trial(rerun=False)))["I2"] == ("PASS", "LG-PW-EXC")
 
 
 def test_reading_a_missing_heal_is_trigger_9_not_7() -> None:

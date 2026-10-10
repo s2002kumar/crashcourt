@@ -124,37 +124,30 @@ def test_i4_cause_order() -> None:
     assert outcome(obs("I4", anomaly(*rule_b)))[:2] == ("EXPECTED", "LG-INT-RERUN")
     # (a) without the sequential writer set falls through to (c).
     assert outcome(obs("I4", anomaly(*rule_a[:2], DISCLAIMED)))[:2] == ("GAP", None)
-    # (d) in the exception case: LG-PW, G3.
+    # (d) in the exception case: LG-PW-EXC, G3.
     assert outcome(obs("I4", anomaly("committed_before_stop", case="exception")))[:2] == (
         "VIOLATION_CANDIDATE",
-        "LG-PW",
+        "LG-PW-EXC",
     )
-    # (d) in the crash case: LG-PW does not cover a crash; with no LG-PW-CRASH in the registry, GAP.
+    # (d) in the crash case: LG-PW-CRASH describes, so it carries no verdict: GAP.
     result, clause, reason = outcome(obs("I4", anomaly("committed_before_stop", case="crash")))
     assert (result, clause) == ("GAP", None) and "crash case" in reason
+    assert "LG-PW-CRASH does not carry a verdict" in reason
     # (e) nothing: GAP, and with no stop witnessed a harness investigation.
     c = classify(obs("I4", anomaly()), RULES["I4"], REGISTRY, SCOPE)
     assert c is not None and c.result.outcome == "GAP" and c.investigations
 
 
-def test_lg_pw_split_is_followed_when_the_registry_has_it() -> None:
-    """Founder decision 2: after the split, the crash case cites LG-PW-CRASH (describes) and the
-    exception case LG-PW-EXC (guarantees)."""
-    pw = REGISTRY.get("LG-PW")
-    split = ClauseRegistry(
-        [
-            *REGISTRY,
-            pw.model_copy(update={"id": "LG-PW-EXC"}),
-            pw.model_copy(update={"id": "LG-PW-CRASH", "polarity": Polarity.DESCRIBES}),
-        ]
-    )
-    assert outcome(obs("I2", case="exception"), split)[:2] == ("PASS", "LG-PW-EXC")
-    assert outcome(obs("I2", anomaly(case="exception")), split)[:2] == (
-        "VIOLATION_CANDIDATE",
-        "LG-PW-EXC",
-    )
-    assert outcome(obs("I2", case="crash"), split)[:2] == NAU
-    assert outcome(obs("I2", anomaly(case="crash")), split)[:2] == ("GAP", None)
+def test_the_pending_writes_split_is_followed() -> None:
+    """Founder decision 2: the exception case cites LG-PW-EXC (guarantees); the crash case cites
+    LG-PW-CRASH, which describes and so carries no verdict. Without LG-PW-EXC in the registry, the
+    exception case has no clause either."""
+    assert outcome(obs("I2", case="exception"))[:2] == ("PASS", "LG-PW-EXC")
+    assert outcome(obs("I2", anomaly(case="exception")))[:2] == ("VIOLATION_CANDIDATE", "LG-PW-EXC")
+    assert outcome(obs("I2", case="crash"))[:2] == NAU
+    assert outcome(obs("I2", anomaly(case="crash")))[:2] == ("GAP", None)
+    without = ClauseRegistry(c for c in REGISTRY if c.id != "LG-PW-EXC")
+    assert outcome(obs("I2", case="exception"), without)[:2] == NAU
 
 
 def test_candidate_requirements_each_withhold_it() -> None:
@@ -185,7 +178,7 @@ def test_strongest_outcome_wins_across_anomalies() -> None:
     gap = anomaly(STOP_WITNESSED)
     candidate = anomaly("committed_before_stop", case="exception")
     assert outcome(obs("I4", expected, gap))[0] == "GAP"
-    assert outcome(obs("I4", expected, gap, candidate))[:2] == ("VIOLATION_CANDIDATE", "LG-PW")
+    assert outcome(obs("I4", expected, gap, candidate))[:2] == ("VIOLATION_CANDIDATE", "LG-PW-EXC")
     assert outcome(obs("I4", expected, expected))[0] == "EXPECTED"
 
 
@@ -231,15 +224,8 @@ def cases(draw: st.DrawFn) -> tuple[Observation, ClauseRegistry, Scope]:
     flips = draw(
         st.dictionaries(st.sampled_from([c.id for c in REGISTRY]), st.sampled_from(POLARITIES))
     )
-    extra = draw(st.sets(st.sampled_from(["LG-PW-EXC", "LG-PW-CRASH"])))
     clauses: list[Clause] = [
         c.model_copy(update={"polarity": flips.get(c.id, c.polarity)}) for c in REGISTRY
-    ]
-    clauses += [
-        REGISTRY.get("LG-PW").model_copy(
-            update={"id": e, "polarity": draw(st.sampled_from(POLARITIES))}
-        )
-        for e in sorted(extra)
     ]
     scope = Scope(
         target=draw(st.sampled_from(["AsyncPostgresSaver", "SqliteSaver", "OtherSaver"])),
