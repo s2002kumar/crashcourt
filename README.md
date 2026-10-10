@@ -21,6 +21,28 @@ uv run crashcourt doctor            # checks the pinned environment, writes mani
 Images are pinned by digest in compose.yaml. After changing an image tag, run
 `python scripts/pin_images.py` to re-pin.
 
+## Running trials (Linux only; WSL2 on Windows)
+
+`crashcourt run` spawns two worker processes, drives them over Unix sockets, and kills or stops
+them with POSIX signals, so it runs only on Linux and refuses to start anywhere else. On Windows,
+run it inside WSL2 (with Docker Desktop's WSL integration turned on), from a clone on the Linux
+filesystem rather than under `/mnt/c`:
+
+```bash
+# in a WSL2 shell, with uv 0.12.1 installed (the version pyproject.toml requires)
+git clone <repo> && cd crashcourt
+uv sync --locked --group dev
+docker compose up -d --wait --build                    # the sink is built from this checkout
+uv run crashcourt run scenarios/smoke.yaml --trials 5  # writes runs/<batch>/
+```
+
+Each batch directory holds the manifest, the batch record, and `run.json` (seeds, each worker's
+Toxiproxy route, the sink's health and clock offset). Each trial directory holds every process's
+history, `merged.jsonl` (all of them in causal order), and `trial.json` (whether the trial can be
+trusted as evidence, and why not). `--canonical` marks a batch meant for publication: it also
+refuses a dirty checkout and a sink clock more than one second from the host's. WSL2 and Docker
+Desktop share one kernel, so the offset there is near zero; under a separate VM it is not.
+
 ## Related work and credits
 - langchain-ai/langgraph#8796: write-ownership conformance proposal and SIGSTOP fork repro (bharatnpti).
 - langchain-ai/langgraph#8039, #8234: sync-durability persistence ordering and post-crash recovery.
