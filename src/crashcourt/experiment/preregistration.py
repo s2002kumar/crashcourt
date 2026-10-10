@@ -241,3 +241,41 @@ def block(prereg: Preregistration) -> str:
     """The JSON block as the file holds it: sorted keys, two-space indent."""
     body = json.dumps(prereg.model_dump(mode="json"), indent=2, sort_keys=True, ensure_ascii=False)
     return f"{_FENCE}\n{body}\n```"
+
+
+_TABLE_START = "## Cells\n\n"
+_TABLE_END = "\n\n## "
+
+
+def render_table(prereg: Preregistration) -> str:
+    """The cell table the prose shows, rendered from the data so the two cannot disagree."""
+    rows = [
+        "| Cell | Phase | Evidence | Workload | Durability | Fault | Workers | N | Predicted | |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for c in prereg.cells:
+        predicted = "; ".join(f"{p.invariant}: {' or '.join(p.expect)}" for p in c.predicted)
+        evidence = c.evidence
+        if c.replication_of:
+            evidence += f" ({c.replication_of})"
+        elif c.control:
+            evidence += f" ({c.control})"
+        flags = [
+            f for f, on in (("unknown", c.confidence == "unknown"), ("pending", c.pending)) if on
+        ]
+        rows.append(
+            f"| {c.id} | {c.phase} | {evidence} | {c.workload} | {c.durability} | {c.fault or '-'} "
+            f"| {c.workers} | {c.n} | {predicted} | {', '.join(flags)} |"
+        )
+    return "\n".join(rows)
+
+
+def canonical(text: str) -> str:
+    """The file with its JSON block in canonical form and its cell table rendered from it."""
+    prereg = parse(text)
+    start = text.index(_FENCE)
+    end = text.index("```", start + len(_FENCE)) + 3
+    text = text[:start] + block(prereg) + text[end:]
+    table_start = text.index(_TABLE_START) + len(_TABLE_START)
+    table_end = text.index(_TABLE_END, table_start)
+    return text[:table_start] + render_table(prereg) + text[table_end:]

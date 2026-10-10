@@ -77,16 +77,23 @@ a new batch.
 
 ## Before this is final
 
-- The checker is frozen: FROZEN.md committed, its hashes copied into `checker`.
-- Before the freeze: the landmarks are derived from real fault-free W1 and W5 histories, not from source
-  reading; my ruling on the running-at-a-stop definition against the #8039 replication (K1a, A1, E1); my
-  confirmation of the checker's documented readings; and the LG-PW split into LG-PW-EXC and LG-PW-CRASH
-  (K1b, N4, A2, A3).
-- Every scenario file exists, and its hash and master seed are copied into its cell.
-- The runner is chosen, and the lockfile, clause registry, and specification hashes are pinned under
-  `environment`.
-- Each instrument check has its evidence recorded.
-- Every `pending` note is resolved, and `state` is set to `final` in my commit.
+It stays a draft until every one of these holds:
+
+- T-09 (#22) is merged and the final scenario hashes are known: every cell's scenario file exists, and its hash
+  and master seed are copied into the cell.
+- T-10 has audited the real fault-free histories: the landmarks are derived from them, not from reading the
+  source.
+- T-10's FROZEN.md exists, and `checker` pins its hashes: the checker files, FROZEN.md itself, the clause
+  registry, every effect model, and every landmark table.
+- Every `pending` entry is resolved: my ruling on the running-at-a-stop definition against the #8039
+  replication (K1a, A1, E1), and the LG-PW split into LG-PW-EXC and LG-PW-CRASH (K1b, N4, A2, A3).
+- The environment and runner fingerprint is fixed under `environment`.
+- Every instrument requirement is represented, as a cell or as an instrument check with its evidence recorded.
+
+Then `state` becomes `final` in my commit.
+
+T-09's fault-free histories, the current set and the final one after the restack, are inputs to the instrument
+and to the landmark derivation before the freeze. Neither is evidence about any cell here.
 
 ## Cells
 
@@ -104,9 +111,9 @@ a new batch.
 | C3-w1-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
 | C3-w1-reject-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
 | C3-w5-sync | instrument | control (C3) | w5 | sync | - | 1 | 50 | *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED |  |
-| K2 | instrument | control (C2) | w5 | sync | F06 | 2 | 20 | I5a: GAP; I6a: NO_ANOMALY_UNSPECIFIED or GAP | pending |
-| K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NO_ANOMALY_UNSPECIFIED |  |
-| K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NO_ANOMALY_UNSPECIFIED |  |
+| K2 | instrument | control (C2) | w5 | sync | F06 | 2 | 20 | I5a: GAP; I6a: NO_ANOMALY_UNSPECIFIED or GAP |  |
+| K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED |  |
+| K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED |  |
 | K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 1 | 20 | I4: EXPECTED; I7a: EXPECTED; I1b: PASS | pending |
 | K3 | instrument | replication (langgraph#8796) | w5 | sync | F05 | 2 | 20 | I5a: GAP; I6a: GAP |  |
 | K4 | instrument | replication (langgraph#8764) | w1 | sync | F01 | 1 | 20 | I1a: NOT_EXERCISED; I1b: NOT_EXERCISED |  |
@@ -550,7 +557,7 @@ affects.
       "id": "K2",
       "master_seed": null,
       "n": 20,
-      "pending": "the I6a class in this cell (the methodology states the head, not the class)",
+      "pending": null,
       "phase": "instrument",
       "predicted": [
         {
@@ -566,7 +573,7 @@ affects.
             "GAP"
           ],
           "invariant": "I6a",
-          "note": "the head is the larger checkpoint id; LG-LATEST describes, so it never supports PASS"
+          "note": "C2 forces the fork, not which branch the acknowledgments and the head agree on; either class, the same in every trial (alternation makes the cell UNSTABLE)"
         }
       ],
       "replication_of": null,
@@ -600,10 +607,10 @@ affects.
         },
         {
           "expect": [
-            "NO_ANOMALY_UNSPECIFIED"
+            "NOT_EXERCISED"
           ],
           "invariant": "I7c",
-          "note": "holds; precheck is exempt by the effect model"
+          "note": "precheck is exempt by the effect model, so no executed action is judged"
         }
       ],
       "replication_of": null,
@@ -633,14 +640,14 @@ affects.
             "EXPECTED"
           ],
           "invariant": "I4",
-          "note": "(b): still two precheck rows, zero charge"
+          "note": "(b): two precheck rows, zero charge"
         },
         {
           "expect": [
-            "NO_ANOMALY_UNSPECIFIED"
+            "NOT_EXERCISED"
           ],
           "invariant": "I7c",
-          "note": "holds"
+          "note": "no charge is executed, so no executed action is judged"
         }
       ],
       "replication_of": null,

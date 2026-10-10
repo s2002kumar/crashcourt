@@ -14,6 +14,11 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "check", help="validate research/preregistration.md; list what is missing"
     )
     check.add_argument("--root", type=Path, default=Path())
+    check.add_argument(
+        "--write",
+        action="store_true",
+        help="rewrite the JSON block canonically and the cell table from it",
+    )
     authorize = sub.add_parser(
         "authorize", help="run the gate for a pre-registered scenario; print the authorization"
     )
@@ -38,15 +43,22 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 def _check(args: argparse.Namespace) -> int:
     from crashcourt.experiment.preregistration import (
         PREREGISTRATION_PATH,
-        PreregistrationError,
+        canonical,
         parse,
     )
 
     path = args.root / PREREGISTRATION_PATH
     try:
-        prereg = parse(path.read_text(encoding="utf-8"))
-    except (OSError, PreregistrationError) as exc:
+        text = path.read_text(encoding="utf-8")
+        prereg = parse(text)
+        tidy = canonical(text)
+    except (OSError, ValueError) as exc:  # PreregistrationError is a ValueError
         print(f"{path}: {exc}")
+        return 1
+    if args.write:
+        path.write_bytes(tidy.encode("utf-8"))
+    elif tidy != text:
+        print(f"{path}: the cell table or the JSON block is not canonical; run with --write")
         return 1
     phases = {p: sum(c.phase == p for c in prereg.cells) for p in ("instrument", "new-evidence")}
     print(
