@@ -53,6 +53,8 @@ jobs:
       - run: uv run pytest -m integration
       # T-05 gate: every fault primitive behaves as the fault model assumes, 20 of 20 trials.
       - run: uv run crashcourt faults selftest --trials 20 --report fault-selftest-ci.md
+      # The self-test restarts Postgres; doctor (run again by the next step) needs it healthy.
+      - run: docker compose up -d --wait postgres
       # T-07 gate: 50 smoke trials in a row; every history parses and every client.invoke has
       # exactly one terminal event, or the command fails.
       - run: uv run crashcourt run scenarios/smoke.yaml --trials 50 --out runs
