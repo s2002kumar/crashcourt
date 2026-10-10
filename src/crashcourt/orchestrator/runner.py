@@ -249,6 +249,15 @@ def _batch_id(given: str | None) -> str:
     return batch
 
 
+def _shown(path: Path, root: Path) -> str:
+    """A path as a record shows it: relative to the checkout when inside it, else its name only,
+    so no batch file carries a home directory."""
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return path.name
+
+
 def _write_json(path: Path, data: object) -> bytes:
     raw = (json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
     path.write_bytes(raw)
@@ -606,7 +615,6 @@ def run_batch(
     settings: Settings,
     *,
     source: Path | None = None,
-    argv: Sequence[str] = (),
     progress: Callable[[TrialResult], None] | None = None,
     warn: Callable[[str], None] | None = None,
 ) -> BatchSummary:
@@ -677,13 +685,13 @@ def run_batch(
             "batch": batch,
             "cell": scenario.cell,
             "mode": "canonical" if options.canonical else "ordinary",
-            "argv": list(argv),
+            "own_database": options.own_database,
             "started": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
             "trials": options.trials,
             "scenario": {
                 "name": scenario.name,
                 "sha256": scenario_hash,
-                "file": str(source) if source else None,
+                "file": _shown(source, settings.root) if source else None,
             },
             "master_seed": scenario.seed,
             "trial_seeds": {

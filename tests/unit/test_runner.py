@@ -345,3 +345,11 @@ def test_harness_problems_and_violations_make_the_trial_invalid(tmp_path: Path) 
         "protocol: w1 sent a second result for op-1",
         "w1 did not exit within 30 s of shutdown",
     ]
+
+
+def test_batch_files_show_paths_without_a_home_directory(tmp_path: Path) -> None:
+    root = tmp_path / "checkout"
+    (root / "scenarios").mkdir(parents=True)
+    shown = runner._shown  # pyright: ignore[reportPrivateUsage]
+    assert shown(root / "scenarios" / "smoke.yaml", root) == "scenarios/smoke.yaml"
+    assert shown(tmp_path / "elsewhere" / "mine.yaml", root) == "mine.yaml"

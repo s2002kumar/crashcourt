@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -180,7 +179,6 @@ def _run(args: argparse.Namespace) -> int:
             options,
             settings,
             source=args.scenario,
-            argv=sys.argv,
             progress=progress,
             warn=lambda text: print(f"warning: {text}", flush=True),
         )
