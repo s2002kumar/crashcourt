@@ -1,0 +1,41 @@
+{
+  "batch": "DEMO-batch-matrix",
+  "cell": "DEMO-C1-pg-async-sync-W1-none",
+  "manifest_sha256": "e483db1467b76c46d1d8775ba3c7c1ee6d9531981724fb1a19a6859e24c33815",
+  "provenance": "fixture",
+  "results": [
+    {
+      "clause": "DEMO-clause-durable-ack",
+      "evidence": [
+        "DEMO-C1-pg-async-sync-W1-none/1/merged.jsonl#/39"
+      ],
+      "invariant": "DEMO-I1",
+      "outcome": "PASS",
+      "reason": "Demo data, not a result: written by crashcourt fixtures --demo, not measured.",
+      "repro": null,
+      "review": null
+    },
+    {
+      "clause": "DEMO-clause-rerun",
+      "evidence": [
+        "DEMO-C1-pg-async-sync-W1-none/1/merged.jsonl#/27"
+      ],
+      "invariant": "DEMO-I3",
+      "outcome": "PASS",
+      "reason": "Demo data, not a result: written by crashcourt fixtures --demo, not measured.",
+      "repro": null,
+      "review": null
+    },
+    {
+      "clause": null,
+      "evidence": [],
+      "invariant": "DEMO-I7",
+      "outcome": "NO_ANOMALY_UNSPECIFIED",
+      "reason": "Demo data, not a result: written by crashcourt fixtures --demo, not measured.",
+      "repro": null,
+      "review": null
+    }
+  ],
+  "trial": 1,
+  "v": 1
+}

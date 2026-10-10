@@ -1,0 +1,47 @@
+{
+  "batch": "DEMO-batch-matrix",
+  "cell": "DEMO-pg-async-sync-W2-F12-rand",
+  "manifest_sha256": "e483db1467b76c46d1d8775ba3c7c1ee6d9531981724fb1a19a6859e24c33815",
+  "provenance": "fixture",
+  "results": [
+    {
+      "clause": "DEMO-clause-durable-ack",
+      "evidence": [
+        "DEMO-pg-async-sync-W2-F12-rand/0/merged.jsonl#/40"
+      ],
+      "invariant": "DEMO-I1",
+      "outcome": "PASS",
+      "reason": "Demo data, not a result: written by crashcourt fixtures --demo, not measured.",
+      "repro": null,
+      "review": null
+    },
+    {
+      "clause": "DEMO-clause-rerun",
+      "evidence": [
+        "DEMO-pg-async-sync-W2-F12-rand/0/merged.jsonl#/14",
+        "DEMO-pg-async-sync-W2-F12-rand/0/merged.jsonl#/21",
+        "DEMO-pg-async-sync-W2-F12-rand/0/merged.jsonl#/28"
+      ],
+      "invariant": "DEMO-I3",
+      "outcome": "PASS",
+      "reason": "Demo data, not a result: written by crashcourt fixtures --demo, not measured.",
+      "repro": null,
+      "review": null
+    },
+    {
+      "clause": "DEMO-clause-pending-writes",
+      "evidence": [
+        "DEMO-pg-async-sync-W2-F12-rand/0/merged.jsonl#/17",
+        "DEMO-pg-async-sync-W2-F12-rand/0/merged.jsonl#/24",
+        "DEMO-pg-async-sync-W2-F12-rand/0/merged.jsonl#/31"
+      ],
+      "invariant": "DEMO-I9",
+      "outcome": "PASS",
+      "reason": "Demo data, not a result: written by crashcourt fixtures --demo, not measured.",
+      "repro": null,
+      "review": null
+    }
+  ],
+  "trial": 0,
+  "v": 1
+}

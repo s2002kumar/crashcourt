@@ -1,0 +1,33 @@
+{
+  "batch": "DEMO-batch-compare-a",
+  "cell": "DEMO-rt-a-sync-W1-F05",
+  "manifest_sha256": "0f77fd85b4dce46bb206268c366a1cd359e95b8aaced5bf261df58110f05345e",
+  "provenance": "fixture",
+  "results": [
+    {
+      "clause": "DEMO-clause-durable-ack",
+      "evidence": [
+        "DEMO-rt-a-sync-W1-F05/1/merged.jsonl#/45"
+      ],
+      "invariant": "DEMO-I1",
+      "outcome": "PASS",
+      "reason": "Demo data, not a result: written by crashcourt fixtures --demo, not measured.",
+      "repro": null,
+      "review": null
+    },
+    {
+      "clause": null,
+      "evidence": [
+        "DEMO-rt-a-sync-W1-F05/1/merged.jsonl#/52",
+        "DEMO-rt-a-sync-W1-F05/1/merged.jsonl#/53"
+      ],
+      "invariant": "DEMO-I6",
+      "outcome": "GAP",
+      "reason": "Demo data, not a result: written by crashcourt fixtures --demo, not measured.",
+      "repro": null,
+      "review": null
+    }
+  ],
+  "trial": 1,
+  "v": 1
+}
