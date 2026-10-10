@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from crashcourt.checker.artifacts import TrialArtifacts
+from crashcourt.checker.artifacts import Snapshot, TrialArtifacts
 from crashcourt.checker.classify import Scope, classify
 from crashcourt.checker.decode import DecodeError
 from crashcourt.checker.effect_models import EFFECT_MODELS, ShapeError
@@ -87,21 +87,24 @@ def prepare(artifacts: TrialArtifacts) -> tuple[Context, FaultCheck]:
     check_causal(by_proc, orchestrator)
     check_clients(by_proc[orchestrator])
 
-    def facts_with(committed: FaultCheck | None) -> TrialFacts:
-        assert artifacts.ledger is not None and artifacts.snapshots is not None
+    def facts_with(judged: Snapshot, committed: FaultCheck | None) -> TrialFacts:
+        assert artifacts.ledger is not None
         return TrialFacts(
             scenario,
             order,
             orchestrator=orchestrator,
-            snapshot=artifacts.snapshots.first,
+            snapshot=judged,
             ledger=artifacts.ledger.rows,
             committed_calls=committed.committed_calls if committed is not None else (),
         )
 
-    facts = facts_with(None)
+    # The checks before the snapshot's own read no rows; they get the first snapshot in key
+    # order. Everything after reads the snapshot trigger 7 says to evaluate.
+    facts = facts_with(artifacts.snapshots.first.canonical(), None)
     check_effects(facts)
     check_sink(artifacts, facts)
     snapshot, snapshot_notes = check_snapshot(artifacts, facts)
+    facts = facts_with(snapshot, None)
     lineages = build_lineages(snapshot)
     reader = ChannelReader(snapshot)
     try:
@@ -117,7 +120,9 @@ def prepare(artifacts: TrialArtifacts) -> tuple[Context, FaultCheck]:
     if faults.trigger is not None:
         raise Invalid(faults.trigger, str(faults.reason))
     check_environment(artifacts)
-    context = Context(scenario, facts_with(faults), lineages, reader, model, states, snapshot_notes)
+    context = Context(
+        scenario, facts_with(snapshot, faults), lineages, reader, model, states, snapshot_notes
+    )
     return context, faults
 
 

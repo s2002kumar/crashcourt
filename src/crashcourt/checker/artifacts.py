@@ -358,11 +358,44 @@ class Snapshot(BaseModel):
     blobs: tuple[BlobRow, ...] = ()
     writes: tuple[WriteRow, ...] = ()
 
+    def canonical(self) -> Snapshot:
+        """The same rows in key order. A dump returns rows in the database collation's order,
+        which differs from Python's; nothing the checker writes may depend on it."""
+        return self.model_copy(
+            update={
+                "checkpoints": tuple(
+                    sorted(
+                        self.checkpoints,
+                        key=lambda r: (r.thread_id, r.checkpoint_ns, r.checkpoint_id),
+                    )
+                ),
+                "blobs": tuple(
+                    sorted(
+                        self.blobs,
+                        key=lambda r: (r.thread_id, r.checkpoint_ns, r.channel, r.version),
+                    )
+                ),
+                "writes": tuple(
+                    sorted(
+                        self.writes,
+                        key=lambda r: (
+                            r.thread_id,
+                            r.checkpoint_ns,
+                            r.checkpoint_id,
+                            r.task_id,
+                            r.idx,
+                        ),
+                    )
+                ),
+            }
+        )
+
     def same_rows(self, other: Snapshot) -> bool:
+        mine, theirs = self.canonical(), other.canonical()
         return (
-            self.checkpoints == other.checkpoints
-            and self.blobs == other.blobs
-            and self.writes == other.writes
+            mine.checkpoints == theirs.checkpoints
+            and mine.blobs == theirs.blobs
+            and mine.writes == theirs.writes
         )
 
 

@@ -365,13 +365,13 @@ def check_snapshot(
     if meta.dsn != artifacts.scenario.oracle_dsn or pair.second.meta.dsn != meta.dsn:
         raise Invalid(7, "the snapshot did not use the direct oracle DSN")
     if pair.first.same_rows(pair.second):
-        return pair.first, ()
+        return pair.first.canonical(), ()
     unexplained = _late_rows(pair.first, pair.second, _in_flight_calls(facts))
     if unexplained:
         raise Invalid(
             7, f"the two snapshots differ: something still wrote after quiescence ({unexplained})"
         )
-    return pair.second, (
+    return pair.second.canonical(), (
         "rows written by a killed worker's in-flight saver call landed between the two "
         "snapshots; the second snapshot was evaluated",
     )

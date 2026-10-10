@@ -144,9 +144,10 @@ def take(
         toxics_installed=tuple(toxics_installed),
         threads=tuple(threads),
     )
-    return Snapshot(
+    snapshot = Snapshot(
         meta=meta, checkpoints=tuple(checkpoints), blobs=tuple(blobs), writes=tuple(writes)
     )
+    return snapshot.canonical()
 
 
 def pretrial_rows(dsn: str, threads: Sequence[str]) -> dict[str, int]:
