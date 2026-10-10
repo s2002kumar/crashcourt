@@ -46,11 +46,32 @@ def test_the_frozen_record_matches_the_checker() -> None:
         freeze.verify_trial(text, REGISTRY_SHA, table)
 
 
+def test_the_checker_is_frozen_with_an_audited_table() -> None:
+    assert status.FREEZE_STATE == "FROZEN"
+    assert freeze.FROZEN_PATH.exists()
+    assert [t.status for t in repository_tables()] == ["audited"]
+
+
+def test_the_frozen_checker_refuses_no_evidence_class() -> None:
+    """Frozen, any trial may be classified: the gate is FROZEN.md, checked per trial."""
+    classes: tuple[EvidenceClass, ...] = (
+        "synthetic",
+        "artifact-mutant",
+        "control",
+        "replication",
+        "new-evidence",
+    )
+    for evidence in classes:
+        authorize(evidence, None, "N4")
+
+
+@pytest.mark.usefixtures("pre_freeze")
 @pytest.mark.parametrize("evidence", ["synthetic", "artifact-mutant", "control"])
 def test_pre_freeze_inputs_are_allowed(evidence: EvidenceClass) -> None:
     authorize(evidence, None, None)
 
 
+@pytest.mark.usefixtures("pre_freeze")
 @pytest.mark.parametrize("replicated", sorted(status.PUBLISHED_REPLICATIONS))
 def test_the_three_published_replications_are_allowed(replicated: str) -> None:
     authorize("replication", replicated, None)
@@ -70,6 +91,7 @@ def test_the_three_published_replications_are_allowed(replicated: str) -> None:
         ("control", None, "E1"),
     ],
 )
+@pytest.mark.usefixtures("pre_freeze")
 def test_everything_else_is_refused(
     evidence: EvidenceClass, replicated: str | None, cell: str | None
 ) -> None:

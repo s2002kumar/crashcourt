@@ -7,8 +7,8 @@ writes it must be an ancestor of the first new-evidence batch, and the pre-regis
 checker hash. After the freeze, any change to a predicate, a clause mapping, an effect model, or a
 landmark table produces v2; nothing is relabeled in place.
 
-PRE-FREEZE: this module computes and compares the hashes; it does not write FROZEN.md, and a test
-fails if the file exists while the checker is PRE-FREEZE.
+This module computes and compares the hashes; it never writes FROZEN.md. The freeze commit wrote
+it from `render(compute(registry_sha256, repository_tables()))`, and a mandatory test recomputes it.
 """
 
 from __future__ import annotations

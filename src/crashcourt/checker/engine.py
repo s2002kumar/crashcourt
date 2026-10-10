@@ -2,7 +2,9 @@
 
 A pure function of its inputs: no network, no database, no clock. The steps, in order:
 
-1. Refuse the trial if a PRE-FREEZE checker may not see it (crashcourt.checker.status).
+1. Refuse the trial if a PRE-FREEZE checker may not see it (crashcourt.checker.status);
+   a FROZEN checker first verifies itself and the trial's landmark table against
+   FROZEN.md and refuses to classify on any difference.
 2. INVALID triggers 1-13 in order, decoding included (crashcourt.checker.integrity,
    crashcourt.checker.faults_fired), then the I3 harness alarm (trigger 15). The first that
    fires makes every invariant INVALID; a checker exception does too (trigger 14).

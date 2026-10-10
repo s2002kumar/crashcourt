@@ -1,6 +1,6 @@
 """The checker: trusted records in, result.json and checker.json out.
 
-PRE-FREEZE / NOT AUTHORIZED FOR NEW-EVIDENCE CLASSIFICATION. See crashcourt.checker.status.
+Checker v1, frozen: FROZEN.md records it. See crashcourt.checker.status.
 """
 
 from crashcourt.checker.engine import CheckerOutput, check_trial

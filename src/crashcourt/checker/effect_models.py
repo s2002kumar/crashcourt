@@ -9,9 +9,9 @@ From the red-team specification 2.1:
   approval, whatever the decision.
 - W5 (continuation): two user turns, no effects; state holds the message list.
 
-PRE-FREEZE: the state channel names and value shapes below follow the specification's text. They
-are checked against T-09's real fault-free histories (and validated by C1 and C9) before the
-freeze; a mismatch there changes this file, which changes its hash in FROZEN.md.
+The state channel names and value shapes below follow the specification's text and match T-09's
+real fault-free histories (research/evidence/t-10/); C1 and C9 validate them per batch. The models
+are frozen with the checker: their hashes are in FROZEN.md.
 """
 
 from __future__ import annotations

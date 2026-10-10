@@ -6,7 +6,7 @@ import random
 
 import pytest
 
-from crashcourt.checker import CheckerOutput, check_trial
+from crashcourt.checker import CheckerOutput, check_trial, freeze
 from crashcourt.checker.artifacts import TrialArtifacts
 from crashcourt.checker.invariants import INVARIANTS
 from crashcourt.spec.records import ResultRecord
@@ -167,9 +167,19 @@ def test_a_checker_that_raises_is_invalid_not_a_verdict(monkeypatch: pytest.Monk
     assert "RuntimeError: bug" in out.report.invalid.reason
 
 
+@pytest.mark.usefixtures("pre_freeze")
 def test_report_is_marked_pre_freeze() -> None:
     report = run(T.w1_trial()).report
     assert report.freeze_state == "PRE-FREEZE"
     assert report.authorized_for_new_evidence is False
     assert report.frozen_sha256 is None
+    assert report.registry_sha256 == REGISTRY_SHA
+
+
+def test_report_is_marked_frozen() -> None:
+    """The frozen checker verifies itself against FROZEN.md and stamps the frozen hash."""
+    report = run(T.w1_trial()).report
+    assert report.freeze_state == "FROZEN"
+    assert report.authorized_for_new_evidence is True
+    assert report.frozen_sha256 == report.checker_sha256 == freeze.checker_sha256()
     assert report.registry_sha256 == REGISTRY_SHA

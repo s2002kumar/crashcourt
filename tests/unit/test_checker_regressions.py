@@ -257,6 +257,7 @@ def test_a_frozen_checker_classifies_and_stamps_its_hash(
         run(T.w1_trial())
 
 
+@pytest.mark.usefixtures("pre_freeze")
 def test_arms_need_landmarks_even_with_a_table_outside_synthetic_trials() -> None:
     base = T.kill_at_writes_trial("put_writes.before")
     arm = base.scenario.arms[0]

@@ -1,13 +1,13 @@
-"""The checker's freeze state, and the guard that keeps a pre-freeze checker off new evidence.
+"""The checker's freeze state, and the guard that kept the pre-freeze checker off new evidence.
 
-PRE-FREEZE / NOT AUTHORIZED FOR NEW-EVIDENCE CLASSIFICATION.
-
-Until the freeze, the checker may be developed and run only against synthetic histories, artifact
-mutants, harness controls, and the three already-published replications (langgraph#8039, #8796,
-#8764). Landmarks are derived from real fault-free T-09 histories and audited before the freeze;
-the freeze commit writes `FROZEN.md` and must be an ancestor of the first new-evidence batch.
-This module refuses, in code, any trial that declares itself new evidence or names a matrix cell
-outside the allowed set.
+FROZEN: checker v1, recorded in FROZEN.md (my freeze of 2026-10-10, after the landmark audit on
+T-09's real fault-free histories). Before the freeze, the checker was developed and run only
+against synthetic histories, artifact mutants, harness controls, the three already-published
+replications (langgraph#8039, #8796, #8764), and T-09's fault-free histories, and this module
+refused in code any trial that declared itself new evidence or named a matrix cell outside that
+set. The freeze commit must be an ancestor of the first new-evidence batch. Frozen, the checker
+classifies any trial, but only after verifying itself against FROZEN.md (crashcourt.checker.engine);
+any change to it is v2.
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ from typing import Literal
 CHECKER_VERSION = "v1"
 
 FreezeState = Literal["PRE-FREEZE", "FROZEN"]
-#: PRE-FREEZE until the freeze commit; only that commit may change it, together with FROZEN.md.
-FREEZE_STATE: FreezeState = "PRE-FREEZE"
+#: Set by the freeze commit, together with FROZEN.md.
+FREEZE_STATE: FreezeState = "FROZEN"
 
 EvidenceClass = Literal["synthetic", "artifact-mutant", "control", "replication", "new-evidence"]
 
@@ -36,7 +36,8 @@ PUBLISHED_REPLICATIONS: frozenset[str] = frozenset(
 
 #: First-matrix cells that are not controls or published replications: the new-evidence cells,
 #: K1b (the crash form of the pending-writes claim, not a published result), and the durability
-#: variants. A trial naming one of them is refused before the freeze whatever else it declares.
+#: variants (E1 among them, though it left the first matrix before the freeze). A pre-freeze
+#: checker refused a trial naming one of them whatever else it declared.
 PRE_FREEZE_REFUSED_CELLS: frozenset[str] = frozenset(
     {
         "K1b",

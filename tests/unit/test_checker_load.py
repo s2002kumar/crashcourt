@@ -56,7 +56,7 @@ def test_outputs_are_written_beside_the_trial(tmp_path: Path) -> None:
     ResultRecord.model_validate_json((directory / "result.json").read_text(encoding="utf-8"))
     assert (
         json.loads((directory / "checker.json").read_text(encoding="utf-8"))["freeze_state"]
-        == "PRE-FREEZE"
+        == "FROZEN"
     )
     empty = T.lost_before_first_checkpoint_trial()
     other = write_trial(empty, tmp_path / "empty")

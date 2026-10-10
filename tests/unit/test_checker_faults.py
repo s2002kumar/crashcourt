@@ -461,16 +461,19 @@ def replication(landmark: str | None, table: LandmarkTable | None = None) -> Tri
     return T.as_run(fixture, evidence="replication", replication_of="langgraph#8764")
 
 
+@pytest.mark.usefixtures("pre_freeze")
 def test_an_unlandmarked_arm_is_invalid_outside_synthetic_trials() -> None:
     assert trigger(replication(None)) == 11
 
 
+@pytest.mark.usefixtures("pre_freeze")
 def test_a_hit_at_its_landmark_passes_and_elsewhere_is_invalid() -> None:
     assert trigger(replication("L-IN")) is None
     assert trigger(replication("L-WRONG")) == 11
     assert trigger(replication("L-NONE")) == 11
 
 
+@pytest.mark.usefixtures("pre_freeze")
 def test_a_landmark_of_another_method_is_invalid() -> None:
     table = LandmarkTable(
         name="DEMO-landmarks",
@@ -484,6 +487,7 @@ def test_a_landmark_of_another_method_is_invalid() -> None:
     assert trigger(replication("L-IN", table)) == 11
 
 
+@pytest.mark.usefixtures("pre_freeze")
 def test_an_arm_must_name_the_audited_occurrence() -> None:
     """An audited table records each landmark's occurrence; an arm naming another is INVALID even
     if its hit happens to satisfy the rules."""
@@ -506,6 +510,7 @@ def test_a_table_states_occurrences_exactly_when_audited() -> None:
         )
 
 
+@pytest.mark.usefixtures("pre_freeze")
 def test_a_draft_table_verifies_nothing_outside_synthetic_trials() -> None:
     assert trigger(replication("L-IN", l_in("draft"))) == 11
     synthetic = T.lost_before_first_checkpoint_trial(landmarks=l_in("draft"), landmark="L-IN")
@@ -542,15 +547,18 @@ def exw(rule: ContextRule) -> TrialArtifacts:
 
 
 @pytest.mark.parametrize("name", sorted(EXW_RULES))
+@pytest.mark.usefixtures("pre_freeze")
 def test_each_context_rule_can_hold(name: str) -> None:
     assert trigger(exw(EXW_RULES[name])) is None
 
 
 @pytest.mark.parametrize("name", sorted(EXW_FAILING))
+@pytest.mark.usefixtures("pre_freeze")
 def test_each_context_rule_can_fail(name: str) -> None:
     assert trigger(exw(EXW_FAILING[name])) == 11
 
 
+@pytest.mark.usefixtures("pre_freeze")
 def test_new_evidence_is_refused_before_the_freeze() -> None:
     with pytest.raises(NotAuthorized):
         run(with_scenario(T.w1_trial(), evidence="new-evidence"))

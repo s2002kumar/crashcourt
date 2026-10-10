@@ -75,7 +75,7 @@ class CheckerReport(BaseModel):
 
     checker_version: str
     freeze_state: FreezeState
-    #: False while PRE-FREEZE: these results may not be used as new evidence.
+    #: True only for a FROZEN checker; a PRE-FREEZE result may not be used as new evidence.
     authorized_for_new_evidence: bool
     #: The checker hash FROZEN.md records; null before the freeze.
     frozen_sha256: Sha256 | None
