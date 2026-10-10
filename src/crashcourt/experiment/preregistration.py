@@ -188,10 +188,15 @@ class Preregistration(_Model):
 
     @model_validator(mode="after")
     def _final_is_complete(self) -> Self:
-        ids = [c.id for c in self.cells]
-        repeated = sorted({i for i in ids if ids.count(i) > 1})
-        if repeated:
-            raise ValueError(f"cell ids repeat: {repeated}")
+        for name, values in (
+            ("cell ids", [c.id for c in self.cells]),
+            ("scenario files", [c.scenario for c in self.cells]),
+            ("scenario hashes", [c.scenario_sha256 for c in self.cells if c.scenario_sha256]),
+        ):
+            repeated = sorted({v for v in values if values.count(v) > 1})
+            if repeated:
+                # A scenario names exactly one cell, so the gate cannot authorize the wrong one.
+                raise ValueError(f"{name} repeat: {repeated}")
         if self.state == "final":
             missing = self.missing()
             if missing:

@@ -97,10 +97,18 @@ def test_cells_are_checked(change: dict[str, Any], message: str) -> None:
         prereg_model(cells=_cells_with(**change))
 
 
-def test_cell_ids_are_unique() -> None:
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("id", "cell ids repeat"),
+        ("scenario", "scenario files repeat"),
+        ("scenario_sha256", "scenario hashes repeat"),
+    ],
+)
+def test_a_scenario_names_exactly_one_cell(field: str, message: str) -> None:
     cells = _cells_with()
-    cells[1]["id"] = cells[0]["id"]
-    with pytest.raises(ValidationError, match="cell ids repeat"):
+    cells[1][field] = cells[0][field]
+    with pytest.raises(ValidationError, match=message):
         prereg_model(cells=cells)
 
 
