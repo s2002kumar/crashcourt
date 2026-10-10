@@ -1,0 +1,34 @@
+id: LG-PW
+title: Writes of nodes that completed in a failed super-step are stored and not re-run
+polarity: guarantees
+paraphrase: >-
+  When a node fails mid-execution in a super-step, LangGraph stores the pending writes of the other
+  nodes that completed successfully in that super-step, and resuming from that super-step does not
+  re-run those nodes.
+quotes:
+  - >-
+    Pending writes: When a graph node fails mid-execution at a given super-step, LangGraph stores
+    pending checkpoint writes from any other nodes that completed successfully at that super-step.
+    When you resume graph execution from that super-step you don't re-run the successful nodes.
+  - >-
+    As each node within a super-step finishes, its outputs are written to the checkpointer's
+    checkpoint_writes table as task entries linked to the in-progress checkpoint. These per-task
+    writes are what enable pending writes recovery: if another node in the same super-step fails,
+    the successful nodes' writes are already durable and don't need to be re-run on resume.
+source_url: https://docs.langchain.com/oss/python/langgraph/checkpointers#pending-writes
+snapshot_url: https://docs.langchain.com/oss/python/langgraph/checkpointers.md
+retrieved: 2026-10-08
+snapshot_sha256: "3881beeb186af756c6f5495c89effa821fd654957c63584341b91861e6677b6a"
+version_scope:
+  package: langgraph
+  specifier: ">=1.2,<1.3"
+applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
+notes: >-
+  The guarantee covers only what the docs state: a node failing (an exception) in a super-step.
+  They do not say whether it also holds when the process crashes after a sibling's writes were
+  stored, so that is unresolved, and a process crash does not inherit this guarantee: no verdict
+  may cite LG-PW for a crash. The second quote ("already durable") is consistent with extending
+  it but does not state it, and it does not hold mid-run under durability="exit": in langgraph
+  1.2.12, per-task writes go to the saver only when durability is not "exit"
+  (pregel/_loop.py:466), and exit mode writes them when the run ends. The first quote follows the
+  page's explicit pending-writes anchor; the second is under "Super-steps".

@@ -5,7 +5,7 @@ description = "An open-source conformance and reliability lab for durable agent 
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12,<3.14"
-# System under test and its drivers: exact pins (spec section 16, T-01). Each is the newest
+# System under test and its drivers: exact pins (T-01). Each is the newest
 # release on PyPI on 2026-09-27; see tasks/T-01.md for sources and the psycopg bump.
 dependencies = [
   "langgraph==1.2.12",
@@ -14,13 +14,23 @@ dependencies = [
   "langgraph-checkpoint-sqlite==3.1.1",
   "psycopg[binary]==3.3.6",
   "psycopg-pool==3.3.3",
+  # Harness libraries: lower bounds here, exact versions in uv.lock.
+  "packaging>=26.3",
+  "pydantic>=2.13.5",
+  "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
 crashcourt = "crashcourt.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380"]
+dev = [
+    "pytest>=8",
+    "hypothesis>=6",
+    "ruff>=0.6",
+    "pyright>=1.1.380",
+    "types-pyyaml>=6.0.12.20260906",
+]
 
 [tool.uv]
 # The interpreter is part of the manifest: use uv's own build of the version in .python-version on

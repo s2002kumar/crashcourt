@@ -204,3 +204,16 @@ def test_unreadable_lockfile_is_a_failed_check_not_a_crash() -> None:
 def test_unhashable_lockfile_blocks_the_manifest() -> None:
     fails = failed(FakeProbes(lock_sha=PermissionError("denied")))
     assert "lockfile_sha256 is missing" in fails["manifest complete"]
+
+
+def test_invalid_clause_registry_is_a_failed_check() -> None:
+    from crashcourt.clauses import RegistryError
+
+    fails = failed(FakeProbes(registry=RegistryError(["a.yaml: bad", "b.yaml: worse"])))
+    assert fails["clause registry valid"] == "RegistryError: a.yaml: bad; b.yaml: worse"
+
+
+def test_manifest_records_the_clause_registry_version() -> None:
+    report = run_doctor(FakeProbes(registry=(9, "1" * 64)))
+    assert report.manifest is not None
+    assert report.manifest.clause_registry_sha256 == "1" * 64

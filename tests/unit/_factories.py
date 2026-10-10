@@ -29,6 +29,7 @@ GOOD_IMAGE_IDS = {GOOD_IMAGES["postgres"]: ID_PG, GOOD_IMAGES["toxiproxy"]: ID_T
 GOOD_RUNNING = {"postgres": ID_PG, "toxiproxy": ID_TOXI}
 LINUX_WHEEL = "cp312-cp312-manylinux2014_x86_64,cp312-cp312-manylinux_2_17_x86_64"
 WINDOWS_WHEEL = "cp312-cp312-win_amd64"
+REGISTRY_SHA = "e" * 64
 GOOD_DRIVER = DriverInfo(
     impl="binary", libpq=180006, libpq_build=180006, cancel_safe=True, wheel=LINUX_WHEEL
 )
@@ -46,6 +47,7 @@ def make_manifest(**changes: object) -> Manifest:
         machine="x86_64",
         runner="local",
         lockfile_sha256="f" * 64,
+        clause_registry_sha256=REGISTRY_SHA,
         packages=dict(GOOD_VERSIONS),
         psycopg_impl="binary",
         psycopg_wheel=LINUX_WHEEL,
@@ -84,6 +86,7 @@ class FakeProbes:
         default_factory=lambda: dict(GOOD_VERSIONS)
     )
     lock_sha: str | Exception | None = "f" * 64
+    registry: tuple[int, str] | Exception = (9, REGISTRY_SHA)
     pin: str | Exception | None = "3.12.7"
     driver: DriverInfo | Exception = GOOD_DRIVER
     git: tuple[str | None, bool] = ("0" * 40, False)
@@ -142,6 +145,11 @@ class FakeProbes:
         if isinstance(self.lock_sha, Exception):
             raise self.lock_sha
         return self.lock_sha
+
+    def clause_registry(self) -> tuple[int, str]:
+        if isinstance(self.registry, Exception):
+            raise self.registry
+        return self.registry
 
     def python_pin(self) -> str | None:
         if isinstance(self.pin, Exception):

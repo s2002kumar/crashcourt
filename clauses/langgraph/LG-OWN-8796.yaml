@@ -1,0 +1,33 @@
+id: LG-OWN-8796
+title: Proposed write-ownership capability (langgraph#8796)
+polarity: proposed
+paraphrase: >-
+  Proposed, not adopted: a checkpointer that advertises write ownership must observably refuse a
+  write from a superseded owner. The write must not become durable, and the superseded owner must
+  be able to learn it lost, either because the write raises or because an explicit ownership-check
+  barrier raises. It judges only savers that advertise the capability.
+quotes:
+  - >-
+    a checkpointer that advertises write ownership must observably refuse a write from a superseded
+    owner.
+  - Durability. A write from a superseded owner must not become durable.
+  - >-
+    Observability, by a stated deadline. The superseded owner must be able to learn it lost —
+    either the write raises, or an explicit acheck_write_ownership() barrier raises. Returning
+    normally with no barrier is a silent refusal and fails.
+source_url: https://github.com/langchain-ai/langgraph/issues/8796
+snapshot_url: https://raw.githubusercontent.com/bharatnpti/langgraph-write-ownership/main/upstream/checkpoint-conformance-write-ownership/README.md
+retrieved: 2026-09-27
+snapshot_sha256: "0236ff5520cfffada00fb19affc0c9de54880ff66ed4a13b2006dd67cb0480c0"
+version_scope:
+  package: langgraph-checkpoint-conformance
+  specifier: "==0.0.2"
+applies_to: [savers advertising write_ownership]
+notes: >-
+  Proposal by bharatnpti: 15 conformance clauses in an extended capability, published as patches
+  against langgraph-checkpoint-conformance 0.0.2 and main; not part of any release. On 2026-09-27
+  the issue was open and unassigned with no maintainer reply. The snapshot is the proposal's README
+  on the main branch of bharatnpti/langgraph-write-ownership (commit 9cfadc5, 2026-09-09), where
+  the contract is stated. None of the savers tested here advertise the capability; it is the
+  clause source for control C10 (rerunning a scenario with a fenced saver) and never judges
+  LangGraph itself.

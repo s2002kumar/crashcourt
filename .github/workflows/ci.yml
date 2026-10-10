@@ -1,4 +1,4 @@
-# Tier 1 and a tier-2 smoke of `doctor` (spec section 20).
+# Static checks and unit tests, then a smoke run of `doctor` against the compose services.
 # Every action is pinned to a full commit SHA (supply-chain rule); the release tag is in the comment.
 name: ci
 on:
@@ -29,6 +29,7 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run pyright
       - run: uv run pytest
+      - run: uv run crashcourt clauses check  # control C6: the registry validates offline
   doctor:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -45,7 +46,7 @@ jobs:
       - run: docker compose up -d --wait
       - run: >-
           uv run crashcourt doctor --manifest manifest-ci.json
-          --compare research/evidence/t-01/manifest-local.json
+          --compare research/evidence/t-02/manifest-local.json
       - name: manifest names the tested commit, checked out clean
         run: jq -e --arg sha "$HEAD_SHA" '.git_sha == $sha and .git_dirty == false' manifest-ci.json
       - run: uv run pytest -m integration

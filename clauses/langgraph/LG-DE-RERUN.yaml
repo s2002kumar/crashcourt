@@ -1,0 +1,29 @@
+id: LG-DE-RERUN
+title: A node that was running when execution stopped runs again from its start on resume
+polarity: permits
+paraphrase: >-
+  If execution stops and later resumes, the node that was running starts again from the beginning
+  of its function, so code and side effects before the stopping point run again. The docs direct
+  users to design node logic so re-execution does not corrupt state (idempotency keys, upserts,
+  read-before-write checks).
+quotes:
+  - >-
+    If execution stops and later resumes (for example after an interrupt or a retry), the affected
+    node runs again from the start of its function. Code and side effects before the pause run
+    again.
+  - Design node logic so re-execution does not corrupt state.
+source_url: https://docs.langchain.com/oss/python/langgraph/graph-api#re-execution-and-idempotency
+snapshot_url: https://docs.langchain.com/oss/python/langgraph/graph-api.md
+retrieved: 2026-10-08
+snapshot_sha256: "0d56d51135d7c9359d12b382d75a01384c123cf16d74e5048965e3818ad8dbd0"
+version_scope:
+  package: langgraph
+  specifier: ">=1.2,<1.3"
+applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
+notes: >-
+  Source moved. This guidance used to be on the Durable Execution page, which upstream removed on
+  2026-05-27 (langchain-ai/docs#3979, commit 2a8ace1); its URL now redirects to the Persistence page. The
+  guidance now lives here and in the Functional API page's Idempotency section
+  (https://docs.langchain.com/oss/python/langgraph/functional-api#idempotency), which says a task
+  that started but did not finish "may run again" on resume. The examples given are an interrupt
+  and a retry; a process crash is covered only by the general wording "if execution stops".

@@ -1,0 +1,33 @@
+id: LG-LATEST
+title: get_tuple returns the latest checkpoint without an id, and that exact one with an id
+polarity: describes
+paraphrase: >-
+  For checkpointer implementations, get_tuple without a checkpoint_id returns the latest checkpoint
+  for the thread and namespace, and with a checkpoint_id returns that exact checkpoint. Both paths
+  must work: by-id lookup is used for time travel and for delta channel reconstruction on every
+  invocation. In the recommended SQL design, larger checkpoint ids are newer, so "latest" is the
+  largest id.
+quotes:
+  - No checkpoint_id — return the latest checkpoint for the thread + namespace.
+  - A specific checkpoint_id — return that exact checkpoint.
+  - >-
+    Both paths must work correctly. The specific-id path is used for time travel and — critically —
+    for delta channel state reconstruction on every graph invocation (see Delta channel support). A
+    broken specific-id lookup silently corrupts delta channel state.
+  - Because checkpoint_id is a ULID, it sorts lexicographically — larger values are newer.
+source_url: https://docs.langchain.com/oss/python/langgraph/checkpointers#build-a-custom-checkpointer
+snapshot_url: https://docs.langchain.com/oss/python/langgraph/checkpointers.md
+retrieved: 2026-10-08
+snapshot_sha256: "3881beeb186af756c6f5495c89effa821fd654957c63584341b91861e6677b6a"
+version_scope:
+  package: langgraph-checkpoint
+  specifier: ">=4.2,<4.3"
+applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
+notes: >-
+  Written as guidance for authors of custom checkpointers, not as a guarantee about the official
+  savers. The page calls checkpoint ids ULIDs, but langgraph-checkpoint 4.2.0 generates them with
+  uuid6 (checkpoint/base/__init__.py:854); how the official savers order them is the T-03 source
+  audit's question. The page does not say which checkpoint is "latest" when two writers create
+  sibling checkpoints of one parent. Open question: as a describes clause, whether it can support
+  a verdict on its own, which decides whether the lineage and head invariants can ever be
+  violations (see Polarity in src/crashcourt/clauses/models.py).

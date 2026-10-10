@@ -1,0 +1,22 @@
+id: LGP-DT
+title: Double-texting strategies are a LangSmith Deployment feature, not in open-source LangGraph
+polarity: disclaims
+paraphrase: >-
+  Double texting (handling a second run on a thread before the first finishes, with the enqueue,
+  reject, interrupt, and rollback strategies) is a feature of LangSmith Deployment and is not
+  available in the open-source LangGraph framework.
+quotes:
+  - >-
+    Double texting is a feature of LangSmith Deployment. It is not available in the LangGraph open
+    source framework.
+source_url: https://docs.langchain.com/langsmith/double-texting
+snapshot_url: https://docs.langchain.com/langsmith/double-texting.md
+retrieved: 2026-09-27
+snapshot_sha256: "54f4729cf60560d86179589d889ea7745cb7b551c86d4f17e67968181e621d6f"
+version_scope:
+  package: langgraph
+  specifier: ">=1.2,<1.3"
+applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
+notes: >-
+  With this disclaimer, the open-source savers have no documented per-thread concurrency control,
+  so concurrent-writer outcomes on them are GAP unless another clause covers them.

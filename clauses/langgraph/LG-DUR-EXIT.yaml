@@ -1,0 +1,25 @@
+id: LG-DUR-EXIT
+title: Exit durability saves only when execution exits; no mid-run crash recovery
+polarity: permits
+paraphrase: >-
+  With durability="exit", LangGraph persists changes only when execution exits (successfully, with
+  an error, or at a human-in-the-loop interrupt). Intermediate state is not saved, so a system
+  failure such as a process crash mid-execution cannot be recovered from.
+quotes:
+  - >-
+    "exit": LangGraph persists changes only when graph execution exits — successfully, with an
+    error, or due to a human-in-the-loop interrupt. This provides the best performance for
+    long-running graphs but means intermediate state is not saved, so you cannot recover from
+    system failures (like process crashes) mid-execution.
+source_url: https://docs.langchain.com/oss/python/langgraph/checkpointers#durability-modes
+snapshot_url: https://docs.langchain.com/oss/python/langgraph/checkpointers.md
+retrieved: 2026-10-08
+snapshot_sha256: "3881beeb186af756c6f5495c89effa821fd654957c63584341b91861e6677b6a"
+version_scope:
+  package: langgraph
+  specifier: ">=1.2,<1.3"
+applies_to: [AsyncPostgresSaver, PostgresSaver, AsyncSqliteSaver, SqliteSaver]
+notes: >-
+  Permits losing intermediate state after a crash. The exit-time save itself (including at an
+  interrupt) is described, not permitted to fail, so a lost exit-time checkpoint is not covered
+  by this clause.
