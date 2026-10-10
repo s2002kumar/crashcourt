@@ -11,8 +11,6 @@ consistently; it is built as a synthetic trial in tests/unit/test_checker_mutant
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Callable
 from typing import Any
 
@@ -25,6 +23,7 @@ from crashcourt.checker.artifacts import (
     SnapshotPair,
     TrialArtifacts,
 )
+from crashcourt.sink.ledger import row_hash as ledger_row_hash
 from crashcourt.spec.events import Event
 
 EventEdit = Callable[[list[Event]], list[Event]]
@@ -76,19 +75,13 @@ def edit_snapshot(
 
 
 def relink(rows: list[LedgerRow]) -> tuple[LedgerRow, ...]:
-    """Renumber sink_seq from 1 and re-chain prev_hash and row_hash."""
+    """Renumber sink_seq from 1 and re-chain prev_hash and row_hash as T-08's ledger does."""
     out: list[LedgerRow] = []
     prev = "0" * 64
     for seq, row in enumerate(rows, start=1):
-        body = {
-            "sink_seq": seq,
-            "effect_key": row.effect_key,
-            "op_id": row.op_id,
-            "attempt": row.attempt,
-            "worker": row.worker,
-        }
-        digest = hashlib.sha256(f"{prev}|{json.dumps(body, sort_keys=True)}".encode()).hexdigest()
-        out.append(row.model_copy(update={"sink_seq": seq, "prev_hash": prev, "row_hash": digest}))
+        moved = row.model_copy(update={"sink_seq": seq, "prev_hash": prev})
+        digest = ledger_row_hash(prev, moved.model_dump())
+        out.append(moved.model_copy(update={"row_hash": digest}))
         prev = digest
     return tuple(out)
 

@@ -11,7 +11,6 @@ fixture's arms match its own hits.
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -40,6 +39,7 @@ from crashcourt.checker.artifacts import (
 from crashcourt.checker.decode import encode
 from crashcourt.checker.facts import NULL_TASK_ID
 from crashcourt.clauses.registry import ClauseRegistry, registry_sha256
+from crashcourt.sink.ledger import row_hash as ledger_row_hash
 from crashcourt.spec.events import Event
 from tests.unit._factories import GOOD_VERSIONS, make_manifest
 
@@ -469,34 +469,28 @@ class TrialBuilder:
         )
         seq = len(self.ledger) + 1
         prev = self.ledger[-1].row_hash if self.ledger else "0" * 64
-        body = {
-            "sink_seq": seq,
-            "effect_key": key,
-            "op_id": op,
-            "attempt": attempt,
-            "worker": w.name,
-        }
-        row_hash = hashlib.sha256(f"{prev}|{json.dumps(body, sort_keys=True)}".encode()).hexdigest()
-        self.ledger.append(
-            LedgerRow(
-                sink_seq=seq,
-                received_mono_ns=self.clock[0],
-                received_wall_ns=self.clock[0],
-                effect_key=key,
-                logical_op=logical,
-                op_id=op,
-                attempt=attempt,
-                worker=w.name,
-                pid=w.pid,
-                thread_id=thread,
-                node=node,
-                checkpoint_id_seen=self.graphs[thread].head,
-                payload_hash="b" * 64,
-                status="applied",
-                prev_hash=prev,
-                row_hash=row_hash,
-            )
+        row = LedgerRow(
+            sink_seq=seq,
+            received_mono_ns=self.clock[0],
+            received_wall_ns=self.clock[0],
+            effect_key=key,
+            logical_op=logical,
+            op_id=op,
+            attempt=attempt,
+            worker=w.name,
+            pid=w.pid,
+            thread_id=thread,
+            node=node,
+            checkpoint_id_seen=self.graphs[thread].head,
+            payload_hash="b" * 64,
+            status="applied",
+            prev_hash=prev,
+            row_hash="0" * 64,
         )
+        # Chained as T-08's ledger chains it, so the sink's own verification would pass.
+        row = row.model_copy(update={"row_hash": ledger_row_hash(prev, row.model_dump())})
+        row_hash = row.row_hash
+        self.ledger.append(row)
         self.sink.emit(
             "sink.append",
             op_id=op,
