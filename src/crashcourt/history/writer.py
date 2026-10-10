@@ -84,6 +84,13 @@ class HistoryWriter:
             self._seq += 1
             return event
 
+    @property
+    def last_seq(self) -> int | None:
+        """The seq of the last event in the file, or None before the first: every event up to
+        it was written before this returned."""
+        with self._lock:
+            return self._seq - 1 if self._seq else None
+
     def close(self) -> None:
         with self._lock:
             if self._fd is not None:
