@@ -3,10 +3,12 @@
 // Apart from the schema modules generated from schemas/v1, this is the only site source file that
 // spells a verdict name, holds the list of verdicts, or names the Verdict type. Other code gets a verdict
 // from a validated artifact and renders it through `verdictToken`, or lists the vocabulary through
-// `verdictLegend`. scripts/guard-verdicts.ts fails the build on any of those elsewhere; its header says
-// what it cannot see. Tokens for the two outcomes that are not verdicts (a violation candidate, and no
-// anomaly with no clause) come with the pages that render results (F-02), so neither can borrow a
-// verdict's look.
+// `verdictLegend`; an outcome from a result record renders through `outcomeToken`, which also covers the
+// two outcomes that are not verdicts (a violation candidate, and no anomaly with no clause).
+// scripts/guard-verdicts.ts fails the build on any of those elsewhere; its header says what it cannot
+// see.
+
+import type { Outcome } from "./schema/types.gen.ts";
 
 const VERDICTS = ["PASS", "EXPECTED", "GAP", "VIOLATION", "INVALID"] as const;
 export type Verdict = (typeof VERDICTS)[number];
@@ -73,6 +75,63 @@ export function verdictToken(verdict: Verdict): VerdictToken {
 /** Every verdict with its token, in display order: the vocabulary, never a result. */
 export function verdictLegend(): readonly (VerdictProp & { readonly token: VerdictToken })[] {
   return VERDICTS.map((verdict) => ({ verdict, token: VERDICT_TOKENS[verdict] }));
+}
+
+// The two outcomes that are not verdicts. Neither borrows a verdict's look: no verdict color (they are
+// drawn in muted ink), a dashed edge, and a glyph no verdict uses, so a candidate never reads as a
+// violation and an unspecified outcome never reads as a pass.
+
+export type OtherGlyphName = "query" | "dash";
+
+export interface OtherOutcomeToken {
+  readonly label: string;
+  readonly glyph: OtherGlyphName;
+  readonly char: string;
+  readonly meaning: string;
+}
+
+const OTHER_TOKENS: Readonly<Record<Exclude<Outcome, Verdict>, OtherOutcomeToken>> = {
+  VIOLATION_CANDIDATE: {
+    label: "CANDIDATE",
+    glyph: "query",
+    char: "?",
+    meaning:
+      "A documented guarantee forbids the anomaly. It is not a violation until a standalone repro and human review confirm it.",
+  },
+  NO_ANOMALY_UNSPECIFIED: {
+    label: "UNSPECIFIED",
+    glyph: "dash",
+    char: "–",
+    meaning: "No anomaly was observed, and no documented clause covers the case. It is not a pass.",
+  },
+};
+
+/** The two outcomes that are not verdicts, with their tokens: vocabulary, never a result. */
+export function otherOutcomeLegend(): readonly (OutcomeProp & {
+  readonly token: OtherOutcomeToken;
+})[] {
+  return Object.entries(OTHER_TOKENS).map(([outcome, token]) => ({
+    outcome: outcome as Outcome,
+    token,
+  }));
+}
+
+/** Props for a component that renders one outcome a result record carries. */
+export interface OutcomeProp {
+  readonly outcome: Outcome;
+}
+
+/** An outcome's token: a verdict's own, or one of the two outcomes that are not verdicts. */
+export type OutcomeToken =
+  | { readonly kind: "verdict"; readonly verdict: Verdict; readonly token: VerdictToken }
+  | { readonly kind: "other"; readonly token: OtherOutcomeToken };
+
+export function outcomeToken(outcome: Outcome): OutcomeToken {
+  if (outcome in VERDICT_TOKENS) {
+    const verdict = outcome as Verdict;
+    return { kind: "verdict", verdict, token: VERDICT_TOKENS[verdict] };
+  }
+  return { kind: "other", token: OTHER_TOKENS[outcome as Exclude<Outcome, Verdict>] };
 }
 
 export const ACTORS = ["client", "worker-a", "worker-b", "database", "sink"] as const;

@@ -1,7 +1,7 @@
 // Glyphs for verdicts, faults, and actors. They are drawn as SVG rather than typed as Unicode so they look
 // the same on every platform and font. Each is decorative (aria-hidden); a text label always sits beside it.
 
-import type { Actor, FaultMark, VerdictGlyphName, VerdictProp } from "@/lib/tokens";
+import type { Actor, FaultMark, OtherGlyphName, VerdictGlyphName, VerdictProp } from "@/lib/tokens";
 import { actorToken, verdictToken } from "@/lib/tokens";
 
 interface GlyphProps {
@@ -38,6 +38,41 @@ export function VerdictGlyph({ verdict, size = 16, className }: GlyphProps & Ver
       style={{ color: token.color }}
     >
       {VERDICT_PATHS[token.glyph]}
+    </svg>
+  );
+}
+
+const OTHER_PATHS: Record<OtherGlyphName, React.ReactNode> = {
+  query: (
+    <>
+      <path d="M5.75 6a2.25 2.25 0 1 1 3.2 2.04c-.6.28-.95.78-.95 1.42v.54" fill="none" />
+      <circle cx="8" cy="12.6" r="0.4" />
+    </>
+  ),
+  dash: <path d="M4 8h8" fill="none" />,
+};
+
+/** The glyph of an outcome that is not a verdict, in muted ink: never a verdict's color or shape. */
+export function OtherOutcomeGlyph({
+  glyph,
+  size = 16,
+  className,
+}: GlyphProps & { glyph: OtherGlyphName }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      width={size}
+      height={size}
+      className={className}
+      stroke="currentColor"
+      fill="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ color: "var(--ink-muted)" }}
+    >
+      {OTHER_PATHS[glyph]}
     </svg>
   );
 }
