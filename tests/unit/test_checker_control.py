@@ -184,3 +184,30 @@ def test_client_fail_is_observational() -> None:
     assert got["I7a"] == got["I7c"] == ("NO_ANOMALY_UNSPECIFIED", None)
     # The start op's ok still exercises I11; the failed op does not.
     assert got["I11"] == ("PASS", "LG-DUR-SYNC")
+
+
+def test_row_order_never_matters() -> None:
+    """A dump returns rows in the database collation's order (en_US sorts underscores and colons
+    differently from Python). Shuffled rows give the same bytes, and two snapshots holding the
+    same rows in different orders are the same snapshot, with no reconciliation noted."""
+    import random
+
+    from crashcourt.checker.artifacts import SnapshotPair
+
+    for artifacts in (T.w1_trial(), T.w5_fork_trial(), T.kill_at_writes_trial("put_writes.after")):
+        assert artifacts.snapshots is not None
+        first = artifacts.snapshots.first
+        rng = random.Random(11)
+        shuffled = first.model_copy(
+            update={
+                name: tuple(rng.sample(list(getattr(first, name)), len(getattr(first, name))))
+                for name in ("checkpoints", "blobs", "writes")
+            }
+        )
+        pair = SnapshotPair(
+            first=shuffled, second=first, pretrial_rows=artifacts.snapshots.pretrial_rows
+        )
+        reordered = artifacts.model_copy(update={"snapshots": pair})
+        a, b = run(artifacts), run(reordered)
+        assert a.result_json() == b.result_json()
+        assert not any("in-flight" in o for o in b.report.observations)

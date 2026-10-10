@@ -26,9 +26,9 @@ def sites(artifacts: TrialArtifacts, point: str = "before") -> tuple[list[Site],
     return locate(TABLE, by_proc(artifacts), point)
 
 
-def test_the_repository_table_is_a_draft_of_the_five_landmarks() -> None:
+def test_the_repository_table_is_a_draft() -> None:
     assert TABLE.status == "draft"
-    assert [s.id for s in TABLE.landmarks] == ["L-IN", "L-RES", "L-EXW", "L-EXC", "L-T1"]
+    assert [s.id for s in TABLE.landmarks] == ["L-IN", "L-RES", "L-EXW", "L-EXC", "L-T1", "L-GET"]
 
 
 def test_extraction_agrees_with_how_hits_are_counted() -> None:

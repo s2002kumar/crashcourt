@@ -29,7 +29,7 @@ def test_fault_free_trials_validate() -> None:
     trials = [T.w1_trial() for _ in range(3)]
     report = validate(trials, _w1_table(), REGISTRY, REGISTRY_SHA, mutate=trials[0])
     assert report.passed, report.problems
-    assert {k[0] for k in report.landmarks} == {"L-IN", "L-RES", "L-EXW", "L-EXC"}
+    assert {k[0] for k in report.landmarks} == {"L-IN", "L-RES", "L-EXW", "L-EXC", "L-GET"}
 
 
 def test_the_documented_misuse_duplicate_is_not_a_false_anomaly() -> None:

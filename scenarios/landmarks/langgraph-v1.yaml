@@ -11,7 +11,11 @@
 #   Command's resume value, and the interrupted node's own RESUME list (langgraph 1.2.12,
 #   pregel/_io.py:75 and types.py:1018). 4.2 hypothesizes "occurrence 1"; the audit decides
 #   whether the landmark is the first of them (rule first_call) or names the task.
-# - L-T1's node name ("model") is W5's model node as T-09 will name it; confirm it there.
+# - L-T1 follows W5's model node, which T-09 names "respond" (its real fault-free histories,
+#   2026-10-10).
+# - L-GET is not in 4.2's table: control C2 holds both workers at their turn's first read
+#   (get_tuple.after), and every hit outside a synthetic trial must sit at a landmark. Proposed here
+#   for the audit.
 name: langgraph-v1
 status: draft
 landmarks:
@@ -37,4 +41,8 @@ landmarks:
   - id: L-T1
     method: put
     rules:
-      - {rule: after_node_end, node: model}
+      - {rule: after_node_end, node: respond}
+  - id: L-GET
+    method: get_tuple
+    rules:
+      - {rule: first_call}

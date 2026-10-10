@@ -644,8 +644,8 @@ class TrialBuilder:
             updates={"__start__": {"messages": [f"human {turn}"]}},
             parent=parent,
         )
-        task = f"task-model-{thread}-{turn}"
-        self.node(w, op, "model", task)
+        task = f"task-respond-{thread}-{turn}"
+        self.node(w, op, "respond", task)  # W5's model node, as T-09 names it
         reply = [*messages, f"ai {turn} [attempt 1]"]
         self.put_writes(w, op, thread, cin, task, [("messages", reply)])
         if stop_put is not None:
