@@ -47,10 +47,9 @@ def test_open_question_the_c11_8764_gap_has_no_invariant() -> None:
 
 
 def test_reading_a_crash_never_inherits_the_pending_writes_guarantee() -> None:
-    """Founder decision 2 and the merged registry note on LG-PW: no verdict cites LG-PW for a
-    crash. Until LG-PW-CRASH is registered, the crash case has no clause: I2 is
-    NO_ANOMALY_UNSPECIFIED when the writes are reused and GAP when the task runs again, and a
-    crash-time re-run is never PASS or VIOLATION_CANDIDATE."""
+    """Founder decision 2: the crash case cites LG-PW-CRASH, which describes and carries no
+    verdict. I2 is NO_ANOMALY_UNSPECIFIED when the writes are reused and GAP when the task runs
+    again, and a crash-time re-run is never PASS or VIOLATION_CANDIDATE."""
     assert outcomes(run(T.kill_at_writes_trial("put_writes.after", rerun=False)))["I2"] == NAU
     assert outcomes(run(T.kill_at_writes_trial("put_writes.after")))["I2"] == ("GAP", None)
     # LG-PW's own case (a node raised in the super-step) still carries PASS and a candidate.
@@ -79,3 +78,28 @@ def test_reading_a_disclaimed_thread_has_no_durability_pass() -> None:
 
     got = outcomes(run(two_resumes()))
     assert got["I1b"] == got["I11"] == NAU
+
+
+def test_reading_a_retry_after_client_fail_is_a_second_resume() -> None:
+    """I4(c) counts "two `client.invoke` with resume commands after one interrupt"; a client's
+    retry after client.fail is one, so the retry cells' threads are disclaimed like F07's (D1 in
+    the task record decides whether that holds for the durability invariants)."""
+    t = T.TrialBuilder()
+    start = t.op("start-1", "start")
+    first = t.op("resume-1", "resume", resume="approve")
+    retry = t.op("resume-2", "resume", resume="approve")
+    t.invoke(start)
+    t.dispatch("start-1", "worker-1")
+    t.w1_start("worker-1", "start-1")
+    t.ok("start-1", "worker-1")
+    t.invoke(first)
+    t.dispatch("resume-1", "worker-1")
+    t.w1_resume("worker-1", "resume-1", "T1", "approve")
+    t.fail("resume-1", "worker-1", "lost result")
+    t.invoke(retry)
+    t.dispatch("resume-2", "worker-1")
+    t.get_tuple(t.workers["worker-1"], "resume-2", "T1")
+    t.ok("resume-2", "worker-1")
+    t.exit("worker-1")
+    got = outcomes(run(t.build()))
+    assert got["I1a"] == got["I1b"] == got["I11"] == NAU
