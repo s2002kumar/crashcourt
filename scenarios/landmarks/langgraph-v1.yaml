@@ -1,0 +1,40 @@
+# Landmarks for W1 and W5 (red-team specification 4.2, "Verification by events").
+#
+# DRAFT. The rules restate 4.2's verification column; no occurrence number is written here. Each
+# landmark's occurrence is derived from real fault-free T-09 histories with
+# crashcourt.checker.landmarks (locate, occurrences) and audited before this table's status
+# becomes "audited". Until then the checker verifies hits against it only in synthetic trials and
+# artifact mutants.
+#
+# Open before the audit:
+# - L-RES as written matches two put_writes calls in a resume run: the null task's write of the
+#   Command's resume value, and the interrupted node's own RESUME list (langgraph 1.2.12,
+#   pregel/_io.py:75 and types.py:1018). 4.2 hypothesizes "occurrence 1"; the audit decides
+#   whether the landmark is the first of them (rule first_call) or names the task.
+# - L-T1's node name ("model") is W5's model node as T-09 will name it; confirm it there.
+name: langgraph-v1
+status: draft
+landmarks:
+  - id: L-IN
+    method: put
+    rules:
+      - {rule: call_data_equals, key: source, value: input}
+      - {rule: no_kind_before, kind: node.start}
+  - id: L-RES
+    method: put_writes
+    rules:
+      - {rule: call_channels_include, channel: __resume__}
+  - id: L-EXW
+    method: put_writes
+    rules:
+      - {rule: after_node_end, node: execute}
+      - {rule: call_task_of_node, node: execute}
+  - id: L-EXC
+    method: put
+    rules:
+      - {rule: after_node_end, node: execute}
+      - {rule: before_node_start, node: record}
+  - id: L-T1
+    method: put
+    rules:
+      - {rule: after_node_end, node: model}

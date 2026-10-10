@@ -19,8 +19,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from crashcourt.checker.artifacts import ArmSpec, ContextRule, FaultSpec, LandmarkTable
-from crashcourt.checker.facts import TrialFacts, data_int, data_list, data_text, node_name, pointer
+from crashcourt.checker.artifacts import ArmSpec, FaultSpec, LandmarkTable
+from crashcourt.checker.facts import TrialFacts, data_int, data_text, pointer
+from crashcourt.checker.landmarks import matches, rule_holds
 from crashcourt.checker.order import ref
 from crashcourt.history.merge import Ref
 from crashcourt.spec.events import Event
@@ -140,41 +141,22 @@ def _check_landmark(
             return
         raise _Failed(11, f"arm at {arm.point} names no landmark; its hit cannot be verified")
     spec = table.get(arm.landmark) if table is not None else None
-    if spec is None:
+    if table is None or spec is None:
         raise _Failed(11, f"landmark {arm.landmark} is not in the scenario's landmark table")
-    if spec.point != arm.point:
-        raise _Failed(11, f"landmark {spec.id} is at {spec.point}, the arm at {arm.point}")
+    if table.status != "audited" and not allow_unlandmarked:
+        raise _Failed(11, f"landmark table {table.name} is a draft, not yet audited")
+    if spec.method != arm.point.split(".", 1)[0]:
+        raise _Failed(11, f"landmark {spec.id} is a {spec.method} call, the arm is at {arm.point}")
     events = facts.order.by_proc[hit.proc]
     call = _call_of(events, hit)
-    for rule in spec.rules:
-        if not _rule_holds(rule, hit, call, events):
-            raise _Failed(
-                11, f"hit {pointer(hit)} is not at landmark {spec.id}: rule {rule.rule} fails"
-            )
-
-
-def _rule_holds(rule: ContextRule, hit: Event, call: Event | None, events: Sequence[Event]) -> bool:
-    same_op = [e for e in events if e.op_id == hit.op_id]
-    before = [e for e in same_op if e.seq < hit.seq]
-    match rule.rule:
-        case "call_data_equals":
-            return (
-                call is not None and rule.key is not None and call.data.get(rule.key) == rule.value
-            )
-        case "call_channels_include":
-            return call is not None and rule.channel in data_list(call, "channels")
-        case "call_task_of_node":
-            starts = [e for e in before if e.kind == "node.start" and node_name(e) == rule.node]
-            return call is not None and bool(starts) and call.task_id == starts[-1].task_id
-        case "after_node_end":
-            return any(e.kind == "node.end" and node_name(e) == rule.node for e in before)
-        case "before_node_start":
-            return not any(e.kind == "node.start" and node_name(e) == rule.node for e in before)
-        case "no_kind_before":
-            return not any(e.kind == rule.kind for e in before)
-        case "last_call":
-            method = str(hit.fp).split(".", 1)[0]
-            return not any(e.kind == f"saver.{method}.call" for e in same_op if e.seq > hit.seq)
+    if call is None or not matches(spec, call, hit.seq, events):
+        failing = [
+            r.rule for r in spec.rules if not rule_holds(r, hit.op_id, hit.seq, call, events)
+        ]
+        raise _Failed(
+            11,
+            f"hit {pointer(hit)} is not at landmark {spec.id}: {', '.join(failing) or 'no call'}",
+        )
 
 
 # -- faults ----------------------------------------------------------------------------------
@@ -453,3 +435,94 @@ def _check_fault(
     if not first.dispatches[0].seq < second.dispatches[0].seq:
         raise _Failed(12, "second-resume: the dispatches are not in the declared order")
     return [pointer(first.invokes[0]), pointer(second.invokes[0])]
+
+
+# -- control (trigger 16) ------------------------------------------------------------------------
+
+
+def verify_control(facts: TrialFacts, *, allow_uncontrolled: bool) -> FaultCheck:
+    """Every worker that ended abnormally was ended by a declared fault, with the signal or status
+    that fault implies; and every orchestrator fault struck a worker held at a declared barrier
+    (artifact mutants, which plant stops on purpose, are exempt from the second rule)."""
+    try:
+        hits = {index: _hit(facts, index, arm) for index, arm in enumerate(facts.scenario.arms)}
+        _check_exits(facts, hits)
+        if not allow_uncontrolled:
+            _check_controlled(facts, hits)
+    except _Failed as failed:
+        return FaultCheck(trigger=failed.trigger, reason=failed.reason)
+    return FaultCheck()
+
+
+def _check_exits(facts: TrialFacts, hits: dict[int, Event]) -> None:
+    arm_by_hit = {ref(hit): facts.scenario.arms[index] for index, hit in hits.items()}
+    for worker in sorted(facts.exits):
+        exit_ = facts.exits[worker]
+        if not exit_.abnormal:
+            continue
+        explained = False
+        for action in (e for e in facts.order.by_proc.get(worker, ()) if e.kind == "fp.action"):
+            arm = arm_by_hit.get(Ref(worker, data_int(action, "hit_seq") or -1))
+            if arm is None:
+                continue
+            if arm.action == "exit":
+                expected = 1 if arm.exit_code is None else arm.exit_code
+                explained |= exit_.signal is None and exit_.returncode == expected
+            elif arm.action == "signal" and arm.signal != "SIGSTOP":
+                explained |= exit_.signal == arm.signal
+        for fault in facts.scenario.faults:
+            if fault.kind != "sigkill" or fault.fault_id is None:
+                continue
+            for inject in facts.orch_events:
+                if inject.kind == "fault.inject" and inject.fault_id == fault.fault_id:
+                    explained |= facts.fault_worker(inject) == worker and exit_.signal == "SIGKILL"
+        if not explained:
+            how = exit_.signal or f"status {exit_.returncode}"
+            raise _Failed(16, f"{worker} ended with {how}, which no declared fault explains")
+
+
+def _held(facts: TrialFacts, hits: dict[int, Event], worker: str | None) -> list[Event]:
+    """Declared pause hits of a worker (any worker if None)."""
+    return [
+        hit
+        for index, hit in hits.items()
+        if facts.scenario.arms[index].action == "pause" and (worker is None or hit.proc == worker)
+    ]
+
+
+def _check_controlled(facts: TrialFacts, hits: dict[int, Event]) -> None:
+    for fault in facts.scenario.faults:
+        if fault.arm is not None or fault.fault_id is None:
+            continue
+        if fault.kind not in {"sigkill", "terminate-backend", "db-restart"}:
+            continue
+        inject = next(
+            e
+            for e in facts.orch_events
+            if e.kind == "fault.inject" and e.fault_id == fault.fault_id
+        )
+        target = facts.fault_worker(inject) or fault.worker
+        releases = {
+            (data_text(e, "proc"), data_int(e, "hit_seq")): e
+            for e in facts.orch_events
+            if e.kind == "fp.release"
+        }
+        if fault.kind == "sigkill":
+            # Killed while parked: its history ends at a declared pause hit nothing released.
+            events = facts.order.by_proc.get(str(target), ())
+            parked = [
+                h
+                for h in _held(facts, hits, target)
+                if events and h.seq == events[-1].seq and (h.proc, h.seq) not in releases
+            ]
+        else:
+            # Held across the fault: a declared pause hit whose release came after the inject.
+            parked = [
+                h
+                for h in _held(facts, hits, None if fault.kind == "db-restart" else target)
+                if (r := releases.get((h.proc, h.seq))) is not None and r.seq > inject.seq
+            ]
+        if not parked:
+            raise _Failed(
+                16, f"{fault.kind} {fault.fault_id} struck no worker held at a declared barrier"
+            )

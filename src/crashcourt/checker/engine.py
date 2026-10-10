@@ -21,21 +21,24 @@ from crashcourt.checker.classify import Scope, classify
 from crashcourt.checker.decode import DecodeError
 from crashcourt.checker.effect_models import EFFECT_MODELS, ShapeError
 from crashcourt.checker.facts import TrialFacts
-from crashcourt.checker.faults_fired import FaultCheck, verify_faults
+from crashcourt.checker.faults_fired import FaultCheck, verify_control, verify_faults
 from crashcourt.checker.freeze import FROZEN_PATH, landmark_hash, verify_trial
 from crashcourt.checker.freeze import checker_sha256 as current_checker_sha256
 from crashcourt.checker.integrity import (
     TRIGGERS,
     Invalid,
+    check_causal,
     check_clients,
     check_complete,
     check_effects,
     check_environment,
     check_fault_events,
+    check_harness,
     check_histories,
     check_ledger_links,
     check_node_runs,
     check_pretrial,
+    check_provenance,
     check_sink,
     check_snapshot,
     check_worker_reports,
@@ -72,6 +75,7 @@ def prepare(artifacts: TrialArtifacts) -> tuple[Context, FaultCheck]:
     model = EFFECT_MODELS[scenario.workload]
     orchestrator, sink = roles(artifacts)
     check_complete(artifacts, orchestrator, sink)
+    check_provenance(artifacts)
     by_proc = check_histories(artifacts, orchestrator)
     try:
         order = Order(by_proc)
@@ -80,6 +84,7 @@ def prepare(artifacts: TrialArtifacts) -> tuple[Context, FaultCheck]:
     assert artifacts.ledger is not None and artifacts.snapshots is not None
     check_ledger_links(by_proc, sink, artifacts.ledger.rows)
     check_node_runs(by_proc)
+    check_causal(by_proc, orchestrator)
     check_clients(by_proc[orchestrator])
 
     def facts_with(committed: FaultCheck | None) -> TrialFacts:
@@ -96,7 +101,7 @@ def prepare(artifacts: TrialArtifacts) -> tuple[Context, FaultCheck]:
     facts = facts_with(None)
     check_effects(facts)
     check_sink(artifacts, facts)
-    snapshot = check_snapshot(artifacts, facts)
+    snapshot, snapshot_notes = check_snapshot(artifacts, facts)
     lineages = build_lineages(snapshot)
     reader = ChannelReader(snapshot)
     try:
@@ -112,7 +117,8 @@ def prepare(artifacts: TrialArtifacts) -> tuple[Context, FaultCheck]:
     if faults.trigger is not None:
         raise Invalid(faults.trigger, str(faults.reason))
     check_environment(artifacts)
-    return Context(scenario, facts_with(faults), lineages, reader, model, states), faults
+    context = Context(scenario, facts_with(faults), lineages, reader, model, states, snapshot_notes)
+    return context, faults
 
 
 def _observations(context: Context) -> tuple[str, ...]:
@@ -169,6 +175,12 @@ def check_trial(
         alarm = i3_alarm(context)
         if alarm is not None:
             raise Invalid(15, alarm[0])
+        check_harness(artifacts)
+        control = verify_control(
+            context.facts, allow_uncontrolled=scenario.evidence == "artifact-mutant"
+        )
+        if control.trigger is not None:
+            raise Invalid(control.trigger, str(control.reason))
         assert artifacts.manifest is not None
         scope = Scope(
             target=scenario.target,
@@ -191,7 +203,7 @@ def check_trial(
             {
                 **report,
                 "not_exercised": tuple(missing),
-                "observations": _observations(context),
+                "observations": (*context.notes, *_observations(context)),
                 "harness_investigations": tuple(investigations),
                 "fault_notes": faults.notes,
             }

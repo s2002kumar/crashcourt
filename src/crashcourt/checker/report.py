@@ -28,7 +28,7 @@ class NotExercised(BaseModel):
 class InvalidTrigger(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    trigger: Annotated[int, Field(ge=1, le=15)]
+    trigger: Annotated[int, Field(ge=1, le=16)]
     name: str
     reason: str
 

@@ -124,6 +124,21 @@ def differences(frozen: FreezeManifest, current: FreezeManifest) -> list[str]:
     return found
 
 
+def verify_checker(text: str, registry_sha256: str, root: Path = CHECKER_ROOT) -> FreezeManifest:
+    """The frozen manifest, if the checker files, effect models, checker version, and registry
+    match it; FreezeMismatch otherwise. The batch gate's check; landmark tables are pinned per
+    cell with verify_trial."""
+    frozen = parse(text)
+    found = [
+        d
+        for d in differences(frozen, compute(registry_sha256, [], root))
+        if not d.startswith("landmark_tables[")
+    ]
+    if found:
+        raise FreezeMismatch("; ".join(found))
+    return frozen
+
+
 def verify_trial(
     text: str, registry_sha256: str, table: LandmarkTable | None, root: Path = CHECKER_ROOT
 ) -> FreezeManifest:

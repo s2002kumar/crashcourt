@@ -4,15 +4,24 @@ Each check returns the reason it failed, or None. The engine runs them in trigge
 first that fires makes every invariant of the trial INVALID, with that trigger named. Triggers 11
 and 12 are crashcourt.checker.faults_fired; 14 (the checker raised) and 15 (the I3 harness
 alarm) are the engine's.
+
+Trigger 16 (founder's rule of 2026-10-10) covers a trial the harness did not control: the
+orchestrator marked it invalid (a protocol violation, a run a timer ordered, an unexplained exit),
+a worker ended in a way no declared fault explains, or an orchestrator fault struck a worker that
+was not held at a declared barrier. What a controlled fault leaves behind is evaluated, not
+invalidated: a saver call a killed worker had in flight may still commit, and the checker judges
+the resulting rows (crashcourt.checker.integrity.check_snapshot).
 """
 
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+
+from pydantic import BaseModel
 
 from crashcourt.checker.artifacts import LedgerRow, Snapshot, TrialArtifacts
-from crashcourt.checker.facts import TrialFacts, data_int, data_text, pointer
+from crashcourt.checker.facts import TrialFacts, data_int, data_list, data_text, pointer
 from crashcourt.history.merge import group_by_process
 from crashcourt.history.reader import HistoryError
 from crashcourt.spec.events import Event
@@ -30,7 +39,7 @@ CONNECTION_FAILURES = (
 
 #: The trigger numbers, with the short name each INVALID reason starts with.
 TRIGGERS: dict[int, str] = {
-    1: "incomplete trial",
+    1: "incomplete or mismatched trial",
     2: "unreadable history",
     3: "contradictory records",
     4: "client record",
@@ -45,6 +54,7 @@ TRIGGERS: dict[int, str] = {
     13: "environment",
     14: "checker",
     15: "I3 harness alarm",
+    16: "uncontrolled trial",
 }
 
 
@@ -68,6 +78,70 @@ def roles(artifacts: TrialArtifacts) -> tuple[str, str | None]:
     if len(sinks) > 1:
         raise Invalid(1, f"expected at most one sink history, found {sinks}")
     return clients[0], sinks[0] if sinks else None
+
+
+def check_provenance(artifacts: TrialArtifacts) -> None:
+    """Trigger 1: every record belongs to this trial, and its provenance is the evidence's."""
+    scenario = artifacts.scenario
+    fixture = scenario.evidence in {"synthetic", "artifact-mutant"}
+    if fixture != (scenario.provenance == "fixture"):
+        raise Invalid(
+            1, f"{scenario.evidence} evidence with provenance {scenario.provenance} does not match"
+        )
+    identity = (scenario.batch, scenario.cell, scenario.trial)
+    for history in artifacts.histories:
+        for event in history.events:
+            if (event.batch, event.cell, event.trial) != identity:
+                raise Invalid(1, f"{pointer(event)} belongs to another trial")
+    if artifacts.ledger is not None:
+        for row in artifacts.ledger.rows:
+            if row.thread_id not in scenario.threads:
+                raise Invalid(1, f"ledger row {row.sink_seq} names thread {row.thread_id}")
+    if scenario.provenance == "run":
+        if artifacts.harness is None:
+            raise Invalid(1, "a harness run needs the orchestrator's trial record")
+        prefix = f"{scenario.batch}/{scenario.cell}/{scenario.trial}/"
+        foreign = [t for t in scenario.threads if not t.startswith(prefix)]
+        if foreign:
+            raise Invalid(1, f"threads {foreign} are not scoped to this trial ({prefix})")
+
+
+def check_harness(artifacts: TrialArtifacts) -> None:
+    """Trigger 16: the orchestrator's own verdict on the trial."""
+    if artifacts.harness is not None and not artifacts.harness.valid:
+        reasons = "; ".join(artifacts.harness.invalid_reasons) or "no reason given"
+        raise Invalid(16, f"the orchestrator marked the trial invalid: {reasons}")
+
+
+def check_causal(by_proc: Mapping[str, Sequence[Event]], orchestrator: str) -> None:
+    """Trigger 3: a worker acts only on ops dispatched to it, an fp.action names an earlier fp.hit
+    of its process, and an effect.response follows its request."""
+    dispatched = {
+        (data_text(e, "to"), e.op_id)
+        for e in by_proc.get(orchestrator, ())
+        if e.kind.startswith("dispatch.")
+    }
+    for proc, events in by_proc.items():
+        if proc == orchestrator or any(e.kind == "sink.append" for e in events):
+            continue
+        requested: set[tuple[str | None, str | None, int | None]] = set()
+        for event in events:
+            if event.op_id is not None and (proc, event.op_id) not in dispatched:
+                raise Invalid(3, f"{pointer(event)} acts on op {event.op_id}, never sent to {proc}")
+            if event.kind == "fp.action":
+                hit_seq = data_int(event, "hit_seq")
+                if (
+                    hit_seq is None
+                    or not 0 <= hit_seq < event.seq
+                    or events[hit_seq].kind != "fp.hit"
+                ):
+                    raise Invalid(3, f"{pointer(event)} names no earlier fp.hit")
+            if event.kind == "effect.request":
+                requested.add((event.op_id, event.effect_key, event.attempt))
+            if event.kind == "effect.response" and (
+                (event.op_id, event.effect_key, event.attempt) not in requested
+            ):
+                raise Invalid(3, f"{pointer(event)} answers a request its process never made")
 
 
 def check_complete(artifacts: TrialArtifacts, orchestrator: str, sink: str | None) -> None:
@@ -261,8 +335,16 @@ def check_sink(artifacts: TrialArtifacts, facts: TrialFacts) -> None:
         raise Invalid(6, "an effect.response names a ledger row past the ledger's end")
 
 
-def check_snapshot(artifacts: TrialArtifacts, facts: TrialFacts) -> Snapshot:
-    """Trigger 7: the snapshot was taken after quiescence, directly, twice, identically."""
+def check_snapshot(
+    artifacts: TrialArtifacts, facts: TrialFacts
+) -> tuple[Snapshot, tuple[str, ...]]:
+    """Trigger 7: the snapshot was taken after quiescence, directly, twice, and the two agree.
+
+    Returns the snapshot to evaluate and any notes. Two snapshots that differ only by rows that
+    saver calls of a killed worker had in flight (a call with no return or raise in a worker that
+    exited by a signal) are a controlled fault's consequence, not a broken trial: the second, later
+    snapshot is evaluated and the difference is noted. Any other difference is INVALID.
+    """
     pair = artifacts.snapshots
     assert pair is not None
     meta = pair.first.meta
@@ -280,11 +362,101 @@ def check_snapshot(artifacts: TrialArtifacts, facts: TrialFacts) -> Snapshot:
             raise Invalid(7, f"the snapshot was taken before {inject.fault_id} was healed")
     if meta.toxics_installed or pair.second.meta.toxics_installed:
         raise Invalid(7, f"toxics were installed at snapshot time: {meta.toxics_installed}")
-    if not pair.first.same_rows(pair.second):
-        raise Invalid(7, "the two snapshots differ: something still wrote after quiescence")
     if meta.dsn != artifacts.scenario.oracle_dsn or pair.second.meta.dsn != meta.dsn:
         raise Invalid(7, "the snapshot did not use the direct oracle DSN")
-    return pair.first
+    if pair.first.same_rows(pair.second):
+        return pair.first, ()
+    unexplained = _late_rows(pair.first, pair.second, _in_flight_calls(facts))
+    if unexplained:
+        raise Invalid(
+            7, f"the two snapshots differ: something still wrote after quiescence ({unexplained})"
+        )
+    return pair.second, (
+        "rows written by a killed worker's in-flight saver call landed between the two "
+        "snapshots; the second snapshot was evaluated",
+    )
+
+
+def _in_flight_calls(facts: TrialFacts) -> list[Event]:
+    """put and put_writes calls with no return or raise, in workers that exited by a signal."""
+    calls: list[Event] = []
+    for worker in facts.workers:
+        exit_ = facts.exits.get(worker)
+        if exit_ is None or exit_.signal is None:
+            continue
+        events = facts.order.by_proc[worker]
+        for call in events:
+            if call.kind not in {"saver.put.call", "saver.put_writes.call"}:
+                continue
+            method = call.kind.split(".")[1]
+            ended = any(
+                e.kind in {f"saver.{method}.return", f"saver.{method}.raise"}
+                and (e.thread_id, e.checkpoint_id, e.task_id)
+                == (call.thread_id, call.checkpoint_id, call.task_id)
+                for e in events[call.seq + 1 :]
+            )
+            if not ended:
+                calls.append(call)
+    return calls
+
+
+def _late_rows(first: Snapshot, second: Snapshot, calls: Sequence[Event]) -> str | None:
+    """None if the second snapshot only adds rows the in-flight calls wrote; else what differs."""
+    puts = {
+        (c.thread_id, c.checkpoint_ns or "", c.checkpoint_id)
+        for c in calls
+        if c.kind == "saver.put.call"
+    }
+    put_channels = {
+        (c.thread_id, c.checkpoint_ns or "", channel)
+        for c in calls
+        if c.kind == "saver.put.call"
+        for channel in data_list(c, "channels")
+    }
+    writes = {
+        (c.thread_id, c.checkpoint_ns or "", c.checkpoint_id, c.task_id)
+        for c in calls
+        if c.kind == "saver.put_writes.call"
+    }
+    return (
+        _diff(
+            "checkpoints",
+            {(r.thread_id, r.checkpoint_ns, r.checkpoint_id): r for r in first.checkpoints},
+            {(r.thread_id, r.checkpoint_ns, r.checkpoint_id): r for r in second.checkpoints},
+            lambda k: k in puts,
+        )
+        or _diff(
+            "blobs",
+            {(r.thread_id, r.checkpoint_ns, r.channel, r.version): r for r in first.blobs},
+            {(r.thread_id, r.checkpoint_ns, r.channel, r.version): r for r in second.blobs},
+            lambda k: k[:3] in put_channels,
+        )
+        or _diff(
+            "writes",
+            {
+                (r.thread_id, r.checkpoint_ns, r.checkpoint_id, r.task_id, r.idx): r
+                for r in first.writes
+            },
+            {
+                (r.thread_id, r.checkpoint_ns, r.checkpoint_id, r.task_id, r.idx): r
+                for r in second.writes
+            },
+            lambda k: k[:4] in writes,
+        )
+    )
+
+
+def _diff(
+    name: str,
+    before: Mapping[tuple[object, ...], BaseModel],
+    after: Mapping[tuple[object, ...], BaseModel],
+    explained: Callable[[tuple[object, ...]], bool],
+) -> str | None:
+    if any(key not in after or after[key] != row for key, row in before.items()):
+        return f"{name} rows changed or disappeared"
+    if not all(explained(key) for key in after.keys() - before.keys()):
+        return f"{name} rows that no in-flight call explains"
+    return None
 
 
 def check_pretrial(artifacts: TrialArtifacts) -> None:

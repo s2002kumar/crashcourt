@@ -123,6 +123,7 @@ ContextRuleKind = Literal[
     "after_node_end",
     "before_node_start",
     "no_kind_before",
+    "first_call",
     "last_call",
 ]
 
@@ -141,11 +142,17 @@ class ContextRule(BaseModel):
     channel: str | None = None
 
 
+Method = Literal["put", "put_writes", "get_tuple", "list"]
+
+
 class LandmarkSpec(BaseModel):
+    """A saver call, named by its context. An arm at either failpoint of the method (`.before`
+    or `.after`) may name it."""
+
     model_config = _FROZEN
 
     id: Name
-    point: Point
+    method: Method
     rules: tuple[ContextRule, ...] = Field(min_length=1)
 
 
@@ -156,6 +163,9 @@ class LandmarkTable(BaseModel):
     model_config = _FROZEN
 
     name: Name
+    #: draft until derived from real fault-free histories and audited; hits are verified against
+    #: a draft table only in synthetic trials and artifact mutants.
+    status: Literal["draft", "audited"]
     landmarks: tuple[LandmarkSpec, ...]
 
     def get(self, landmark_id: str) -> LandmarkSpec | None:
@@ -373,6 +383,19 @@ class WorkerReport(BaseModel):
     failpoints_failed: tuple[str, ...] = ()
 
 
+class HarnessRecord(BaseModel):
+    """The orchestrator's own verdict on the trial (T-07's trial.json): whether the harness ran it
+    as declared. A protocol violation, a timer-ordered run, or an unexplained worker exit makes it
+    invalid, and the checker then makes every invariant INVALID."""
+
+    model_config = _FROZEN
+
+    valid: bool
+    invalid_reasons: tuple[str, ...] = ()
+    #: Records that are not reasons, such as saver calls in flight when a step ended a worker.
+    observations: tuple[str, ...] = ()
+
+
 class TrialArtifacts(BaseModel):
     """Everything one trial left behind. A field that is None was not written."""
 
@@ -387,3 +410,5 @@ class TrialArtifacts(BaseModel):
     sink_health: tuple[SinkHealth, ...] = ()
     snapshots: SnapshotPair | None
     worker_reports: tuple[WorkerReport, ...] = ()
+    #: T-07's trial.json verdict; required for a harness run (provenance "run").
+    harness: HarnessRecord | None = None

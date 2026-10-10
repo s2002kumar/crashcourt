@@ -27,6 +27,8 @@ class Context:
     reader: ChannelReader
     model: EffectModel
     states: dict[str, ThreadState]
+    #: Records about the inputs that are not outcomes (a reconciled snapshot, for one).
+    notes: tuple[str, ...] = ()
 
     def worker_events(self) -> list[Event]:
         by_proc = self.facts.order.by_proc
