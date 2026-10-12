@@ -341,3 +341,24 @@ def test_the_original_c5_measurement_is_kept_as_it_was_and_the_gate_never_reads_
     assert (exploratory["result"]["caught"], exploratory["result"]["trials"]) == (20, 20)
     with pytest.raises(ValueError):
         ControlReport.model_validate(original)  # the original format is a record, not evidence
+
+
+def test_the_recorded_revised_report_passes_with_its_exclusions_and_matches_the_sources() -> None:
+    from crashcourt.experiment import gitproof
+    from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, parse
+
+    report = ControlReport.model_validate_json((EVIDENCE / "c5.json").read_bytes())
+    draft = parse((ROOT / PREREGISTRATION_PATH).read_text(encoding="utf-8"))
+    [check] = [c for c in draft.instrument_checks if c.id == "C5"]
+    assert check.requirement == report.requirement == C5_REQUIREMENT
+    # Only the environment values the draft has not pinned yet stand in the way.
+    reasons = judge(report, draft.checker, draft.environment)
+    assert reasons and all(r.endswith("the pre-registration requires None") for r in reasons)
+    assert report.applicable_passed and recount(report) == []
+    assert [(e.id, e.status) for e in report.excluded] == [
+        ("M1", "NOT_EXERCISED"),
+        ("M2", "NOT_EXERCISED"),
+    ]
+    assert (report.applicable, report.specified, report.coverage) == (3, 5, C5_METHOD.coverage())
+    for path, digest in report.sources.items():
+        assert gitproof.blob_sha256(ROOT, "HEAD", path) == digest, path

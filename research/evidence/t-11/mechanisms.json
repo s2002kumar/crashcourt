@@ -1,0 +1,35 @@
+{
+  "M3": {
+    "acknowledged_missing_per_trial": [
+      0
+    ],
+    "batch": "c5-M3-20261012T205735Z",
+    "trials": 20,
+    "trials_every_row_parentless": 20,
+    "trials_with_reads_by_id": 0,
+    "trials_with_stale_latest_reads": 0,
+    "writes_as_if_second_dropped": 0
+  },
+  "M4": {
+    "acknowledged_missing_per_trial": [
+      2
+    ],
+    "batch": "c5-M4-20261012T205735Z",
+    "trials": 20,
+    "trials_every_row_parentless": 0,
+    "trials_with_reads_by_id": 0,
+    "trials_with_stale_latest_reads": 0,
+    "writes_as_if_second_dropped": 0
+  },
+  "M5": {
+    "acknowledged_missing_per_trial": [
+      0
+    ],
+    "batch": "c5-M5-20261012T205735Z",
+    "trials": 20,
+    "trials_every_row_parentless": 0,
+    "trials_with_reads_by_id": 0,
+    "trials_with_stale_latest_reads": 20,
+    "writes_as_if_second_dropped": 0
+  }
+}
