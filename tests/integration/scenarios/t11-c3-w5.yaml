@@ -1,0 +1,27 @@
+# C3's shape on W5: the failpoint the first matrix's sync new-evidence cells arm on W5 (L-T1,
+# occurrence 3 of turn-1's put, put.before), armed with action none, then a second turn; and a
+# latency toxic of 0 ms and 0 jitter on w1's route for the whole trial.
+v: 1
+name: t11-c3-w5
+cell: t11-c3-w5
+seed: t11-c3-w5-v1
+workload: w5
+target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
+workers: [w1]
+toxics:
+  - {worker: w1, type: latency, stream: downstream, latency_ms: 0, jitter_ms: 0}
+ops:
+  - id: turn-1
+    worker: w1
+    thread: t1
+    after: start
+    input: {messages: [{role: user, content: First request., id: human-1}]}
+  - id: turn-2
+    worker: w1
+    thread: t1
+    after: turn-1
+    input: {messages: [{role: user, content: Second request., id: human-2}]}
+schedule:
+  - on: {fp: put.before, worker: w1, op: turn-1, occurrence: 3}
+    do: {none: true}

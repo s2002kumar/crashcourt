@@ -1,0 +1,19 @@
+# K1a's shape (langgraph#8039, a published replication): w1 runs W1 approve; it kills itself at
+# L-EXW (occurrence 3 of resume-1's put_writes, put_writes.before: execute has ended, its writes
+# are not committed). Its replacement, w2, takes resume-1 over once w1's exit is recorded.
+v: 1
+name: t11-k1a-shape
+cell: t11-k1a-shape
+seed: t11-k1a-shape-v1
+workload: w1
+target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
+workers: [w1, w2]
+ops:
+  - {id: start-1, worker: w1, thread: t1, after: start, input: {order: order-17}}
+  - {id: resume-1, worker: w1, thread: t1, after: start-1, resume: approve}
+schedule:
+  - on: {fp: put_writes.before, worker: w1, op: resume-1, occurrence: 3}
+    do: {signal: SIGKILL}
+  - on: {exited: w1}
+    do: {redeliver: {op: resume-1, to: w2}}
