@@ -1,6 +1,7 @@
 """Builders for the experiment-control tests: a real git repository holding a final
-pre-registration and a frozen checker, stand-ins for the T-10 checker and the T-07 scenario loader,
-and batch directories shaped as the runner and the checker write them."""
+pre-registration, a frozen checker, and a passing C5 controls report, stand-ins for the T-10
+checker and the T-07 scenario loader, and batch directories shaped as the runner and the checker
+write them."""
 
 from __future__ import annotations
 
@@ -12,6 +13,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from crashcourt.experiment.controls import (
+    C5_CAUGHT,
+    C5_MUTANTS,
+    C5_TRIALS,
+    CheckerUsed,
+    ControlReport,
+    MutantResult,
+    Threshold,
+)
 from crashcourt.experiment.gate import (
     AUTHORIZATION_FILE,
     FROZEN_PATH,
@@ -39,7 +49,8 @@ FROZEN_MD = "# Checker v1: frozen\n\nChecker hash `" + CHECKER_SHA + "`.\n"
 FROZEN_MD_SHA = hashlib.sha256(FROZEN_MD.encode()).hexdigest()
 EFFECT_MODELS = {"w1": "a" * 64, "w5": "b" * 64}
 LANDMARK_TABLES = {"langgraph-v1": LANDMARK_SHA}
-SEEDS = {"R1": "seed-r1", "X1": "seed-x1"}
+#: C3 is a placebo control some tests add to the matrix; the default pre-registration has R1 and X1.
+SEEDS = {"R1": "seed-r1", "X1": "seed-x1", "C3": "seed-c3"}
 #: Each cell's scenario in canonical form, as the runner writes scenario.json, and its hash.
 SCENARIO_JSON = {
     c: json.dumps({"cell": c, "seed": s}, separators=(",", ":")) for c, s in SEEDS.items()
@@ -47,8 +58,14 @@ SCENARIO_JSON = {
 SCENARIOS = {c: hashlib.sha256(text.encode()).hexdigest() for c, text in SCENARIO_JSON.items()}
 N = 3
 #: The TrialScenario builder as the fixture repository commits it, and its pinned hash.
-BUILDER_TEXT = '"""The TrialScenario builder, as pre-registered."""\n'
+BUILDER_TEXT = '"""The TrialScenario builder, as pre-registered."""
+'
 BUILDER_SHA = hashlib.sha256(BUILDER_TEXT.encode()).hexdigest()
+#: The C5 controls report the pre-registration's C5 instrument check names, and the files it ran.
+C5_REPORT = "research/evidence/c5.json"
+C5_SOURCES = {"tests/mutants/savers.py": "labeled mutants
+", "tests/mutants/c5.py": "driver
+"}
 #: The effect ledger's export as the post-trial step writes it: the replication's published
 #: shape, two charge rows with attempts 1 and 2.
 LEDGER: dict[str, Any] = {
@@ -105,7 +122,10 @@ def prereg_model(**changes: Any) -> Preregistration:
         },
         "builder": {"path": BUILDER_PATH, "sha256": BUILDER_SHA},
         "environment": {"os_system": "Linux", "runner": "local", "git_dirty": False},
-        "instrument_checks": [{"id": "AM", "requirement": "mutants", "evidence": "ci run 1"}],
+        "instrument_checks": [
+            {"id": "AM", "requirement": "mutants", "evidence": "ci run 1"},
+            {"id": "C5", "requirement": "saver mutants", "evidence": C5_REPORT},
+        ],
         "cells": [
             {
                 "id": "R1",
@@ -154,6 +174,46 @@ def prereg_model(**changes: Any) -> Preregistration:
     return Preregistration.model_validate(data)
 
 
+def c5_report(caught: dict[str, int] | None = None, **changes: Any) -> ControlReport:
+    """A C5 report under the test checker: every mutant caught in all 20 trials unless `caught`
+    says otherwise."""
+    counts = {m: C5_TRIALS for m in C5_MUTANTS} | (caught or {})
+    data: dict[str, Any] = {
+        "control": "C5",
+        "requirement": "each mutant caught by its target invariant",
+        "threshold": Threshold(caught=C5_CAUGHT, trials=C5_TRIALS),
+        "checker": CheckerUsed(
+            version="v1",
+            checker_sha256=CHECKER_SHA,
+            frozen_md_sha256=FROZEN_MD_SHA,
+            registry_sha256=REGISTRY_SHA,
+        ),
+        "run_commit": "1" * 40,
+        "sources": {
+            path: hashlib.sha256(text.encode()).hexdigest() for path, text in C5_SOURCES.items()
+        },
+        "manifest": json.loads(make_manifest(git_sha="1" * 40).to_json()),
+        "mutants": tuple(
+            MutantResult(
+                id=m,
+                defect="a defect",
+                target="I5a",
+                batch=f"c5-{m}",
+                scenario_sha256="5" * 64,
+                manifest_sha256="6" * 64,
+                trials=C5_TRIALS,
+                valid=C5_TRIALS,
+                caught=counts[m],
+                target_outcomes={"GAP": counts[m], "PASS": C5_TRIALS - counts[m]},
+            )
+            for m in C5_MUTANTS
+        ),
+        "passed": all(n >= C5_CAUGHT for n in counts.values()),
+    }
+    data.update(changes)
+    return ControlReport.model_validate(data)
+
+
 def prereg_text(prereg: Preregistration) -> str:
     return f"# Pre-registration\n\nTest matrix.\n\n{block(prereg)}\n"
 
@@ -165,7 +225,9 @@ class Repo:
     prereg_commit: str
 
 
-def make_repo(tmp: Path, prereg: Preregistration | None = None) -> Repo:
+def make_repo(
+    tmp: Path, prereg: Preregistration | None = None, report: ControlReport | None = None
+) -> Repo:
     root = tmp / "repo"
     root.mkdir()
     git(root, "init", "-q", "-b", "main")
@@ -174,6 +236,8 @@ def make_repo(tmp: Path, prereg: Preregistration | None = None) -> Repo:
     files = {f"scenarios/{c}.yaml": f"cell: {c}\n" for c in SCENARIOS}
     files[BUILDER_PATH] = BUILDER_TEXT
     files[str(PREREGISTRATION_PATH)] = prereg_text(prereg or prereg_model())
+    files[C5_REPORT] = (report or c5_report()).to_json()
+    files.update(C5_SOURCES)
     prereg_commit = commit(root, files, "pre-register the matrix")
     return Repo(root, freeze, prereg_commit)
 

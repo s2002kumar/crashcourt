@@ -215,7 +215,8 @@ class Cell(_Model):
 class InstrumentCheck(_Model):
     """A required check of the instrument that is not a batch: artifact mutants, saver mutants,
     checker determinism. Its evidence (a CI run or a commit) is recorded before the
-    pre-registration is final."""
+    pre-registration is final. For C5 the evidence is the repository path of its controls report,
+    which the gate reads and judges before any new evidence (crashcourt.experiment.controls)."""
 
     id: Id
     requirement: Text

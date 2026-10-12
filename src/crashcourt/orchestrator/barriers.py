@@ -100,9 +100,11 @@ class BarrierBook:
             del self._held[held.barrier]
         return gone
 
-    def parked(self, op_id: str) -> bool:
-        """Whether a call of this op is held at a barrier right now."""
-        return any(held.op_id == op_id for held in self._held.values())
+    def parked(self, op_id: str, worker: str | None = None) -> bool:
+        """Whether a call of this op (in this worker, if one is named) is held at a barrier now."""
+        return any(
+            held.op_id == op_id and worker in (None, held.worker) for held in self._held.values()
+        )
 
     @property
     def held(self) -> list[Held]:

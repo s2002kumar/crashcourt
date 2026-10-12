@@ -13,9 +13,14 @@ refused (NotDeclared) rather than guessed:
 - An arm's landmark: the one its step names (`landmark:`), which must be in the scenario's table
   (`landmarks: <name>`) at the arm's method and audited occurrence; anything else is refused. The
   scenario loader enforces the same rule, so a scenario that arms a failpoint always names both.
-- Faults: a pause the scenario releases is a pause fault; a pause whose worker is killed while
-  held is not (its hit is still checked), and the kill is a sigkill under the dispatcher's fault
-  id; an exit arm is an exit fault; a SIGKILL arm is a sigkill fault. Any other signal is refused.
+- Faults: a pause the scenario releases (when its barriers are held, or after an op ends) is a
+  pause fault; a pause whose worker is killed while held is not (its hit is still checked), and the
+  kill is a sigkill under the dispatcher's fault id; an exit arm is an exit fault; a SIGKILL arm is
+  a sigkill fault. Any other signal is refused. An arm with action none is checked like any arm
+  and is no fault. A redelivery is a redelivery fault naming its op and the worker it goes to.
+- A whole-trial placebo toxic declares nothing: v1 has no fault kind for it, and an undeclared
+  fault.inject would be INVALID, so the runner installs it without one, reads it back from
+  Toxiproxy, and records it in trial.json (a trial without it is invalid).
 """
 
 from __future__ import annotations
@@ -38,10 +43,14 @@ from crashcourt.checker.status import EvidenceClass
 from crashcourt.manifest import Manifest
 from crashcourt.orchestrator.dispatcher import kill_fault_id
 from crashcourt.spec.scenario import (
+    BarrierStep,
+    EndedStep,
     Exit,
     FailpointStep,
+    Inert,
     Kill,
     Pause,
+    Redeliver,
     Release,
     Scenario,
     parse_scenario,
@@ -205,8 +214,8 @@ def _arms_and_faults(
 ) -> tuple[tuple[ArmSpec, ...], tuple[FaultSpec, ...]]:
     released = {
         barrier
-        for _, step in scenario.barrier_steps()
-        if isinstance(step.do, Release)
+        for _, step in scenario.orchestrator_steps()
+        if isinstance(step, BarrierStep | EndedStep) and isinstance(step.do, Release)
         for barrier in step.do.release
     }
     arms: list[ArmSpec] = []
@@ -229,6 +238,8 @@ def _arms_and_faults(
             elif isinstance(action, Exit):
                 arms.append(ArmSpec(action="exit", exit_code=action.exit, **common))
                 faults.append(FaultSpec(kind="exit", arm=arm, exit_code=action.exit))
+            elif isinstance(action, Inert):
+                arms.append(ArmSpec(action="none", **common))
             else:  # a signal the worker sends itself
                 if action.signal != "SIGKILL":
                     raise NotDeclared(f"step {index}: no fault kind for a {action.signal} arm")
@@ -237,5 +248,10 @@ def _arms_and_faults(
         elif isinstance(step.do, Kill):
             faults.append(
                 FaultSpec(kind="sigkill", fault_id=kill_fault_id(index), worker=step.do.kill)
+            )
+        elif isinstance(step.do, Redeliver):
+            redelivery = step.do.redeliver
+            faults.append(
+                FaultSpec(kind="redelivery", op_ids=(redelivery.op,), worker=redelivery.to)
             )
     return tuple(arms), tuple(faults)

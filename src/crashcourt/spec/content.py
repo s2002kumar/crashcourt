@@ -12,6 +12,10 @@ schedule. Two things a model must not hold, because the form would stop being ca
 (its dump order changes from one process to the next, so it is refused) and a non-finite float
 (JSON has no NaN or infinity, so it is refused). A model that should hash across versions of
 itself carries its own version field, which then enters the hash.
+
+A model may name top-level keys it added after its values were first hashed in a class attribute
+`OMIT_WHEN_EMPTY`: each is left out of the form while its value is empty, so a model that does not
+use the key keeps the hash it had before the key existed. Once used, it is hashed like any other.
 """
 
 from __future__ import annotations
@@ -47,9 +51,11 @@ def canonical_json(model: BaseModel) -> str:
     """The model's content as one JSON string that depends only on its values."""
     if _holds_a_set(type(model), set()):
         raise NotCanonical(f"{type(model).__name__} holds a set; its dump order is not stable")
+    omitted: tuple[str, ...] = getattr(type(model), "OMIT_WHEN_EMPTY", ())
+    unused = {name for name in omitted if not getattr(model, name)}
     try:
         return json.dumps(
-            model.model_dump(mode="json"),
+            model.model_dump(mode="json", exclude=unused or None),
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,
