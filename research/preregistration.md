@@ -17,6 +17,15 @@ The JSON block at the end is the binding part; the prose and the table explain i
   clause registry, the workloads' effect models, and every scenario's landmark table. The commit that last
   changed FROZEN.md must be an ancestor of this file's commit. Pinned: checker v1, frozen by T-10 in
   2802584 (#28), with every hash its FROZEN.md records.
+- **The builder.** `builder` pins `src/crashcourt/orchestrator/declared.py`, the code that turns a batch's
+  own records into the checker's input (`trial_scenario`), by the sha256 of its bytes. It is not part of
+  the frozen checker, so it is pinned here: a batch whose pre-registration or run commit holds any other
+  version of it is refused, and verification refuses it again later. A change to it before this is final
+  updates the pin in the same commit (a test fails otherwise).
+- **Landmarks in the scenarios.** Every scenario step that arms a failpoint names its audited landmark
+  (`landmark:`), which must be in the table the scenario names (`landmarks:`) at the step's method and
+  occurrence; loading refuses a missing, unknown, or mismatched one, and the name is part of the
+  scenario's hash.
 - **The cells.** Each cell names its scenario file and that scenario's content hash, its master seed, N, its
   phase, and its predicted outcome per invariant. One prediction value is firm; several mean one of them, the
   same in every trial; `*` covers every invariant the cell does not name. `NOT_EXERCISED` predicts that the
@@ -40,15 +49,16 @@ The JSON block at the end is the binding part; the prose and the table explain i
 
 - `crashcourt experiment authorize <scenario> --trials N` runs before doctor and refuses unless the checkout
   is clean; this file is final and committed; the checker is FROZEN and verifies against FROZEN.md, whose
-  hash and checker hash are the ones named here; the scenario's hash, cell, and master seed match its cell;
+  hash and checker hash are the ones named here; the TrialScenario builder is the pinned file at this
+  file's commit and at HEAD; the scenario's hash, cell, and master seed match its cell;
   N is the cell's N; the scenario's landmark table verifies against the freeze; and, for a new-evidence
   cell, every instrument cell has come out as predicted. It writes `authorization.json` into the batch.
 - After doctor, the batch's manifest must hold the pre-registered environment, name the authorized commit,
   and record a clean checkout.
 - `crashcourt experiment verify <batch>` re-proves an archived batch from git: this file's commit is an
   ancestor of the run commit and did not change before it, the freeze commit is an ancestor of this file's
-  commit, every hash matches, there are exactly N trials, and every trial's checker.json was written by the
-  frozen checker and authorized for new evidence.
+  commit, every hash matches (the builder's among them), there are exactly N trials, and every trial's
+  checker.json was written by the frozen checker and authorized for new evidence.
 - `crashcourt experiment aggregate <batch>...` summarizes verified batches only, into `cells.json`. Batches
   are pooled only when they share this commit, the checker, and the scenario, and their manifests differ in
   no material field a recorded compatibility rule does not cover. Anything else is reported as separate
@@ -191,6 +201,10 @@ affects.
 
 ```json
 {
+  "builder": {
+    "path": "src/crashcourt/orchestrator/declared.py",
+    "sha256": "bc4426576c34b430a78c8535aba3cd1aa284863f49f12f56fb4094b9404bd7a8"
+  },
   "cells": [
     {
       "confidence": "predicted",

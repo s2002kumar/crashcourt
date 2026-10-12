@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from crashcourt.cli import main
 from crashcourt.experiment.gate import FROZEN_PATH, T10Checker
 from crashcourt.experiment.preregistration import (
+    BUILDER_PATH,
     PREREGISTRATION_PATH,
     PUBLISHED_REPLICATIONS,
     Cell,
@@ -120,6 +121,48 @@ def test_the_draft_pins_the_frozen_checker() -> None:
     assert prereg.environment["clause_registry_sha256"] == registry
 
 
+#: Checker v1 as T-10 froze it in 2802584 (#28). Nothing in T-13 may change these.
+CHECKER_V1 = {
+    "checker_sha256": "d80951681c2b8656a08647d3ba60ee3b9b025e1ff118d83796ccdb433f111097",
+    "frozen_md_sha256": "ddff87d4d487ef211d385279951eaa2be37c71394956fcc0c4ff541667338e12",
+    "registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5",
+    "effect_models": {
+        "w1": "7e0376323ac016537edf5b1abb4641efba36519d40df58d9762817158e857859",
+        "w1-misuse": "d750e43ba865dc834a7341def0e19727bec72e5fd96da2ddf4ec7d2f467b1b5f",
+        "w5": "74d96b6a84043e5cbd7ef8e3386bba50c191572dff16284bb1664e991dc6f8af",
+    },
+    "landmark_tables": {
+        "langgraph-v1": "279e5e441b14dafca556d8b8824afbcc4698ce0d073a63f324386956160682f4",
+    },
+}
+
+
+def test_the_frozen_checker_is_still_v1() -> None:
+    """The checker, FROZEN.md, the clause registry, the effect models, and the audited landmark
+    table are byte for byte the ones frozen in 2802584, and the draft still pins exactly them."""
+    t10 = T10Checker()
+    frozen_md = ROOT / FROZEN_PATH
+    frozen = t10.verify_checker(frozen_md.read_text(encoding="utf-8"), t10.registry_sha256(ROOT))
+    assert {
+        "checker_sha256": frozen.checker_sha256,
+        "frozen_md_sha256": hashlib.sha256(frozen_md.read_bytes()).hexdigest(),
+        "registry_sha256": frozen.registry_sha256,
+        "effect_models": frozen.effect_models,
+        "landmark_tables": frozen.landmark_tables,
+    } == CHECKER_V1
+    pin = parse(committed()).checker
+    assert pin is not None
+    assert pin.model_dump(exclude={"version"}) == CHECKER_V1
+
+
+def test_the_draft_pins_the_builder_as_it_is() -> None:
+    """orchestrator/declared.py is outside the freeze; the draft pins its bytes, so changing it
+    without updating the pin fails here first."""
+    builder = parse(committed()).builder
+    assert builder is not None and builder.path == BUILDER_PATH
+    assert builder.sha256 == hashlib.sha256((ROOT / BUILDER_PATH).read_bytes()).hexdigest()
+
+
 def test_k4_observes_the_record_as_the_frozen_checker_words_it() -> None:
     """K4 matches checker.json's record by its leading text, so that text is the frozen engine's,
     with K4's op filled in."""
@@ -146,6 +189,10 @@ def test_a_final_preregistration_must_be_complete() -> None:
     assert prereg_model().state == "final"
     with pytest.raises(ValidationError, match="no frozen checker"):
         prereg_model(checker=None)
+    with pytest.raises(ValidationError, match="no TrialScenario builder is pinned"):
+        prereg_model(builder=None)
+    with pytest.raises(ValidationError, match=r"builder\.path"):
+        prereg_model(builder={"path": "src/crashcourt/other.py", "sha256": "0" * 64})
     cells: list[dict[str, Any]] = json.loads(prereg_model().model_dump_json())["cells"]
     cells[0]["scenario_sha256"] = None
     with pytest.raises(ValidationError, match="cell R1: no scenario hash"):

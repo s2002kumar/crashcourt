@@ -11,10 +11,16 @@ from crashcourt.cli import main
 from crashcourt.experiment.aggregate import AggregationRefused, aggregate, instrument_ready
 from crashcourt.experiment.fingerprint import CompatibilityRule, fingerprint
 from crashcourt.experiment.gate import Authorization, InstrumentEvidence
-from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, Preregistration
+from crashcourt.experiment.preregistration import (
+    BUILDER_PATH,
+    PREREGISTRATION_PATH,
+    Preregistration,
+)
 from crashcourt.experiment.verify import BatchNotVerified, verify_batch
 
 from ._experiment import (
+    BUILDER_SHA,
+    BUILDER_TEXT,
     LEDGER,
     SEEDS,
     FakeChecker,
@@ -411,3 +417,23 @@ def test_an_anomaly_is_observed_whatever_its_class(tmp_path: Path) -> None:
     rows = [[("I4", "PASS")], [("I4", "GAP")], [("I4", "GAP")]]
     [seen] = aggregate([batch(repo, "b2", rows)], repo.root).cells[0].groups[0].observations
     assert seen.mismatches == {"b2 trial 1": "I4 is PASS"}
+
+
+def test_verification_refuses_a_run_whose_builder_changed(repo: Repo) -> None:
+    """A batch claiming a run commit whose builder is not the pre-registered one is refused,
+    however it was authorized."""
+    auth = authorized(repo)
+    changed = commit(repo.root, {BUILDER_PATH: BUILDER_TEXT + "# changed\n"}, "change the builder")
+    moved = auth.model_copy(update={"run_commit": changed})
+    d = make_batch(
+        repo.root.parent / "runs",
+        "b1",
+        moved,
+        manifest_for(changed),
+        [R1_AS_PREDICTED] * N,
+    )
+    found = problems(repo, d)
+    assert f"{BUILDER_PATH} at the run commit hashes to " in found
+    assert f"not the pre-registered {BUILDER_SHA}" in found
+    with pytest.raises(AggregationRefused, match=r"declared\.py at the run commit"):
+        aggregate([d], repo.root)
