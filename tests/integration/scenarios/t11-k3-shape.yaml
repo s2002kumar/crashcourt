@@ -18,6 +18,7 @@ ops:
 schedule:
   - on: {fp: put.before, worker: w1, op: turn-1, occurrence: 3}
     do: {pause: A}
+    landmark: L-T1
   - on: {all_paused: [A]}
     do: {redeliver: {op: turn-1, to: w2}}
   - on: {ended: turn-1}

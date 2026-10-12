@@ -20,6 +20,7 @@ from .test_dispatcher import BASE, FakeWorker, Trial, obliging, terminal_counts
 KILL_AT_WRITES: dict[str, Any] = {
     "on": {"fp": "put_writes.before", "worker": "w1", "op": "resume-1", "occurrence": 3},
     "do": {"signal": "SIGKILL"},
+    "landmark": "L-EXW",
 }
 REPLACE: dict[str, Any] = {
     "on": {"exited": "w1"},
@@ -28,6 +29,7 @@ REPLACE: dict[str, Any] = {
 HOLD: dict[str, Any] = {
     "on": {"fp": "put.before", "worker": "w1", "op": "turn-1", "occurrence": 3},
     "do": {"pause": "A"},
+    "landmark": "L-T1",
 }
 TAKE_OVER: dict[str, Any] = {
     "on": {"all_paused": ["A"]},

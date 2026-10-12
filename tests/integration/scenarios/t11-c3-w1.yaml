@@ -17,13 +17,19 @@ ops:
 schedule:
   - on: {fp: get_tuple.after, worker: w1, op: resume-1, occurrence: 1}
     do: {none: true}
+    landmark: L-GET
   - on: {fp: put_writes.before, worker: w1, op: resume-1, occurrence: 2}
     do: {none: true}
+    landmark: L-RES
   - on: {fp: put_writes.after, worker: w1, op: resume-1, occurrence: 2}
     do: {none: true}
+    landmark: L-RES
   - on: {fp: put_writes.before, worker: w1, op: resume-1, occurrence: 3}
     do: {none: true}
+    landmark: L-EXW
   - on: {fp: put_writes.after, worker: w1, op: resume-1, occurrence: 3}
     do: {none: true}
+    landmark: L-EXW
   - on: {fp: put.before, worker: w1, op: resume-1, occurrence: 2}
     do: {none: true}
+    landmark: L-EXC

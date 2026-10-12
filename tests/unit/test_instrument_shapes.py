@@ -48,7 +48,9 @@ def test_every_shape_loads() -> None:
 
 
 def test_scenarios_without_the_new_keys_keep_their_hashes() -> None:
-    for name in ("w1-approve", "w1-misuse", "w1-reject", "w5-concurrent", "w5-sequential"):
+    # The scenarios T-09 recorded that arm nothing; w5-concurrent's steps gained explicit
+    # landmarks in #31, which changed its hash there.
+    for name in ("w1-approve", "w1-misuse", "w1-reject", "w5-sequential"):
         recorded = ROOT / "research" / "evidence" / "t-09" / f"t09-{name}"
         expected = json.loads((recorded / "batch.json").read_text(encoding="utf-8"))
         loaded = load_scenario(ROOT / "scenarios" / f"{name}.yaml")
@@ -94,6 +96,7 @@ def test_an_inert_arm_says_so_and_does_not_end_its_worker() -> None:
         {
             "on": {"fp": "put_writes.after", "worker": "w1", "op": "resume-1", "occurrence": 2},
             "do": {"none": True},
+            "landmark": "L-RES",
         },
     )
     parse_scenario(data)
@@ -148,6 +151,7 @@ def test_a_redelivery_target_must_outlive_the_op() -> None:
         {
             "on": {"fp": "put.before", "worker": "w2", "op": "turn-2", "occurrence": 1},
             "do": {"exit": 3},
+            "landmark": "L-IN",
         }
     )
     assert "ends w2, so it may be gone when turn-1 reaches it" in refused(data)

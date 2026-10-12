@@ -25,3 +25,4 @@ ops:
 schedule:
   - on: {fp: put.before, worker: w1, op: turn-1, occurrence: 3}
     do: {none: true}
+    landmark: L-T1

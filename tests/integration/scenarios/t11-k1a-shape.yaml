@@ -15,5 +15,6 @@ ops:
 schedule:
   - on: {fp: put_writes.before, worker: w1, op: resume-1, occurrence: 3}
     do: {signal: SIGKILL}
+    landmark: L-EXW
   - on: {exited: w1}
     do: {redeliver: {op: resume-1, to: w2}}
