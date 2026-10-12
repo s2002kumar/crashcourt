@@ -18,18 +18,28 @@ DATA: dict[str, Any] = {
     "seed": "s",
     "workload": "smoke",
     "target": {"saver": "postgres", "driver": "async", "durability": "sync"},
+    "landmarks": "langgraph-v1",
     "workers": ["w1", "w2"],
     "ops": [
         {"id": "op-1", "worker": "w1", "thread": "t1", "after": "start"},
         {"id": "op-2", "worker": "w2", "thread": "t2", "after": "start"},
     ],
     "schedule": [
-        {"on": {"fp": "get_tuple.after", "worker": "w1", "op": "op-1"}, "do": {"pause": "B1"}},
+        {
+            "on": {"fp": "get_tuple.after", "worker": "w1", "op": "op-1"},
+            "do": {"pause": "B1"},
+            "landmark": "L-GET",
+        },
         {
             "on": {"fp": "put.before", "worker": "w2", "op": "op-2", "occurrence": 2},
             "do": {"pause": "B2"},
+            "landmark": "L-EXC",
         },
-        {"on": {"fp": "put.after", "worker": "w2", "op": "op-2"}, "do": {"signal": "SIGKILL"}},
+        {
+            "on": {"fp": "put.after", "worker": "w2", "op": "op-2"},
+            "do": {"signal": "SIGKILL"},
+            "landmark": "L-IN",
+        },
         {"on": {"all_paused": ["B1", "B2"]}, "do": {"release": ["B1", "B2"]}},
     ],
 }

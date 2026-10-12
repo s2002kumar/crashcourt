@@ -10,9 +10,9 @@ refused (NotDeclared) rather than guessed:
 
 - An op's kind: in W1 (and its misuse variant) a resume is "resume" and anything else "start"; in
   W5 every op is a "turn", and a resume is refused.
-- An arm's landmark: the one landmark in the scenario's table (`landmarks: <name>`) whose method is
-  the arm's and whose audited occurrence is the arm's. None or several is refused. A scenario with
-  no table gives its arms none, and the checker then judges any arm's hit INVALID.
+- An arm's landmark: the one its step names (`landmark:`), which must be in the scenario's table
+  (`landmarks: <name>`) at the arm's method and audited occurrence; anything else is refused. The
+  scenario loader enforces the same rule, so a scenario that arms a failpoint always names both.
 - Faults: a pause the scenario releases is a pause fault; a pause whose worker is killed while
   held is not (its hit is still checked), and the kill is a sigkill under the dispatcher's fault
   id; an exit arm is an exit fault; a SIGKILL arm is a sigkill fault. Any other signal is refused.
@@ -70,7 +70,7 @@ def trial_scenario(
     landmarks_root: Path = LANDMARKS_ROOT,
 ) -> TrialScenario:
     """The checker's facts for trial `trial` of the batch in `batch_dir`."""
-    scenario = parse_scenario(_json(batch_dir / "scenario.json"))
+    scenario = parse_scenario(_json(batch_dir / "scenario.json"), landmarks_root=landmarks_root)
     run: dict[str, Any] = _json(batch_dir / "run.json")
     raw = (batch_dir / "manifest.json").read_bytes()
     manifest = Manifest.from_json(raw.decode("utf-8"))
@@ -186,21 +186,18 @@ def _table(scenario: Scenario, root: Path) -> LandmarkTable | None:
     return table
 
 
-def _landmark(step: FailpointStep, table: LandmarkTable | None) -> str | None:
-    if table is None:
-        return None
+def _landmark(step: FailpointStep, table: LandmarkTable | None) -> str:
+    """The landmark the step names, held to the table again: the loader already refused anything
+    else, and this keeps the builder from trusting that."""
     method, _ = step.on.fp.split(".", 1)
-    found = [
-        spec.id
-        for spec in table.landmarks
-        if spec.method == method and spec.occurrence == step.on.occurrence
-    ]
-    if len(found) != 1:
+    spec = next((s for s in table.landmarks if s.id == step.landmark), None) if table else None
+    if spec is None or (spec.method, spec.occurrence) != (method, step.on.occurrence):
+        where = f"table {table.name}" if table else "no landmark table"
         raise NotDeclared(
-            f"{step.on.fp} occurrence {step.on.occurrence} is at {len(found)} landmarks of "
-            f"table {table.name}{' (' + ', '.join(found) + ')' if found else ''}, not one"
+            f"{step.on.fp} occurrence {step.on.occurrence} names landmark {step.landmark}, "
+            f"which {where} does not hold there"
         )
-    return found[0]
+    return spec.id
 
 
 def _arms_and_faults(

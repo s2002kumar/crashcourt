@@ -8,6 +8,7 @@ cell: w5-concurrent
 seed: w5-concurrent-v1
 workload: w5
 target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
 workers: [w1, w2]
 ops:
   - id: turn-1
@@ -28,7 +29,9 @@ ops:
 schedule:
   - on: {fp: get_tuple.after, worker: w1, op: turn-2}
     do: {pause: B1}
+    landmark: L-GET
   - on: {fp: get_tuple.after, worker: w2, op: turn-3}
     do: {pause: B2}
+    landmark: L-GET
   - on: {all_paused: [B1, B2]}
     do: {release: [B1, B2]}
