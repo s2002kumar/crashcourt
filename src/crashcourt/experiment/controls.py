@@ -1,28 +1,42 @@
 """Controls reports: the recorded result of an instrument check that is not a batch, read by the
 gate before new evidence may run.
 
-C5 (oracle sensitivity) runs labeled saver mutants M1-M5 on the real stack and judges every trial
-with the frozen checker: each mutant must be caught by its target invariant in at least 19 of 20
-trials (specification section 13). Its driver (tests/mutants/c5.py) writes a controls report;
-the pre-registration's C5 instrument check names that report's path as its evidence.
+C5 (oracle sensitivity) runs labeled saver mutants on the real stack and judges every trial with
+the frozen checker (specification section 13). Its driver (tests/mutants/c5.py) writes a controls
+report; the pre-registration's C5 instrument check names that report's path as its evidence and
+states the methodology in the exact words of `C5_REQUIREMENT`.
+
+The first matrix's methodology (`C5_METHOD`) was revised before the pre-registration was final,
+after the original measurement failed (research/evidence/t-11/c5-original.json, kept as it was):
+M3 and M4 run on W1 approve, M5 on W5 sequential, each to be caught by its intended invariant in
+at least 19 of 20 trials. M1 and M2 are NOT EXERCISED by the first matrix's workloads. They are
+out of scope for its instrument validation, never run as part of it, and never counted or shown
+as passing: a report names them as exclusions, with the reason, beside its results.
 
 Before a new-evidence batch is authorized, the instrument check (crashcourt.experiment.aggregate)
 reads the report as committed in the pre-registration commit and refuses unless:
 
-- it is a C5 report at the specification's threshold, covering exactly M1-M5, each with 20 trials;
-- every mutant was caught in at least 19 of them, recounted from the per-mutant counts (the
-  report's own `passed` must agree, but is never trusted on its own);
+- the pre-registration's C5 requirement is `C5_REQUIREMENT`, word for word;
+- the report states that requirement and the specification's threshold, and holds exactly the
+  applicable mutants, each run on its pre-registered shape against its intended invariant, and
+  exactly the exclusions, each as not exercised with its reason;
+- every applicable mutant was caught in at least 19 of 20 trials, recounted from the counts (the
+  report's own pass flag must agree, but is never trusted on its own), and its coverage line says
+  how many of the specified mutants that is;
 - it was produced under the pre-registration's frozen checker (checker and FROZEN.md hashes);
-- the mutants and the driver it ran are the files the pre-registration commit holds;
+- the mutants, the driver, and the scenario files it ran are the files the pre-registration
+  commit holds;
 - the manifest it ran with has every value the pre-registration's environment requires.
 
-A missing, malformed, failed, or mismatched report is a reason, never a pass.
+A missing, malformed, failed, or mismatched report is a reason, never a pass. So is a report in
+the original format: it covered M1 and M2 as if they were measurable.
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -36,15 +50,90 @@ from crashcourt.manifest import Manifest
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 Commit = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")]
 Id = Annotated[str, StringConstraints(pattern=r"^\S+$")]
+Text = Annotated[str, StringConstraints(pattern=r"^\S(?:[\s\S]*\S)?$")]
 Count = Annotated[int, Field(ge=0, strict=True)]
 
-#: The saver mutants C5 covers (specification section 13).
-C5_MUTANTS: tuple[str, ...] = ("M1", "M2", "M3", "M4", "M5")
-#: At least 19 of 20 trials (specification section 13; the pre-registration's C5 requirement).
+#: At least 19 of 20 trials (specification section 13).
 C5_CAUGHT = 19
 C5_TRIALS = 20
 #: The instrument checks whose evidence is a controls report the gate reads and judges.
 REPORTED_CHECKS: tuple[str, ...] = ("C5",)
+#: How a mutant out of the first matrix's scope is recorded: never PASS, never a count.
+NOT_EXERCISED = "NOT_EXERCISED"
+W1_APPROVE = "scenarios/w1-approve.yaml"
+W5_SEQUENTIAL = "scenarios/w5-sequential.yaml"
+
+
+@dataclass(frozen=True)
+class Applicable:
+    """A mutant the first matrix's C5 runs: its shape, and the invariant that must catch it."""
+
+    id: str
+    target: str
+    scenario: str
+
+
+@dataclass(frozen=True)
+class Excluded:
+    """A specified mutant the first matrix's workloads never exercise, and why."""
+
+    id: str
+    #: The invariant it was declared with (issue #30), kept for the record.
+    target: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class Method:
+    applicable: tuple[Applicable, ...]
+    excluded: tuple[Excluded, ...]
+
+    @property
+    def specified(self) -> int:
+        return len(self.applicable) + len(self.excluded)
+
+    def coverage(self) -> str:
+        """The line every report and summary carries, so three is never read as five of five."""
+        out = ", ".join(e.id for e in self.excluded)
+        return (
+            f"{len(self.applicable)} of the {self.specified} specified saver mutants are "
+            f"applicable to the first matrix and measured; {out} are {NOT_EXERCISED} and are not "
+            "counted as passing"
+        )
+
+
+C5_METHOD = Method(
+    applicable=(
+        Applicable("M3", "I5a", W1_APPROVE),
+        Applicable("M4", "I1b", W1_APPROVE),
+        Applicable("M5", "I6b", W5_SEQUENTIAL),
+    ),
+    excluded=(
+        Excluded(
+            "M1",
+            "I7a",
+            "not exercised by the first matrix's workloads: a dropped pending-write row is read "
+            "back only by a run that takes an op over after a crash that follows the row's commit, "
+            "and that schedule is K1b's new-evidence question, which no control may preview",
+        ),
+        Excluded(
+            "M2",
+            "I5a",
+            "not exercised by the first matrix's workloads: none of them reads a checkpoint by id",
+        ),
+    ),
+)
+
+#: The pre-registration's C5 requirement, word for word: the gate refuses any other.
+C5_REQUIREMENT = (
+    "Saver mutants, as revised before finalization after the original measurement failed (M1 0 of "
+    "20, M2 0 of 20, M5 on W1 INVALID by the I3 alarm; research/evidence/t-11/c5-original.json): "
+    "M3 on W1 approve caught by I5a, M4 on W1 approve caught by I1b, and M5 on W5 sequential "
+    "caught by I6b, each in at least 19 of 20 trials. M1 and M2 are NOT EXERCISED by the first "
+    "matrix's workloads, out of scope for its instrument validation, and never counted or shown "
+    "as passing: M1's dropped row is read back only after a crash that follows its commit, which "
+    "is K1b's new-evidence question, and no first-matrix workload reads a checkpoint by id (M2)."
+)
 
 
 class _Model(BaseModel):
@@ -64,12 +153,14 @@ class CheckerUsed(_Model):
 
 
 class MutantResult(_Model):
-    """One mutant's batch, judged trial by trial with the frozen checker."""
+    """One applicable mutant's batch, judged trial by trial with the frozen checker."""
 
     id: Id
     defect: str
     #: The invariant that must catch it.
     target: Id
+    #: The scenario file it ran, repository-relative.
+    scenario: Text
     batch: Id
     scenario_sha256: Sha256
     manifest_sha256: Sha256
@@ -86,28 +177,46 @@ class MutantResult(_Model):
     other_anomalies: dict[str, Count] = Field(default_factory=dict[str, Count])
 
 
+class Exclusion(_Model):
+    """A specified mutant the report does not run: no first-matrix workload exercises it."""
+
+    id: Id
+    defect: str
+    target: Id
+    status: Literal["NOT_EXERCISED"]
+    reason: Text
+
+
 class ControlReport(_Model):
-    v: Literal[1] = 1
+    #: 2: the revised methodology, with exclusions. Version 1 (the original measurement) is kept as
+    #: a record and never read by the gate.
+    v: Literal[2] = 2
     control: Literal["C5"]
-    requirement: str
+    requirement: Text
     threshold: Threshold
+    #: How many mutants the specification names, and how many of them this report measures.
+    specified: Count
+    applicable: Count
+    coverage: Text
     checker: CheckerUsed
     #: The commit the batches ran from (provenance; the sources below are what is checked).
     run_commit: Commit
-    #: Repository path -> sha256 of the file as run: the mutants and the driver.
+    #: Repository path -> sha256 of the file as run: the mutants, the driver, the scenarios.
     sources: dict[str, Sha256]
     #: The manifest the batches ran with, as doctor wrote it.
     manifest: dict[str, JsonValue]
     mutants: tuple[MutantResult, ...]
-    passed: bool
+    excluded: tuple[Exclusion, ...]
+    #: Whether every applicable mutant was caught at the threshold. Says nothing of the exclusions.
+    applicable_passed: bool
 
     def to_json(self) -> str:
         return self.model_dump_json(indent=2) + "\n"
 
 
 def recount(report: ControlReport) -> list[str]:
-    """Why the report's counts do not show a pass at the specification's threshold; empty when
-    every mutant was caught often enough."""
+    """Why the report's counts do not show its applicable mutants caught at the threshold; empty
+    when every one of them was caught often enough."""
     failures: list[str] = []
     for m in report.mutants:
         if not m.caught <= m.valid <= m.trials:
@@ -120,8 +229,51 @@ def recount(report: ControlReport) -> list[str]:
     return failures
 
 
+def _method_problems(report: ControlReport, method: Method) -> list[str]:
+    """Whether the report holds exactly the methodology's mutants, shapes, targets, exclusions."""
+    problems: list[str] = []
+    if report.requirement != C5_REQUIREMENT:
+        problems.append("it states another requirement than the pre-registered C5 methodology")
+    excluded_ids = {e.id for e in method.excluded}
+    counted = [m.id for m in report.mutants]
+    for m_id in sorted(excluded_ids & set(counted)):
+        problems.append(f"it counts {m_id}, which the first matrix does not exercise")
+    want = {a.id: a for a in method.applicable}
+    if sorted(counted) != sorted(want) or len(set(counted)) != len(counted):
+        problems.append(f"it measures {counted}, not exactly {sorted(want)}")
+    for m in report.mutants:
+        spec = want.get(m.id)
+        if spec is None:
+            continue
+        if (m.target, m.scenario) != (spec.target, spec.scenario):
+            problems.append(
+                f"{m.id} ran on {m.scenario} against {m.target}; the methodology is "
+                f"{spec.scenario} against {spec.target}"
+            )
+    recorded = {e.id: e for e in report.excluded}
+    if sorted(recorded) != sorted(excluded_ids) or len(recorded) != len(report.excluded):
+        problems.append(
+            f"it records {sorted(recorded)} as not exercised, not exactly {sorted(excluded_ids)}"
+        )
+    for e in method.excluded:
+        found = recorded.get(e.id)
+        if found is not None and (found.target, found.reason) != (e.target, e.reason):
+            problems.append(f"it records {e.id}'s exclusion other than the methodology does")
+    if (report.specified, report.applicable) != (method.specified, len(method.applicable)):
+        problems.append(
+            f"it says {report.applicable} of {report.specified} mutants are applicable, not "
+            f"{len(method.applicable)} of {method.specified}"
+        )
+    if report.coverage != method.coverage():
+        problems.append("its coverage line is not the methodology's")
+    return problems
+
+
 def judge(
-    report: ControlReport, pin: CheckerPin | None, required: Mapping[str, JsonValue]
+    report: ControlReport,
+    pin: CheckerPin | None,
+    required: Mapping[str, JsonValue],
+    method: Method = C5_METHOD,
 ) -> list[str]:
     """Every reason the report does not show C5 passing under this checker and environment."""
     reasons: list[str] = []
@@ -130,13 +282,13 @@ def judge(
             f"its threshold is {report.threshold.caught} of {report.threshold.trials}, not "
             f"{C5_CAUGHT} of {C5_TRIALS}"
         )
-    ids = [m.id for m in report.mutants]
-    if sorted(ids) != list(C5_MUTANTS) or len(set(ids)) != len(ids):
-        reasons.append(f"it covers {ids}, not exactly {list(C5_MUTANTS)}")
+    reasons.extend(_method_problems(report, method))
     failures = recount(report)
     reasons.extend(failures)
-    if report.passed != (not failures):
-        reasons.append(f"it says passed is {report.passed}, but its counts say otherwise")
+    if report.applicable_passed != (not failures):
+        reasons.append(
+            f"it says applicable_passed is {report.applicable_passed}, but its counts say otherwise"
+        )
     if pin is None:
         reasons.append("the pre-registration names no frozen checker to compare it with")
     else:
@@ -169,6 +321,8 @@ def missing(prereg: Preregistration, prereg_commit: str, repo: Path) -> list[str
         if check is None:
             reasons.append(f"the pre-registration has no {where}")
             continue
+        if check.requirement != C5_REQUIREMENT:
+            reasons.append(f"{where}'s requirement is not the C5 methodology the gate enforces")
         if check.evidence is None:
             reasons.append(f"{where} records no controls report")
             continue
@@ -183,20 +337,23 @@ def missing(prereg: Preregistration, prereg_commit: str, repo: Path) -> list[str
         except ValueError as exc:
             reasons.append(f"{where}: {check.evidence} is not a controls report: {exc}")
             continue
-        if report.control != check_id:
-            reasons.append(f"{where}: {check.evidence} reports {report.control}")
-            continue
         found = judge(report, prereg.checker, prereg.environment)
-        found.extend(_sources(report.sources, repo, prereg_commit))
+        found.extend(_sources(report, repo, prereg_commit))
         reasons.extend(f"{where} ({check.evidence}): {r}" for r in found)
     return reasons
 
 
-def _sources(sources: dict[str, str], repo: Path, commit: str) -> list[str]:
-    reasons: list[str] = []
-    if not sources:
-        reasons.append("it names no source files")
-    for path, digest in sorted(sources.items()):
+def required_sources(method: Method = C5_METHOD) -> tuple[str, ...]:
+    """The files a C5 report must name: the mutants, the driver, and every applicable shape."""
+    shapes = sorted({a.scenario for a in method.applicable})
+    return ("tests/mutants/savers.py", "tests/mutants/c5.py", *shapes)
+
+
+def _sources(report: ControlReport, repo: Path, commit: str) -> list[str]:
+    reasons = [
+        f"it names no hash for {path}" for path in required_sources() if path not in report.sources
+    ]
+    for path, digest in sorted(report.sources.items()):
         committed = gitproof.blob_sha256(repo, commit, path)
         if committed != digest:
             held = "does not hold it" if committed is None else f"holds {committed}"

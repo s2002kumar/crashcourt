@@ -1,9 +1,10 @@
 """EXPLORATORY, NOT C5. Mutant M5 (stale head) in W5's sequential C1 shape, which posts no effects.
 
-C5's pre-declared shape for every mutant is W1 approve (issue #30), and there every M5 trial is
-INVALID by checker v1's I3 alarm (trigger 15) before I6b is judged. This run asks only whether v1
-can see a stale head through I6b when the alarm cannot fire. It does not count toward C5 and does
-not change C5's shape; that is a decision recorded with C5's result.
+C5's original shape for every mutant was W1 approve (issue #30), and there every M5 trial is
+INVALID by checker v1's I3 alarm (trigger 15) before I6b is judged. This run asked only whether v1
+can see a stale head through I6b when the alarm cannot fire; it did not count toward C5. Its result
+is kept as it was (m5-w5-exploratory.json). The revised C5 now runs M5 on W5 itself
+(tests/mutants/c5.py).
 
     python research/evidence/t-11/m5_w5_exploratory.py --trials 20 --out <dir> --report <path>.json
 """
@@ -41,9 +42,9 @@ def main() -> int:
         Settings.from_environment(ROOT),
         source=SCENARIO,
     )
-    c5.SCENARIO = SCENARIO  # the result names the W5 shape's hash
     result = c5.judge_batch(
         next(m for m in CATALOG if m.id == "M5"),
+        "scenarios/w5-sequential.yaml",
         summary,
         ClauseRegistry.load(ROOT / "clauses"),
         registry_sha256(ROOT / "clauses"),

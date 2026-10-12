@@ -1,20 +1,25 @@
-"""Control C5, oracle sensitivity: each labeled saver mutant must be caught by its target invariant.
+"""Control C5, oracle sensitivity, as the first matrix's methodology states it
+(crashcourt.experiment.controls.C5_METHOD).
 
     python -m tests.mutants.c5 --trials 20 --out <scratch dir> --report <path>.json
 
-For each mutant in tests/mutants/savers.py, one ordinary batch of W1 approve (sync, one worker, no
-fault: C1's shape) runs with the mutant in place of the pinned saver, through the same runner as
-every batch. Every trial is judged with the frozen checker, whose outputs are written into the
-trial directory as for any trial. A trial catches its mutant when the checker made it valid and
-found an anomaly (EXPECTED, GAP, or VIOLATION_CANDIDATE) on the mutant's target invariant. The
-specification's threshold is 19 of 20 per mutant.
+Each applicable mutant in tests/mutants/savers.py runs one ordinary batch of its pre-registered
+shape (sync, one worker, no fault: C1's shape; W1 approve for M3 and M4, W5 sequential for M5) with
+the mutant in place of the pinned saver, through the same runner as every batch. Every trial is
+judged with the frozen checker, whose outputs are written into the trial directory as for any
+trial. A trial catches its mutant when the checker made it valid and found an anomaly (EXPECTED,
+GAP, or VIOLATION_CANDIDATE) on the mutant's intended invariant. The threshold is 19 of 20.
+
+M1 and M2 are not run: no first-matrix workload exercises them. The report names them as NOT
+EXERCISED with the methodology's reasons, and its coverage line says how many of the specified
+mutants were measured, so three are never read as five of five.
 
 The report (crashcourt.experiment.controls.ControlReport) records every count, the target's
 outcome in every trial, every INVALID reason, every other invariant that showed an anomaly, the
-checker it ran under, the manifest, and the sha256 of the mutants and of this driver, so that the
-gate can tell whether the report describes the committed files. It is written whatever the
-result; `passed` is computed from the counts. Linux only, from a clean checkout, against the
-compose stack, like `crashcourt run`.
+checker it ran under, the manifest, and the sha256 of the mutants, this driver, and the scenarios,
+so that the gate can tell whether the report describes the committed files. It is written whatever
+the result; `applicable_passed` is computed from the counts. Linux only, from a clean checkout,
+against the compose stack, like `crashcourt run`.
 """
 
 from __future__ import annotations
@@ -36,12 +41,18 @@ from crashcourt.clauses.registry import ClauseRegistry, registry_sha256
 from crashcourt.experiment import gitproof
 from crashcourt.experiment.controls import (
     C5_CAUGHT,
+    C5_METHOD,
+    C5_REQUIREMENT,
     C5_TRIALS,
+    NOT_EXERCISED,
+    Applicable,
     CheckerUsed,
     ControlReport,
+    Exclusion,
     MutantResult,
     Threshold,
     recount,
+    required_sources,
 )
 from crashcourt.experiment.fingerprint import unexplained
 from crashcourt.experiment.observe import ANOMALY
@@ -52,12 +63,7 @@ from crashcourt.spec.scenario import load_scenario, scenario_sha256
 from tests.mutants.savers import CATALOG, Mutant
 
 ROOT = Path(__file__).resolve().parents[2]
-SCENARIO = ROOT / "scenarios" / "w1-approve.yaml"
-SOURCES = ("tests/mutants/savers.py", "tests/mutants/c5.py")
-REQUIREMENT = (
-    "saver mutants M1-M5 each caught by its target invariant in at least 19 of 20 trials "
-    "(specification section 13)"
-)
+DEFECTS = {m.id: m.defect for m in CATALOG}
 
 
 class C5Refused(Exception):
@@ -72,7 +78,11 @@ def outcomes(output: CheckerOutput) -> dict[str, str]:
 
 
 def judge_batch(
-    mutant: Mutant, summary: BatchSummary, registry: ClauseRegistry, registry_hash: str
+    mutant: Mutant,
+    scenario: str,
+    summary: BatchSummary,
+    registry: ClauseRegistry,
+    registry_hash: str,
 ) -> MutantResult:
     """Every trial of one mutant's batch through the frozen checker."""
     target: Counter[str] = Counter()
@@ -102,8 +112,9 @@ def judge_batch(
         id=mutant.id,
         defect=mutant.defect,
         target=mutant.target,
+        scenario=scenario,
         batch=summary.batch,
-        scenario_sha256=scenario_sha256(load_scenario(SCENARIO)),
+        scenario_sha256=scenario_sha256(load_scenario(ROOT / scenario)),
         manifest_sha256=hashlib.sha256(raw).hexdigest(),
         trials=len(summary.trials),
         valid=valid,
@@ -118,7 +129,7 @@ def sources(root: Path) -> dict[str, str]:
     """sha256 of each source as committed at HEAD; refused when the working copy differs."""
     head = gitproof.head(root)
     found: dict[str, str] = {}
-    for path in SOURCES:
+    for path in required_sources():
         committed = gitproof.blob_sha256(root, head, path)
         if committed is None:
             raise C5Refused(f"{path} is not committed")
@@ -128,11 +139,18 @@ def sources(root: Path) -> dict[str, str]:
     return found
 
 
+def mutant_for(spec: Applicable) -> Mutant:
+    """The catalog's mutant, held to the methodology's intended invariant."""
+    mutant = next(m for m in CATALOG if m.id == spec.id)
+    if mutant.target != spec.target:
+        raise C5Refused(f"{spec.id} targets {mutant.target}; the methodology says {spec.target}")
+    return mutant
+
+
 def run_c5(
-    trials: int, out: Path, *, stamp: str, mutants: Sequence[Mutant] = CATALOG
+    trials: int, out: Path, *, stamp: str, only: Sequence[str] | None = None
 ) -> ControlReport:
     settings = Settings.from_environment(ROOT)
-    scenario = load_scenario(SCENARIO)
     registry = ClauseRegistry.load(ROOT / "clauses")
     registry_hash = registry_sha256(ROOT / "clauses")
     frozen_md = FROZEN_PATH.read_bytes()
@@ -140,16 +158,21 @@ def run_c5(
     files = sources(ROOT)
     results: list[MutantResult] = []
     manifests: list[Manifest] = []
-    for mutant in mutants:
+    for spec in C5_METHOD.applicable:
+        if only is not None and spec.id not in only:
+            continue
+        mutant = mutant_for(spec)
         options = RunOptions(
-            trials=trials, out=out, batch=f"c5-{mutant.id}-{stamp}", saver_mutant=mutant.id
+            trials=trials, out=out, batch=f"c5-{spec.id}-{stamp}", saver_mutant=spec.id
         )
-        summary = run_batch(scenario, options, settings, source=SCENARIO)
+        path = ROOT / spec.scenario
+        summary = run_batch(load_scenario(path), options, settings, source=path)
         raw = (summary.directory / "manifest.json").read_text(encoding="utf-8")
         manifests.append(Manifest.from_json(raw))
-        results.append(judge_batch(mutant, summary, registry, registry_hash))
+        results.append(judge_batch(mutant, spec.scenario, summary, registry, registry_hash))
         print(
-            f"{mutant.id}: caught by {mutant.target} in {results[-1].caught} of {trials}",
+            f"{spec.id} on {spec.scenario}: caught by {spec.target} in {results[-1].caught} "
+            f"of {trials}",
             flush=True,
         )
     for other in manifests[1:]:
@@ -162,8 +185,11 @@ def run_c5(
         raise C5Refused("the batches ran from a dirty checkout")
     draft = ControlReport(
         control="C5",
-        requirement=REQUIREMENT,
+        requirement=C5_REQUIREMENT,
         threshold=Threshold(caught=C5_CAUGHT, trials=C5_TRIALS),
+        specified=C5_METHOD.specified,
+        applicable=len(C5_METHOD.applicable),
+        coverage=C5_METHOD.coverage(),
         checker=CheckerUsed(
             version=frozen.checker_version,
             checker_sha256=frozen.checker_sha256,
@@ -174,28 +200,53 @@ def run_c5(
         sources=files,
         manifest=json.loads(manifests[0].to_json()),
         mutants=tuple(results),
-        passed=False,
+        excluded=tuple(
+            Exclusion(
+                id=e.id,
+                defect=DEFECTS[e.id],
+                target=e.target,
+                status="NOT_EXERCISED",
+                reason=e.reason,
+            )
+            for e in C5_METHOD.excluded
+        ),
+        applicable_passed=False,
     )
-    return draft.model_copy(update={"passed": not recount(draft)})
+    return draft.model_copy(update={"applicable_passed": not recount(draft)})
 
 
 def summary_text(report: ControlReport) -> str:
+    result = "PASS" if report.applicable_passed else "FAIL"
     lines = [
         f"# C5: saver mutants under checker {report.checker.version}",
         "",
-        f"Threshold: caught in at least {report.threshold.caught} of {report.threshold.trials} "
-        "trials. Result: " + ("PASS" if report.passed else "FAIL") + ".",
+        f"Coverage: {report.coverage}.",
         "",
-        "| Mutant | Defect | Target | Caught | Valid | Target's outcomes | Other anomalies |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        f"Applicable mutants, threshold {report.threshold.caught} of {report.threshold.trials}: "
+        f"{result}.",
+        "",
+        "| Mutant | Defect | Shape | Target | Caught | Valid | Target's outcomes "
+        "| Other anomalies |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for m in report.mutants:
         shown = ", ".join(f"{k} {v}" for k, v in m.target_outcomes.items())
         others = ", ".join(f"{k} {v}" for k, v in m.other_anomalies.items()) or "none"
         lines.append(
-            f"| {m.id} | {m.defect} | {m.target} | {m.caught} of {m.trials} | {m.valid} | "
-            f"{shown} | {others} |"
+            f"| {m.id} | {m.defect} | {m.scenario} | {m.target} | {m.caught} of {m.trials} | "
+            f"{m.valid} | {shown} | {others} |"
         )
+    lines += [
+        "",
+        f"Not exercised by the first matrix (never run here, never PASS): {NOT_EXERCISED}.",
+        "",
+        "| Mutant | Defect | Declared target | Status | Why |",
+        "| --- | --- | --- | --- | --- |",
+        *(
+            f"| {e.id} | {e.defect} | {e.target} | {e.status} | {e.reason} |"
+            for e in report.excluded
+        ),
+    ]
     failures = recount(report)
     if failures:
         lines += ["", *(f"- {f}" for f in failures)]
@@ -209,17 +260,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--only", nargs="*", default=None, help="mutant ids (development only)")
     args = parser.parse_args(argv)
-    mutants = [m for m in CATALOG if args.only is None or m.id in args.only]
     stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
     try:
-        report = run_c5(args.trials, args.out, stamp=stamp, mutants=mutants)
+        report = run_c5(args.trials, args.out, stamp=stamp, only=args.only)
     except C5Refused as exc:
         print(f"C5 refused: {exc}", file=sys.stderr)
         return 2
     args.report.write_bytes(report.to_json().encode("utf-8"))
     args.report.with_suffix(".md").write_bytes(summary_text(report).encode("utf-8"))
     print(summary_text(report))
-    return 0 if report.passed else 1
+    return 0 if report.applicable_passed else 1
 
 
 if __name__ == "__main__":

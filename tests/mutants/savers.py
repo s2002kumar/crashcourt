@@ -5,8 +5,7 @@ A worker runs one only when the runner names it (`RunOptions.saver_mutant`), whi
 pre-registered or canonical batch and for any batch written under results/. The workers call the
 async methods only, so only those carry the defects.
 
-C5 asks that the frozen checker catch each mutant through its target invariant in at least 19 of 20
-trials. The targets were fixed before any mutant ran (issue #30):
+Each mutant's intended invariant was fixed before any mutant ran (issue #30):
 
 | Mutant | Defect | Target |
 | --- | --- | --- |
@@ -16,6 +15,11 @@ trials. The targets were fixed before any mutant ran (issue #30):
 | M4 | the second put of each op is written in a transaction whose commit fails; the error is
   swallowed and the put reports success | I1b |
 | M5 | the latest-checkpoint read returns the head's parent | I6b |
+
+The first matrix's C5 (crashcourt.experiment.controls.C5_METHOD, revised after the original
+measurement failed) runs M3 and M4 on W1 approve and M5 on W5 sequential, each to be caught by its
+invariant in at least 19 of 20 trials. M1 and M2 stay here, as specified, but no first-matrix
+workload exercises them: C5 records them as NOT EXERCISED and never counts them as passing.
 """
 
 from __future__ import annotations

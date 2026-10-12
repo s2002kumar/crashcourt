@@ -1,7 +1,9 @@
-"""Each labeled saver mutant on the real stack, one trial of C5's shape (W1 approve, sync, one
-worker, no fault), judged by the frozen checker: that the defect acts as labeled, and what checker
-v1 makes of it. The full control, 20 trials per mutant against the 19-of-20 threshold, is
-`python -m tests.mutants.c5`; this pins the mechanisms in CI. Linux only, like `crashcourt run`.
+"""Each labeled saver mutant on the real stack, one trial each, judged by the frozen checker: that
+the defect acts as labeled, and what checker v1 makes of it. M1, M2, and M5 also run on W1 approve,
+the original C5 shape, to pin why the first matrix's C5 leaves M1 and M2 out (they never act there)
+and runs M5 on W5 sequential instead (on W1 the I3 alarm makes every trial INVALID). The control
+itself, 20 trials per applicable mutant against the 19-of-20 threshold, is
+`python -m tests.mutants.c5`. Linux only, like `crashcourt run`.
 """
 
 from __future__ import annotations
@@ -29,17 +31,20 @@ pytestmark = [
 
 REPO = Path(__file__).resolve().parents[2]
 SCENARIO = REPO / "scenarios" / "w1-approve.yaml"
+W5 = REPO / "scenarios" / "w5-sequential.yaml"
 REGISTRY = ClauseRegistry.load(REPO / "clauses")
 REGISTRY_SHA = registry_sha256(REPO / "clauses")
 ANOMALY = {"EXPECTED", "GAP", "VIOLATION_CANDIDATE"}
 
 
-def mutant_trial(tmp: Path, mutant: str) -> tuple[BatchSummary, CheckerOutput]:
+def mutant_trial(
+    tmp: Path, mutant: str, scenario: Path = SCENARIO
+) -> tuple[BatchSummary, CheckerOutput]:
     summary = run_batch(
-        load_scenario(SCENARIO),
+        load_scenario(scenario),
         RunOptions(trials=1, out=tmp, saver_mutant=mutant),
         Settings.from_environment(REPO),
-        source=SCENARIO,
+        source=scenario,
     )
     [trial] = summary.trials
     assert trial.valid, trial.reasons
@@ -120,6 +125,13 @@ def test_m5_on_w1_is_invalid_by_the_i3_alarm_before_i6b_is_judged(tmp_path: Path
     _, output = mutant_trial(tmp_path, "M5")
     assert output.report.invalid is not None and output.report.invalid.trigger == 15
     assert "returned ok but the ledger holds no charge" in output.report.invalid.reason
+
+
+def test_m5_on_w5_is_caught_by_i6b(tmp_path: Path) -> None:
+    # The first matrix's C5 shape for M5: W5 posts no effects, so the I3 alarm cannot fire.
+    _, output = mutant_trial(tmp_path, "M5", W5)
+    assert output.report.invalid is None
+    assert outcomes(output)["I6b"] == "GAP"
 
 
 def test_a_mutant_never_runs_canonical(tmp_path: Path) -> None:
