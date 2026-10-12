@@ -1,0 +1,186 @@
+{
+  "git_dirty": false,
+  "git_sha": "ae691a2d939ecd11b82e8cc1c9f083f9db32b69c",
+  "note": "development runs of instrument shapes; not pre-registered batches",
+  "shapes": [
+    {
+      "as_predicted": 20,
+      "batch": "t11-c3-w1-20261012T111630Z",
+      "differs": {},
+      "invalid": {},
+      "outcomes": {
+        "I11": {
+          "PASS": 20
+        },
+        "I1a": {
+          "PASS": 20
+        },
+        "I1b": {
+          "PASS": 20
+        },
+        "I4": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I5a": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I5b": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I5c": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I6a": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I6b": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I7a": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I7b": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I7c": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I8": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        }
+      },
+      "preregistered_cell": "C3-w1-sync",
+      "scenario_sha256": "4b7d8506e21318efef8d98150bc3853f15fb43a000575300a5a971fa174ba10b",
+      "shape": "c3-w1",
+      "trials": 20,
+      "valid": 20
+    },
+    {
+      "as_predicted": 20,
+      "batch": "t11-c3-w5-20261012T111630Z",
+      "differs": {},
+      "invalid": {},
+      "outcomes": {
+        "I11": {
+          "PASS": 20
+        },
+        "I1a": {
+          "PASS": 20
+        },
+        "I1b": {
+          "PASS": 20
+        },
+        "I5a": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I5b": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I5c": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I6a": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I6b": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        }
+      },
+      "preregistered_cell": "C3-w5-sync",
+      "scenario_sha256": "7c28339fbb6a315d3f852ba541c26cf19b26df131e8a7f7fc6d2958804a8658b",
+      "shape": "c3-w5",
+      "trials": 20,
+      "valid": 20
+    },
+    {
+      "as_predicted": 20,
+      "batch": "t11-k1a-shape-20261012T111630Z",
+      "differs": {},
+      "invalid": {},
+      "outcomes": {
+        "I11": {
+          "PASS": 20
+        },
+        "I1a": {
+          "PASS": 20
+        },
+        "I1b": {
+          "PASS": 20
+        },
+        "I2": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I4": {
+          "GAP": 20
+        },
+        "I5a": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I5b": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I5c": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I6a": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I6b": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I7a": {
+          "GAP": 20
+        },
+        "I7b": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I7c": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I8": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        }
+      },
+      "preregistered_cell": "K1a",
+      "scenario_sha256": "25b52525f70dd5843a559196682eb41c9b53bee83e31afe83290e6245bd14de4",
+      "shape": "k1a-shape",
+      "trials": 20,
+      "valid": 20
+    },
+    {
+      "as_predicted": 20,
+      "batch": "t11-k3-shape-20261012T111630Z",
+      "differs": {},
+      "invalid": {},
+      "outcomes": {
+        "I11": {
+          "PASS": 20
+        },
+        "I1a": {
+          "PASS": 20
+        },
+        "I1b": {
+          "PASS": 20
+        },
+        "I5a": {
+          "GAP": 20
+        },
+        "I5b": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I5c": {
+          "NO_ANOMALY_UNSPECIFIED": 20
+        },
+        "I6a": {
+          "GAP": 20
+        }
+      },
+      "preregistered_cell": "K3",
+      "scenario_sha256": "c62e79750d2f29d27e09d1ac406d66597d696cd1e7eeadaef97f936113545a44",
+      "shape": "k3-shape",
+      "trials": 20,
+      "valid": 20
+    }
+  ],
+  "v": 1
+}

@@ -226,3 +226,18 @@ def test_a_missing_or_failed_placebo_control_refuses_new_evidence(tmp_path: Path
         scenarios=FakeScenarios(),
     )
     assert auth.instrument_batches == ("c3-quiet", "r1")
+
+
+def test_the_recorded_c5_report_is_one_the_gate_reads_and_it_fails() -> None:
+    from crashcourt.experiment.controls import ControlReport
+    from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, parse
+
+    root = Path(__file__).resolve().parents[2]
+    raw = (root / "research" / "evidence" / "t-11" / "c5.json").read_bytes()
+    report = ControlReport.model_validate_json(raw)
+    draft = parse((root / PREREGISTRATION_PATH).read_text(encoding="utf-8"))
+    assert draft.checker is not None
+    assert report.checker.checker_sha256 == draft.checker.checker_sha256
+    assert report.checker.frozen_md_sha256 == draft.checker.frozen_md_sha256
+    assert not report.passed
+    assert [r.split(" was")[0] for r in recount(report)] == ["M1", "M2", "M5"]

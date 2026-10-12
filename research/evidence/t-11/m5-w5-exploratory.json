@@ -1,0 +1,25 @@
+{
+  "counts_toward_c5": false,
+  "exploratory": true,
+  "git_dirty": false,
+  "git_sha": "ae691a2d939ecd11b82e8cc1c9f083f9db32b69c",
+  "result": {
+    "batch": "m5-w5-20261012T112114Z",
+    "caught": 20,
+    "defect": "the latest-checkpoint read returns the head's parent",
+    "id": "M5",
+    "invalid": {},
+    "manifest_sha256": "06687f4eb8abffceba2b2ce95e229d05ff0bcbb6edc868cdb83e537a5189a4e3",
+    "other_anomalies": {
+      "I5a": 20
+    },
+    "scenario_sha256": "d65ea3159cfe7b61b4f2fd3a80b47a7f475f5b1116fe2034b01ff9d252138e7b",
+    "target": "I6b",
+    "target_outcomes": {
+      "GAP": 20
+    },
+    "trials": 20,
+    "valid": 20
+  },
+  "scenario": "scenarios/w5-sequential.yaml"
+}

@@ -1,0 +1,181 @@
+{
+  "v": 1,
+  "control": "C5",
+  "requirement": "saver mutants M1-M5 each caught by its target invariant in at least 19 of 20 trials (specification section 13)",
+  "threshold": {
+    "caught": 19,
+    "trials": 20
+  },
+  "checker": {
+    "version": "v1",
+    "checker_sha256": "d80951681c2b8656a08647d3ba60ee3b9b025e1ff118d83796ccdb433f111097",
+    "frozen_md_sha256": "ddff87d4d487ef211d385279951eaa2be37c71394956fcc0c4ff541667338e12",
+    "registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5"
+  },
+  "run_commit": "ae691a2d939ecd11b82e8cc1c9f083f9db32b69c",
+  "sources": {
+    "tests/mutants/savers.py": "f7e282221e7bb697fce891ba1b1e54a95752b613b7c6cb2c099f6d9fd46d0217",
+    "tests/mutants/c5.py": "a0c2204aaffcaf3ea9023220ec52f13c36fe8a877990fb93dbca266bf3c87759"
+  },
+  "manifest": {
+    "clause_registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5",
+    "compose_version": "2.39.4-desktop.1",
+    "docker_kernel": "6.6.87.2-microsoft-standard-WSL2",
+    "docker_version": "28.4.0",
+    "generated_at": "2026-10-12T11:11:25+00:00",
+    "git_dirty": false,
+    "git_sha": "ae691a2d939ecd11b82e8cc1c9f083f9db32b69c",
+    "image_ids": {
+      "postgres": "sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722",
+      "toxiproxy": "sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e"
+    },
+    "images": {
+      "postgres": "postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722",
+      "toxiproxy": "ghcr.io/shopify/toxiproxy:2.12.0@sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e"
+    },
+    "libpq_build_version": "18.6",
+    "libpq_version": "18.6",
+    "lockfile_sha256": "19a0dd0df75a86126dec1b617422001fedb30ac18978c7fe31585ce52a92702e",
+    "machine": "x86_64",
+    "os_release": "6.6.87.2-microsoft-standard-WSL2",
+    "os_system": "Linux",
+    "packages": {
+      "langgraph": "1.2.12",
+      "langgraph-checkpoint": "4.2.0",
+      "langgraph-checkpoint-conformance": "0.0.2",
+      "langgraph-checkpoint-postgres": "3.1.2",
+      "langgraph-checkpoint-sqlite": "3.1.1",
+      "langgraph-prebuilt": "1.1.0",
+      "langgraph-sdk": "0.4.5",
+      "psycopg": "3.3.6",
+      "psycopg-binary": "3.3.6",
+      "psycopg-pool": "3.3.3"
+    },
+    "postgres": {
+      "default_transaction_isolation": "read committed",
+      "fsync": "on",
+      "max_connections": "100",
+      "server_version": "18.6 (Debian 18.6-1.pgdg13+2)",
+      "synchronous_commit": "on",
+      "track_commit_timestamp": "on"
+    },
+    "psycopg_impl": "binary",
+    "psycopg_wheel": "cp312-cp312-manylinux2014_x86_64,cp312-cp312-manylinux_2_17_x86_64",
+    "python_implementation": "CPython",
+    "python_version": "3.12.13",
+    "runner": "local",
+    "schema_version": 1,
+    "sink_clock_offset_ns": 37770,
+    "spec_sha256": "c6560f855c0bf80d9d1b18cd1407157dd619d84bc7e2b14dd7e1591f3cb45258",
+    "toxiproxy_version": "2.12.0"
+  },
+  "mutants": [
+    {
+      "id": "M1",
+      "defect": "a put_writes call that writes two or more rows does not store its second row",
+      "target": "I7a",
+      "batch": "c5-M1-20261012T111125Z",
+      "scenario_sha256": "498c98102bd53f0c737f8af97ced18ca8426bdc67ab0f34541586ef8486e5f52",
+      "manifest_sha256": "a781349a4ec3a87f9a82a5f5d668ac62a67cc25808cc0095a8c639dad9a5243a",
+      "trials": 20,
+      "valid": 20,
+      "caught": 0,
+      "target_outcomes": {
+        "NO_ANOMALY_UNSPECIFIED": 20
+      },
+      "invalid": {},
+      "other_anomalies": {}
+    },
+    {
+      "id": "M2",
+      "defect": "get_tuple by checkpoint id returns None",
+      "target": "I5a",
+      "batch": "c5-M2-20261012T111125Z",
+      "scenario_sha256": "498c98102bd53f0c737f8af97ced18ca8426bdc67ab0f34541586ef8486e5f52",
+      "manifest_sha256": "8868b55752e44243f9d99ce365d6b73a9dba841e370d053e31761aa8449ef226",
+      "trials": 20,
+      "valid": 20,
+      "caught": 0,
+      "target_outcomes": {
+        "NO_ANOMALY_UNSPECIFIED": 20
+      },
+      "invalid": {},
+      "other_anomalies": {}
+    },
+    {
+      "id": "M3",
+      "defect": "put stores no parent",
+      "target": "I5a",
+      "batch": "c5-M3-20261012T111125Z",
+      "scenario_sha256": "498c98102bd53f0c737f8af97ced18ca8426bdc67ab0f34541586ef8486e5f52",
+      "manifest_sha256": "9bf528bc2bb356c80061cf643f30d51d7d68ba146839e527746c50f3154466ae",
+      "trials": 20,
+      "valid": 20,
+      "caught": 20,
+      "target_outcomes": {
+        "GAP": 20
+      },
+      "invalid": {},
+      "other_anomalies": {
+        "I8": 20
+      }
+    },
+    {
+      "id": "M4",
+      "defect": "the second put of each op is written in a transaction whose commit fails; the error is swallowed and the put reports success",
+      "target": "I1b",
+      "batch": "c5-M4-20261012T111125Z",
+      "scenario_sha256": "498c98102bd53f0c737f8af97ced18ca8426bdc67ab0f34541586ef8486e5f52",
+      "manifest_sha256": "e5ac585a1dc27f5909498818406fa66eea75ce8b1c96f7322cc931f9185ee992",
+      "trials": 20,
+      "valid": 20,
+      "caught": 20,
+      "target_outcomes": {
+        "VIOLATION_CANDIDATE": 20
+      },
+      "invalid": {},
+      "other_anomalies": {
+        "I5b": 20,
+        "I8": 20
+      }
+    },
+    {
+      "id": "M5",
+      "defect": "the latest-checkpoint read returns the head's parent",
+      "target": "I6b",
+      "batch": "c5-M5-20261012T111125Z",
+      "scenario_sha256": "498c98102bd53f0c737f8af97ced18ca8426bdc67ab0f34541586ef8486e5f52",
+      "manifest_sha256": "a399e8a560863b05a548d8e1ae7d006f9381798cdff307292e48406c07e99f1b",
+      "trials": 20,
+      "valid": 0,
+      "caught": 0,
+      "target_outcomes": {
+        "INVALID": 20
+      },
+      "invalid": {
+        "1": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/1/t1",
+        "2": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/2/t1",
+        "3": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/3/t1",
+        "4": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/4/t1",
+        "5": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/5/t1",
+        "6": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/6/t1",
+        "7": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/7/t1",
+        "8": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/8/t1",
+        "9": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/9/t1",
+        "10": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/10/t1",
+        "11": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/11/t1",
+        "12": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/12/t1",
+        "13": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/13/t1",
+        "14": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/14/t1",
+        "15": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/15/t1",
+        "16": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/16/t1",
+        "17": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/17/t1",
+        "18": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/18/t1",
+        "19": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/19/t1",
+        "20": "trigger 15: I3 harness alarm: op resume-1 returned ok but the ledger holds no charge:c5-M5-20261012T111125Z/w1-approve/20/t1"
+      },
+      "other_anomalies": {}
+    }
+  ],
+  "passed": false
+}
