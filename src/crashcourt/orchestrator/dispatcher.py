@@ -106,6 +106,11 @@ class WorkerLink(Protocol):
         ...
 
 
+def kill_fault_id(step: int) -> str:
+    """The fault id a barrier step's kill is recorded under: its index in the schedule."""
+    return f"step-{step}"
+
+
 #: Spawns a worker (logging `worker.start`) whose notes go to the given queue.
 Spawn = Callable[[str, asyncio.Queue[Note]], WorkerLink]
 
@@ -334,7 +339,7 @@ class TrialEngine:
                 for h in held:
                     await self._send(h.worker, ReleaseMessage(hit_seq=h.hit_seq))
             else:
-                await self._kill(action.kill, f"step-{index}")
+                await self._kill(action.kill, kill_fault_id(index))
 
     def _check_late_release(self, index: int, released: list[Held]) -> None:
         """A run released after its client gave up resumes beside whatever was sent since; the

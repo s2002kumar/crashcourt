@@ -21,6 +21,7 @@ Layout of one batch (`<out>/<batch>/`):
 | scenario.yaml | the scenario file as given, when there is one |
 | run.json | how the batch ran: mode, trials, seeds, routes, clock check, sink health |
 | `<cell>/trial-NNNNN/` | every process's history, the merged history, worker logs, trial.json |
+| | and the checker's evidence: ledger.json, snapshot.json, sink-health.json (`evidence`) |
 | summary.json | every trial's validity and client outcomes |
 
 Each trial must also start fresh: its sink ledger empty, and no row in the saver's tables for
@@ -45,7 +46,7 @@ import shutil
 import signal
 import sys
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -58,12 +59,13 @@ from crashcourt.history.merge import merge
 from crashcourt.history.reader import HistoryError, read_history
 from crashcourt.history.writer import HistoryWriter, RunIdentity
 from crashcourt.manifest import Manifest
-from crashcourt.orchestrator import topology
+from crashcourt.orchestrator import evidence, preregistered, topology
 from crashcourt.orchestrator.dispatcher import EngineReport, Note, TrialEngine, describe_status
 from crashcourt.orchestrator.workers import ProcessWorker, socket_directory
 from crashcourt.probes import DEFAULT_PG_DSN, DEFAULT_SINK_URL, DEFAULT_TOXIPROXY_URL, SystemProbes
 from crashcourt.sink.client import SinkClient, SinkError
 from crashcourt.sink.ledger import LEDGER_VERSION, TrialId, ledger_events
+from crashcourt.snapshot.dump import redact
 from crashcourt.spec.content import canonical_json
 from crashcourt.spec.events import Event
 from crashcourt.spec.records import BatchRecord
@@ -124,6 +126,8 @@ class RunOptions:
     batch: str | None = None
     canonical: bool = False
     own_database: bool = False
+    #: Instrument batch directories a pre-registered new-evidence cell rests on.
+    instrument: tuple[Path, ...] = ()
 
 
 @dataclass
@@ -141,10 +145,12 @@ class BatchSummary:
     batch: str
     directory: Path
     trials: list[TrialResult]
+    #: Why a pre-registered batch's authorization was revoked mid-batch; empty when it was not.
+    revoked: tuple[str, ...] = ()
 
     @property
     def valid(self) -> bool:
-        return all(t.valid for t in self.trials)
+        return not self.revoked and all(t.valid for t in self.trials)
 
 
 # -- preflight --------------------------------------------------------------------------------
@@ -301,6 +307,10 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
                 "was the batch id reused?"
             )
     threads = sorted({f"{prefix}/{op.thread}" for op in scenario.ops})
+    # Evidence only: recorded for the checker, never consulted by anything below.
+    before = await asyncio.to_thread(
+        evidence.read_before, ctx.sink, ctx.settings.direct_dsn, threads
+    )
     try:
         existing = await asyncio.to_thread(rows_for_threads, ctx.settings.direct_dsn, threads)
     except Exception as exc:  # noqa: BLE001 - an unchecked start is not a fresh start
@@ -351,7 +361,22 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
         history.close()
         shutil.rmtree(socket_dir, ignore_errors=True)
 
-    sink_rows, sink_pid = await _collect_sink(ctx, trial, identity, directory, reasons)
+    after = await _collect_sink(ctx, trial, identity, directory, reasons)
+    reasons.extend(
+        await asyncio.to_thread(
+            evidence.write_after,
+            directory,
+            before,
+            after,
+            dsn=ctx.settings.direct_dsn,
+            threads=threads,
+            toxiproxy=ctx.toxiproxy,
+            after_orchestrator_seq=history.last_seq,
+            quiescent=all(link.reaped for link in links),
+        )
+    )
+    sink_rows = len(after.rows) if after is not None else 0
+    sink_pid = _sink_pid(after)
     result = assess(scenario, report, directory, reasons)
     _write_json(
         directory / "trial.json",
@@ -362,15 +387,16 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
 
 async def _collect_sink(
     ctx: _Batch, trial: TrialId, identity: RunIdentity, directory: Path, reasons: list[str]
-) -> tuple[int, int | None]:
-    """Write the sink's history (derived from its ledger) and check the sink is unchanged."""
+) -> evidence.SinkAfter | None:
+    """Write the sink's history (derived from its ledger) and check the sink is unchanged. The
+    same read is the post-trial step's sink evidence; None when the sink could not be read."""
     try:
         health = await asyncio.to_thread(ctx.sink.health)
         rows = await asyncio.to_thread(ctx.sink.ledger, trial)
         chain = await asyncio.to_thread(ctx.sink.verify, trial)
     except SinkError as exc:
         reasons.append(f"the sink could not be read after the trial: {exc}")
-        return 0, None
+        return None
     problems = check_sink(health, ctx.sink_source)
     reasons.extend(f"the sink after the trial: {p}" for p in problems)
     if not chain.get("ok"):
@@ -383,7 +409,12 @@ async def _collect_sink(
             events = ledger_events(rows, identity, pid)
             text = "".join(event.to_line() for event in events)
             (directory / f"{SINK}.jsonl").write_bytes(text.encode("utf-8"))
-    return len(rows), pid if isinstance(pid, int) else None
+    return evidence.SinkAfter(health=health, rows=rows, verify=chain)
+
+
+def _sink_pid(after: evidence.SinkAfter | None) -> int | None:
+    pid = after.health.get("pid") if after is not None else None
+    return pid if isinstance(pid, int) and not isinstance(pid, bool) else None
 
 
 # -- assessing a trial ------------------------------------------------------------------------
@@ -628,12 +659,34 @@ def run_batch(
     directory = options.out / batch
     if directory.exists():
         raise RunRefused(f"{directory} already exists; batch ids are never reused")
+    # A pre-registered cell runs only through T-13's gate (crashcourt.orchestrator.preregistered).
+    try:
+        cell = preregistered.preregistered_cell(scenario, source, settings.root)
+        authorization = (
+            None
+            if cell is None
+            else preregistered.authorize(
+                cell,
+                source,
+                options.trials,
+                settings.root,
+                canonical=options.canonical,
+                instrument=options.instrument,
+            )
+        )
+    except preregistered.GateRefused as exc:
+        raise RunRefused(str(exc)) from exc
 
     probes = SystemProbes(settings.root)
     report = run_doctor(probes)
     manifest: Manifest | None = report.manifest
     if manifest is None:
         raise RunRefused("doctor did not pass:\n" + format_report(report))
+    if authorization is not None:
+        try:
+            preregistered.confirm(authorization, manifest, settings.root)
+        except preregistered.GateRefused as exc:
+            raise RunRefused(str(exc)) from exc
     if options.canonical and manifest.git_dirty:
         raise RunRefused("canonical batch refused: the checkout has uncommitted changes")
 
@@ -663,6 +716,8 @@ def run_batch(
     asyncio.run(_setup_tables(settings.direct_dsn))
 
     directory.mkdir(parents=True)
+    if authorization is not None:
+        preregistered.record(directory, authorization)
     manifest_bytes = manifest.to_json().encode("utf-8")
     (directory / "manifest.json").write_bytes(manifest_bytes)
     scenario_hash = scenario_sha256(scenario)
@@ -686,6 +741,8 @@ def run_batch(
             "batch": batch,
             "cell": scenario.cell,
             "mode": "canonical" if options.canonical else "ordinary",
+            "preregistered_cell": authorization.cell if authorization else None,
+            "phase": authorization.phase if authorization else None,
             "own_database": options.own_database,
             "started": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
             "trials": options.trials,
@@ -713,6 +770,8 @@ def run_batch(
                 "expected_source_sha256": source_hash,
             },
             "routes": {name: route.describe() for name, route in routes.items()},
+            # The direct path the post-trial snapshot reads (the oracle's), password removed.
+            "oracle_dsn": redact(settings.direct_dsn),
             "pool": POOL_SETTINGS,
         },
     )
@@ -728,19 +787,38 @@ def run_batch(
         sink_source=source_hash,
     )
 
-    async def every_trial() -> list[TrialResult]:
-        results: list[TrialResult] = []
-        for number in range(1, options.trials + 1):
-            result = await run_trial(ctx, number)
-            results.append(result)
-            if progress is not None:
-                progress(result)
-        return results
+    def unchanged() -> list[str]:
+        if authorization is None:
+            return []
+        return preregistered.still_authorized(authorization, settings.root)
 
-    results = asyncio.run(every_trial())
-    summary = BatchSummary(batch, directory, results)
+    results, revoked = asyncio.run(
+        run_trials(lambda n: run_trial(ctx, n), options.trials, unchanged, progress)
+    )
+    if revoked:
+        preregistered.revoke(directory, revoked)
+    summary = BatchSummary(batch, directory, results, tuple(revoked))
     _write_json(directory / "summary.json", _summary_record(summary, scenario))
     return summary
+
+
+async def run_trials(
+    run_one: Callable[[int], Awaitable[TrialResult]],
+    trials: int,
+    unchanged: Callable[[], list[str]],
+    progress: Callable[[TrialResult], None] | None = None,
+) -> tuple[list[TrialResult], list[str]]:
+    """Every trial in order. `unchanged` says why the checkout is no longer the authorized one;
+    it is asked before each trial and after the last, and a reason stops the batch."""
+    results: list[TrialResult] = []
+    for number in range(1, trials + 1):
+        if problems := unchanged():
+            return results, problems
+        result = await run_one(number)
+        results.append(result)
+        if progress is not None:
+            progress(result)
+    return results, unchanged()
 
 
 def _summary_record(summary: BatchSummary, scenario: Scenario) -> dict[str, Any]:
@@ -757,4 +835,5 @@ def _summary_record(summary: BatchSummary, scenario: Scenario) -> dict[str, Any]
         "client_outcomes": dict(sorted(outcomes.items())),
         "invalid_trials": {str(t.number): t.reasons for t in summary.trials if not t.valid},
         "observations": {str(t.number): t.observations for t in summary.trials if t.observations},
+        **({"authorization_revoked": list(summary.revoked)} if summary.revoked else {}),
     }
