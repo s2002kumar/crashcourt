@@ -18,9 +18,15 @@ from crashcourt.experiment.gate import (
     confirm,
     confirm_environment,
 )
-from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, Preregistration
+from crashcourt.experiment.preregistration import (
+    BUILDER_PATH,
+    PREREGISTRATION_PATH,
+    Preregistration,
+)
 
 from ._experiment import (
+    BUILDER_SHA,
+    BUILDER_TEXT,
     CHECKER_SHA,
     EFFECT_MODELS,
     FROZEN_MD,
@@ -277,3 +283,34 @@ def test_the_runner_scenario_loader_is_the_real_one() -> None:
     facts = T07Scenarios().load(smoke)
     loaded = load_scenario(smoke)
     assert facts == ScenarioFacts(scenario_sha256(loaded), loaded.cell, loaded.seed)
+
+
+# -- the TrialScenario builder ------------------------------------------------------------------
+
+
+def test_a_builder_changed_after_the_preregistration_is_refused(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    assert authorize(repo).run_commit == repo.prereg_commit
+    commit(repo.root, {BUILDER_PATH: BUILDER_TEXT + "# changed\n"}, "change the builder")
+    reasons = refused(authorize, repo)
+    assert f"{BUILDER_PATH} at the run commit hashes to " in reasons
+    assert f"not the pre-registered {BUILDER_SHA}" in reasons
+    assert "pre-registration commit hashes" not in reasons
+
+
+def test_a_preregistration_must_pin_the_builder_its_own_commit_holds(tmp_path: Path) -> None:
+    other = "0" * 64
+    repo = make_repo(tmp_path, prereg_model(builder={"path": BUILDER_PATH, "sha256": other}))
+    reasons = refused(authorize, repo)
+    for name in ("pre-registration", "run"):
+        assert (
+            f"{BUILDER_PATH} at the {name} commit hashes to {BUILDER_SHA}, not the "
+            f"pre-registered {other}"
+        ) in reasons
+
+
+def test_a_builder_missing_at_the_run_commit_is_refused(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    git(repo.root, "rm", "-q", BUILDER_PATH)
+    git(repo.root, "commit", "-q", "-m", "remove the builder")
+    assert f"{BUILDER_PATH} at the run commit hashes to None" in refused(authorize, repo)

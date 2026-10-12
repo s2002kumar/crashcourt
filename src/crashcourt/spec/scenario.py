@@ -13,7 +13,10 @@ Schedule. A step is a trigger and an action:
 - `on: {fp: <point>, worker: <w>, op: <op>, occurrence: <n>}` fires in the worker, at the nth
   matching call to reach the failpoint (op may be left out to match any op of that worker). Its
   action runs there: `pause: <barrier>` parks the call until the orchestrator releases it;
-  `signal: <name>` and `exit: <status>` end the worker at that point.
+  `signal: <name>` and `exit: <status>` end the worker at that point. Every such step names its
+  `landmark:`, the audited call it arms, by id in the scenario's landmark table (`landmarks:`);
+  the landmark must be the table's for the step's method and occurrence. The checker verifies
+  every hit against it, and the name enters the scenario's hash.
 - `on: {all_paused: [<barrier>, ...]}` fires in the orchestrator, once, when every named barrier
   is held at the same time. Its action is `release: [<barrier>, ...]` (one barrier or several
   at once) or `kill: <worker>` (SIGKILL, recorded as a fault).
@@ -22,7 +25,8 @@ Loading refuses anything that could not run as declared, before any process star
 failpoint, worker, op, or barrier; a failpoint step on a worker its op is not sent to; two steps
 that could fire on one call; a barrier released twice; barriers that must be held together whose
 ops are ordered one after the other; SIGSTOP at a failpoint, which nothing in a schedule can
-continue yet.
+continue yet; a failpoint step without a landmark, or one that is not in the scenario's table at
+the step's method and occurrence, or a scenario that arms failpoints without naming its table.
 
 The content hash (crashcourt.spec.content) is taken over the validated model, so it names the
 scenario's meaning, not its formatting. `v` versions the format and enters the hash.
@@ -51,9 +55,11 @@ from pydantic import (
     StringConstraints,
     Tag,
     ValidationError,
+    ValidationInfo,
     model_validator,
 )
 
+from crashcourt.checker.landmarks import LANDMARKS_ROOT, load_table
 from crashcourt.failpoints.registry import Arm, Point, Signal
 from crashcourt.spec.content import NotCanonical, content_sha256
 from crashcourt.spec.events import Version
@@ -156,6 +162,10 @@ BarrierAction = Annotated[
 class FailpointStep(_Frozen):
     on: FailpointTrigger
     do: FailpointAction
+    #: The audited landmark this step arms, by id in the scenario's table: the call the checker
+    #: verifies every hit against. It must be the table's landmark for the step's method and
+    #: occurrence; nothing infers it.
+    landmark: PathName
 
 
 class BarrierStep(_Frozen):
@@ -206,13 +216,18 @@ class Scenario(_Frozen):
     schedule: tuple[Step, ...] = ()
     timeouts: Timeouts = Timeouts()
     #: The landmark table the checker verifies this scenario's failpoint hits against, by name
-    #: (scenarios/landmarks/<name>.yaml). Only the name's form is checked here; the checker
-    #: resolves and verifies the table.
+    #: (scenarios/landmarks/<name>.yaml). A scenario that arms a failpoint must name one, and
+    #: each step's landmark is checked against it here; the checker verifies the table against
+    #: its freeze.
     landmarks: PathName | None = None
 
     @model_validator(mode="after")
-    def _runs_as_declared(self) -> Self:
-        problems = _problems(self)
+    def _runs_as_declared(self, info: ValidationInfo) -> Self:
+        context: object = info.context
+        root = LANDMARKS_ROOT
+        if isinstance(context, dict) and "landmarks_root" in context:
+            root = Path(str(context["landmarks_root"]))  # pyright: ignore[reportUnknownArgumentType]
+        problems = _problems(self) + _landmark_problems(self, root)
         if problems:
             raise ValueError("; ".join(problems))
         return self
@@ -359,6 +374,44 @@ def _problems(s: Scenario) -> list[str]:
     return problems
 
 
+def _landmark_problems(s: Scenario, root: Path) -> list[str]:
+    """Every armed step's landmark is in the scenario's table, at the step's method and
+    occurrence. The table is read as the checker reads it (crashcourt.checker.landmarks)."""
+    steps = s.failpoint_steps()
+    if not steps:
+        return []
+    if s.landmarks is None:
+        return ["the scenario arms failpoints, so it names its landmark table (`landmarks:`)"]
+    path = root / f"{s.landmarks}.yaml"
+    try:
+        table = load_table(path)
+    except (
+        OSError,
+        ValueError,
+        yaml.YAMLError,
+    ) as exc:  # a pydantic ValidationError is a ValueError
+        return [f"landmark table {s.landmarks} cannot be read from {root}: {exc}"]
+    if table.name != s.landmarks:
+        return [f"{path.name} holds landmark table {table.name}, not {s.landmarks}"]
+    specs = {spec.id: spec for spec in table.landmarks}
+    problems: list[str] = []
+    for index, step in steps:
+        spec = specs.get(step.landmark)
+        method = step.on.fp.split(".", 1)[0]
+        if spec is None:
+            problems.append(
+                f"step {index}: landmark {step.landmark} is not in table {table.name} "
+                f"({', '.join(specs)})"
+            )
+        elif (spec.method, spec.occurrence) != (method, step.on.occurrence):
+            problems.append(
+                f"step {index}: landmark {step.landmark} is {spec.method} occurrence "
+                f"{spec.occurrence}, but the step arms {step.on.fp} occurrence "
+                f"{step.on.occurrence}"
+            )
+    return problems
+
+
 def _order_independence(
     s: Scenario, barriers: dict[str, FailpointStep], ancestors: dict[str, set[str]]
 ) -> list[str]:
@@ -445,18 +498,22 @@ def read_yaml(text: str) -> object:
     return yaml.load(text, Loader=_Loader)  # a SafeLoader subclass
 
 
-def load_scenario(path: Path) -> Scenario:
+def load_scenario(path: Path, *, landmarks_root: Path = LANDMARKS_ROOT) -> Scenario:
     """Read and validate a scenario file; ScenarioError says everything that is wrong with it."""
     try:
         data: object = read_yaml(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         raise ScenarioError(f"{path}: cannot read: {exc}") from exc
-    return parse_scenario(data, source=str(path))
+    return parse_scenario(data, source=str(path), landmarks_root=landmarks_root)
 
 
-def parse_scenario(data: object, *, source: str = "scenario") -> Scenario:
+def parse_scenario(
+    data: object, *, source: str = "scenario", landmarks_root: Path = LANDMARKS_ROOT
+) -> Scenario:
+    """Validate a scenario; its armed steps' landmarks are checked against the table it names
+    in `landmarks_root` (the repository's tables unless a test says otherwise)."""
     try:
-        scenario = Scenario.model_validate(data)
+        scenario = Scenario.model_validate(data, context={"landmarks_root": landmarks_root})
         content_sha256(scenario)  # refuse now what the batch record could not name
     except ValidationError as exc:
         details = "; ".join(

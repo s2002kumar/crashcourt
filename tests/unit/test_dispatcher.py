@@ -123,6 +123,7 @@ BASE: dict[str, Any] = {
     "seed": "seed",
     "workload": "smoke",
     "target": {"saver": "postgres", "driver": "async", "durability": "sync"},
+    "landmarks": "langgraph-v1",
     "workers": ["w1", "w2"],
     "ops": [
         {"id": "op-1", "worker": "w1", "thread": "t1", "after": "start"},
@@ -395,8 +396,16 @@ def test_a_worker_that_will_not_die_is_given_up_on(tmp_path: Path) -> None:
 
 
 BARRIERS = [
-    {"on": {"fp": "get_tuple.after", "worker": "w1", "op": "op-1"}, "do": {"pause": "B1"}},
-    {"on": {"fp": "get_tuple.after", "worker": "w2", "op": "op-2"}, "do": {"pause": "B2"}},
+    {
+        "on": {"fp": "get_tuple.after", "worker": "w1", "op": "op-1"},
+        "do": {"pause": "B1"},
+        "landmark": "L-GET",
+    },
+    {
+        "on": {"fp": "get_tuple.after", "worker": "w2", "op": "op-2"},
+        "do": {"pause": "B2"},
+        "landmark": "L-GET",
+    },
     {"on": {"all_paused": ["B1", "B2"]}, "do": {"release": ["B1", "B2"]}},
 ]
 

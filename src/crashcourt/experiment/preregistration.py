@@ -11,6 +11,11 @@ after the checker's freeze commit (crashcourt.experiment.gate).
 A draft names no frozen checker and leaves scenario hashes unset; the gate refuses to authorize any
 batch from a draft. Finalizing fills them in, sets `state` to `final`, and is the founder's commit.
 
+The builder. The code that turns a batch's records into the checker's input
+(crashcourt.orchestrator.declared) is outside the frozen checker, so the block pins its file by
+content hash; the gate and verification refuse a batch whose pre-registration or run commit holds
+any other version of it.
+
 Phases. `instrument` cells (controls and published replications) run first; `new-evidence` cells
 are refused until every instrument cell of the same pre-registration, checker, and environment has
 come out as predicted.
@@ -33,6 +38,8 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints,
 from crashcourt.spec.records import OUTCOMES
 
 PREREGISTRATION_PATH = PurePosixPath("research/preregistration.md")
+#: The TrialScenario builder: a batch's records to the checker's facts (T-07's side of T-10).
+BUILDER_PATH = "src/crashcourt/orchestrator/declared.py"
 _FENCE = "```json"
 
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
@@ -237,6 +244,14 @@ def counted(n: int, noun: str) -> str:
     return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
 
 
+class BuilderPin(_Model):
+    """The TrialScenario builder every batch's trials are classified through, by the sha256 of
+    its file's bytes. It is not in FROZEN.md, so it is pinned here."""
+
+    path: Literal["src/crashcourt/orchestrator/declared.py"] = BUILDER_PATH
+    sha256: Sha256
+
+
 def derive_seed(master_seed: str, cell: str, trial: int) -> str:
     """A trial's seed: sha256 of the JSON array [master_seed, cell, trial], compact, with
     non-ASCII kept. Computed here independently of the runner, so verification checks it."""
@@ -261,6 +276,8 @@ class Preregistration(_Model):
     state: Literal["draft", "final"]
     #: The checker this matrix runs under; null only in a draft.
     checker: CheckerPin | None = None
+    #: The TrialScenario builder the checker's input comes from; null only in a draft.
+    builder: BuilderPin | None = None
     seeds: SeedRule = SeedRule()
     #: Manifest fields every batch's manifest must equal, by dotted path (`postgres.fsync`).
     environment: dict[str, JsonValue] = Field(min_length=1)
@@ -291,6 +308,8 @@ class Preregistration(_Model):
         found: list[str] = []
         if self.checker is None:
             found.append("no frozen checker is named")
+        if self.builder is None:
+            found.append("no TrialScenario builder is pinned")
         for name, value in self.environment.items():
             if value is None:
                 found.append(f"environment {name} is not pinned")

@@ -7,8 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
+from crashcourt.checker.landmarks import LANDMARKS_ROOT
 from crashcourt.failpoints.registry import POINTS
+from crashcourt.spec.content import canonical_json
 from crashcourt.spec.scenario import (
     Scenario,
     ScenarioError,
@@ -29,6 +32,7 @@ BASE: dict[str, Any] = {
     "seed": "seed-1",
     "workload": "smoke",
     "target": {"saver": "postgres", "driver": "async", "durability": "sync"},
+    "landmarks": "langgraph-v1",
     "workers": ["w1", "w2"],
     "ops": [
         {"id": "op-1", "worker": "w1", "thread": "t1", "after": "start"},
@@ -36,8 +40,16 @@ BASE: dict[str, Any] = {
         {"id": "op-3", "worker": "w2", "thread": "t1", "after": "op-1"},
     ],
     "schedule": [
-        {"on": {"fp": "get_tuple.after", "worker": "w1", "op": "op-1"}, "do": {"pause": "B1"}},
-        {"on": {"fp": "get_tuple.after", "worker": "w2", "op": "op-2"}, "do": {"pause": "B2"}},
+        {
+            "on": {"fp": "get_tuple.after", "worker": "w1", "op": "op-1"},
+            "do": {"pause": "B1"},
+            "landmark": "L-GET",
+        },
+        {
+            "on": {"fp": "get_tuple.after", "worker": "w2", "op": "op-2"},
+            "do": {"pause": "B2"},
+            "landmark": "L-GET",
+        },
         {"on": {"all_paused": ["B1", "B2"]}, "do": {"release": ["B1", "B2"]}},
     ],
 }
@@ -136,14 +148,20 @@ def test_releasing_a_barrier_the_trigger_does_not_hold_is_refused() -> None:
 def test_two_steps_that_could_fire_on_one_call_are_refused() -> None:
     data = scenario()
     data["schedule"].append(
-        {"on": {"fp": "get_tuple.after", "worker": "w1", "op": "op-1"}, "do": {"exit": 3}}
+        {
+            "on": {"fp": "get_tuple.after", "worker": "w1", "op": "op-1"},
+            "do": {"exit": 3},
+            "landmark": "L-GET",
+        }
     )
     assert "two steps fire on op-1 occurrence 1" in refused(data)
 
 
 def test_a_step_for_any_op_must_be_alone_at_its_point() -> None:
     data = scenario()
-    data["schedule"].append({"on": {"fp": "get_tuple.after", "worker": "w1"}, "do": {"exit": 3}})
+    data["schedule"].append(
+        {"on": {"fp": "get_tuple.after", "worker": "w1"}, "do": {"exit": 3}, "landmark": "L-GET"}
+    )
     assert "must be the only step at that point" in refused(data)
 
 
@@ -177,8 +195,13 @@ def test_arms_carry_the_step() -> None:
                 {
                     "on": {"fp": "put.before", "worker": "w1", "op": "op-1", "occurrence": 2},
                     "do": {"signal": "SIGKILL"},
+                    "landmark": "L-EXC",
                 },
-                {"on": {"fp": "put.after", "worker": "w2", "op": "op-2"}, "do": {"exit": 7}},
+                {
+                    "on": {"fp": "put.after", "worker": "w2", "op": "op-2"},
+                    "do": {"exit": 7},
+                    "landmark": "L-IN",
+                },
             ],
         )
     )
@@ -216,7 +239,11 @@ def test_release_and_kill_on_one_trigger_is_refused() -> None:
 
 
 KILL_W1 = [
-    {"on": {"fp": "put.before", "worker": "w1", "op": "op-1"}, "do": {"pause": "B1"}},
+    {
+        "on": {"fp": "put.before", "worker": "w1", "op": "op-1"},
+        "do": {"pause": "B1"},
+        "landmark": "L-IN",
+    },
     {"on": {"all_paused": ["B1"]}, "do": {"kill": "w1"}},
 ]
 
@@ -242,7 +269,11 @@ def test_work_ordered_before_the_parked_call_is_allowed() -> None:
 
 def test_a_kill_must_hold_one_of_its_workers_calls() -> None:
     schedule = [
-        {"on": {"fp": "put.before", "worker": "w2", "op": "op-2"}, "do": {"pause": "B2"}},
+        {
+            "on": {"fp": "put.before", "worker": "w2", "op": "op-2"},
+            "do": {"pause": "B2"},
+            "landmark": "L-IN",
+        },
         {"on": {"all_paused": ["B2"]}, "do": {"kill": "w1"}},
     ]
     text = refused(scenario(ops=BASE["ops"][:2], schedule=schedule))
@@ -250,9 +281,15 @@ def test_a_kill_must_hold_one_of_its_workers_calls() -> None:
 
 
 def test_a_step_that_ends_its_worker_must_name_its_op_and_be_its_last_work() -> None:
-    any_op = [{"on": {"fp": "put.before", "worker": "w1"}, "do": {"exit": 1}}]
+    any_op = [{"on": {"fp": "put.before", "worker": "w1"}, "do": {"exit": 1}, "landmark": "L-IN"}]
     assert "must name its op" in refused(scenario(ops=BASE["ops"][:2], schedule=any_op))
-    ends_w2 = [{"on": {"fp": "put.before", "worker": "w2", "op": "op-2"}, "do": {"exit": 1}}]
+    ends_w2 = [
+        {
+            "on": {"fp": "put.before", "worker": "w2", "op": "op-2"},
+            "do": {"exit": 1},
+            "landmark": "L-IN",
+        }
+    ]
     text = refused(scenario(schedule=ends_w2))  # op-3 also runs on w2, unordered with op-2
     assert "op op-3 on w2 is not ordered before the call that ends w2" in text
 
@@ -263,6 +300,7 @@ def test_a_worker_is_ended_by_one_step_at_most() -> None:
         {
             "on": {"fp": "put.before", "worker": "w1", "op": "op-1", "occurrence": 2},
             "do": {"exit": 1},
+            "landmark": "L-EXC",
         },
     ]
     text = refused(scenario(ops=BASE["ops"][:2], schedule=schedule))
@@ -291,11 +329,103 @@ def test_a_resume_changes_the_hash() -> None:
 
 
 def test_a_scenario_may_name_its_landmark_table() -> None:
-    assert parse_scenario(scenario()).landmarks is None
-    named = parse_scenario(scenario(landmarks="w1-approve.v1"))
+    unarmed = scenario(schedule=[])
+    del unarmed["landmarks"]
+    assert parse_scenario(unarmed).landmarks is None
+    # With no armed step, the table is not read here; the checker's gate verifies it.
+    named = parse_scenario({**unarmed, "landmarks": "w1-approve.v1"})
     assert named.landmarks == "w1-approve.v1"
-    assert scenario_sha256(named) != scenario_sha256(parse_scenario(scenario()))
-    assert "landmarks" in refused(scenario(landmarks="../tables/x"))
+    assert scenario_sha256(named) != scenario_sha256(parse_scenario(unarmed))
+    assert "landmarks" in refused({**unarmed, "landmarks": "../tables/x"})
+
+
+# -- landmarks --------------------------------------------------------------------------------
+
+
+def test_an_armed_step_names_its_landmark() -> None:
+    data = scenario()
+    del data["schedule"][0]["landmark"]
+    assert "schedule.0.fp.landmark: Field required" in refused(data)
+
+
+def test_a_scenario_that_arms_a_failpoint_names_its_table() -> None:
+    data = scenario()
+    del data["landmarks"]
+    assert "the scenario arms failpoints, so it names its landmark table" in refused(data)
+    text = refused(scenario(landmarks="no-such-table"))
+    assert "landmark table no-such-table cannot be read" in text
+
+
+def test_an_unknown_landmark_is_refused() -> None:
+    data = scenario()
+    data["schedule"][0]["landmark"] = "L-NOPE"
+    assert "step 0: landmark L-NOPE is not in table langgraph-v1" in refused(data)
+
+
+@pytest.mark.parametrize(
+    ("on", "landmark", "problem"),
+    [
+        (
+            {"fp": "get_tuple.after", "worker": "w1", "op": "op-1"},
+            "L-IN",
+            "landmark L-IN is put occurrence 1, but the step arms get_tuple.after occurrence 1",
+        ),
+        (
+            {"fp": "put_writes.before", "worker": "w1", "op": "op-1"},
+            "L-RES",
+            "landmark L-RES is put_writes occurrence 2, but the step arms put_writes.before "
+            "occurrence 1",
+        ),
+    ],
+)
+def test_a_landmark_at_another_method_or_occurrence_is_refused(
+    on: dict[str, Any], landmark: str, problem: str
+) -> None:
+    data = scenario()
+    data["schedule"][0] = {"on": on, "do": {"pause": "B1"}, "landmark": landmark}
+    assert f"step 0: {problem}" in refused(data)
+
+
+def twins(tmp_path: Path) -> Path:
+    """A landmark root whose table holds two landmarks at get_tuple occurrence 1."""
+    table: dict[str, Any] = yaml.safe_load(
+        (LANDMARKS_ROOT / "langgraph-v1.yaml").read_text(encoding="utf-8")
+    )
+    twin = next(s for s in table["landmarks"] if s["id"] == "L-GET")
+    table["landmarks"].append({**twin, "id": "L-GET-TWIN"})
+    table["name"] = "twins"
+    root = tmp_path / "landmarks"
+    root.mkdir()
+    (root / "twins.yaml").write_text(yaml.safe_dump(table), encoding="utf-8")
+    return root
+
+
+def test_the_landmark_is_part_of_the_hash(tmp_path: Path) -> None:
+    root = twins(tmp_path)
+
+    def hashed_at(landmark: str) -> str:
+        data = scenario(landmarks="twins")
+        data["schedule"][0]["landmark"] = landmark
+        loaded = parse_scenario(data, landmarks_root=root)
+        assert loaded.failpoint_steps()[0][1].landmark == landmark
+        assert f'"landmark":"{landmark}"' in canonical_json(loaded)
+        return scenario_sha256(loaded)
+
+    assert hashed_at("L-GET") != hashed_at("L-GET-TWIN")
+
+
+def test_load_reads_the_table_from_the_root_it_is_given(tmp_path: Path) -> None:
+    root = twins(tmp_path)
+    path = tmp_path / "s.yaml"
+    path.write_text(
+        (REPO / "scenarios" / "smoke.yaml")
+        .read_text(encoding="utf-8")
+        .replace("landmarks: langgraph-v1", "landmarks: twins"),
+        encoding="utf-8",
+    )
+    assert load_scenario(path, landmarks_root=root).landmarks == "twins"
+    with pytest.raises(ScenarioError, match="landmark table twins cannot be read"):
+        load_scenario(path)
 
 
 def test_every_scenario_in_the_repository_loads() -> None:
@@ -314,6 +444,7 @@ cell: pg-async-sync-smoke
 seed: seed-1
 workload: smoke
 target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
 workers: [w1, w2]
 ops:
   - {id: op-1, worker: w1, thread: t1, after: start}
@@ -322,8 +453,10 @@ ops:
 schedule:
   - on: {fp: get_tuple.after, worker: w1, op: op-1}
     do: {pause: B1}
+    landmark: L-GET
   - on: {fp: get_tuple.after, worker: w2, op: op-2}
     do: {pause: B2}
+    landmark: L-GET
   - on: {all_paused: [B1, B2]}
     do: {release: [B1, B2]}
 """
@@ -333,9 +466,11 @@ EQUIVALENT = """
 # reordered, with the defaults written out
 schedule:
 - do: {pause: "B1"}
+  landmark: "L-GET"
   on: {worker: w1, fp: 'get_tuple.after', op: op-1, occurrence: 1}
 - on: {op: op-2, fp: get_tuple.after, worker: w2}
   do: {pause: B2}
+  landmark: L-GET
 - {on: {all_paused: [B1, B2]}, do: {release: [B1, B2]}}
 timeouts: {run_s: 60, hello_s: 60.0, shutdown_s: 30}
 workers: [w1, w2]
@@ -348,6 +483,7 @@ seed: "seed-1"
 cell: pg-async-sync-smoke
 name: two-barriers
 workload: smoke
+landmarks: 'langgraph-v1'
 v: 1
 """
 
@@ -369,7 +505,9 @@ def test_equivalent_yaml_hashes_the_same() -> None:
         YAML.replace("cell: pg-async-sync-smoke", "cell: other"),
         YAML.replace("{pause: B2}", "{pause: B3}").replace("[B1, B2]", "[B1, B3]"),
         YAML.replace(
-            "op: op-1}\n    do: {pause: B1}", "op: op-1, occurrence: 2}\n    do: {pause: B1}"
+            "get_tuple.after, worker: w1, op: op-1}\n    do: {pause: B1}\n    landmark: L-GET",
+            "put.before, worker: w1, op: op-1, occurrence: 2}\n    do: {pause: B1}\n"
+            "    landmark: L-EXC",
         ),
         YAML.replace("after: op-1}", "after: op-2}"),
         YAML + "timeouts: {run_s: 5}\n",
@@ -398,11 +536,12 @@ def test_a_non_finite_input_cannot_be_hashed_so_it_is_refused() -> None:
 
 def test_the_smoke_scenario_hash_is_pinned() -> None:
     # A change to the smoke scenario, to the scenario model (T-09 added `resume` and
-    # `landmarks`), or to how scenarios are hashed shows up here first.
+    # `landmarks`, T-13 each armed step's `landmark`), or to how scenarios are hashed shows up
+    # here first.
     smoke = load_scenario(REPO / "scenarios" / "smoke.yaml")
     assert isinstance(smoke, Scenario)
     assert scenario_sha256(smoke) == (
-        "93a2c09e387b1098983911700b62b09aaee0dedb7c1966f48416cbd73dcfea00"
+        "de411c3dc091b7d058b938ba01ef8ccbd7b41b93a5f0553332f004c941e14d01"
     )
 
 

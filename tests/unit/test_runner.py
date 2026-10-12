@@ -125,6 +125,7 @@ DATA: dict[str, Any] = {
     "seed": "s",
     "workload": "smoke",
     "target": {"saver": "postgres", "driver": "async", "durability": "sync"},
+    "landmarks": "langgraph-v1",
     "workers": ["w1"],
     "ops": [{"id": "op-1", "worker": "w1", "thread": "t1", "after": "start"}],
 }
@@ -229,7 +230,13 @@ def test_two_terminal_events_make_the_trial_invalid(tmp_path: Path) -> None:
 def test_a_step_that_never_fired_makes_the_trial_invalid(tmp_path: Path) -> None:
     files = TrialFiles(tmp_path)
     files.normal()
-    steps = [{"on": {"fp": "put.before", "worker": "w1", "op": "op-1"}, "do": {"exit": 3}}]
+    steps = [
+        {
+            "on": {"fp": "put.before", "worker": "w1", "op": "op-1"},
+            "do": {"exit": 3},
+            "landmark": "L-IN",
+        }
+    ]
     result = assess(scenario(steps), report(), files.dir, [])
     assert "step 0 never fired (put.before in w1)" in result.reasons
 
@@ -271,7 +278,13 @@ def test_an_exit_armed_at_a_failpoint_explains_the_status(tmp_path: Path) -> Non
     )
     files.w1.emit("fp.action", op_id="op-1", fp="put.before", data={"hit_seq": hit.seq})
     files.normal(terminal="client.info", returncode=3)
-    steps = [{"on": {"fp": "put.before", "worker": "w1", "op": "op-1"}, "do": {"exit": 3}}]
+    steps = [
+        {
+            "on": {"fp": "put.before", "worker": "w1", "op": "op-1"},
+            "do": {"exit": 3},
+            "landmark": "L-IN",
+        }
+    ]
     result = assess(scenario(steps), report(returncode=3, shutdown_sent=False), files.dir, [])
     assert result.valid, result.reasons
 
@@ -283,7 +296,13 @@ def test_an_exit_status_other_than_the_armed_one_makes_the_trial_invalid(tmp_pat
     )
     files.w1.emit("fp.action", op_id="op-1", fp="put.before", data={"hit_seq": hit.seq})
     files.normal(terminal="client.info", returncode=1)
-    steps = [{"on": {"fp": "put.before", "worker": "w1", "op": "op-1"}, "do": {"exit": 3}}]
+    steps = [
+        {
+            "on": {"fp": "put.before", "worker": "w1", "op": "op-1"},
+            "do": {"exit": 3},
+            "landmark": "L-IN",
+        }
+    ]
     result = assess(scenario(steps), report(returncode=1, shutdown_sent=False), files.dir, [])
     assert "w1: its failpoint action implies 3, not 1" in result.reasons
 

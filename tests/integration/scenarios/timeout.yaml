@@ -6,6 +6,7 @@ cell: timeout
 seed: timeout-v1
 workload: smoke
 target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
 workers: [w1, w2]
 ops:
   - {id: op-1, worker: w1, thread: t1, after: start}
@@ -13,4 +14,5 @@ ops:
 schedule:
   - on: {fp: get_tuple.after, worker: w1, op: op-1}
     do: {pause: B1}
+    landmark: L-GET
 timeouts: {run_s: 3}

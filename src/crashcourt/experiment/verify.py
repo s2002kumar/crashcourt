@@ -10,6 +10,8 @@ batch says about itself:
   two, and its bytes at the pre-registration commit hash to the recorded value;
 - the freeze commit is an ancestor of the pre-registration commit, FROZEN.md did not change
   between the freeze and the run, and its bytes hash to the recorded and pre-registered value;
+- the TrialScenario builder (orchestrator/declared.py) at the pre-registration and run commits is
+  the file the pre-registration pins;
 - the batch record's scenario hash, the cell, N, and the checker (every hash the freeze records,
   and the landmark table among the pinned ones) are the pre-registered ones, and the manifest
   holds the pre-registered environment, and for new evidence the instrument batches' environment
@@ -42,6 +44,7 @@ from crashcourt.experiment.gate import (
     FROZEN_PATH,
     REVOKED_FILE,
     Authorization,
+    builder_problems,
     confirm_environment,
     rules_at,
 )
@@ -157,6 +160,8 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
         raise BatchNotVerified(batch_dir, [*problems, f"pre-registration: {exc}"]) from exc
     if prereg.state != "final":
         problems.append("the pre-registration was a draft")
+    commits = (("pre-registration", prereg_commit), ("run", run))
+    problems.extend(builder_problems(repo, prereg, commits))
     try:
         cell = prereg.cell(auth.cell)
     except KeyError:

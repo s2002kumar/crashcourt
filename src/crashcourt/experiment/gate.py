@@ -8,7 +8,9 @@ file the pre-registration lists. It refuses, naming every reason at once, unless
 2. the checker is FROZEN: src/crashcourt/checker/FROZEN.md exists, its bytes hash to the
    pre-registered value, the checker files, effect models, and clause registry verify against it
    (T-10's `freeze.verify_checker`), its checker hash is the pre-registered one, and the commit
-   that last changed it (the freeze commit) is an ancestor of the pre-registration commit;
+   that last changed it (the freeze commit) is an ancestor of the pre-registration commit; and
+   the TrialScenario builder (orchestrator/declared.py), which is outside the freeze, is the file
+   the pre-registration pins, at its commit and at HEAD;
 3. the scenario is the one pre-registered for its cell: same content hash, same cell id, same
    master seed; the landmark table it names is audited and frozen (T-10's
    `freeze.verify_scenario`), and a cell that injects a fault names one; and `trials` is the
@@ -205,6 +207,24 @@ class InstrumentEvidence:
 InstrumentCheck = Callable[[Preregistration, str, Sequence[Path]], InstrumentEvidence]
 
 
+def builder_problems(
+    root: Path, prereg: Preregistration, commits: Sequence[tuple[str, str]]
+) -> list[str]:
+    """The TrialScenario builder at each named commit is the one the pre-registration pins."""
+    pin = prereg.builder
+    if pin is None:
+        return ["the pre-registration pins no TrialScenario builder"]
+    found: list[str] = []
+    for name, commit in commits:
+        digest = gitproof.blob_sha256(root, commit, pin.path)
+        if digest != pin.sha256:
+            found.append(
+                f"{pin.path} at the {name} commit hashes to {digest}, not the pre-registered "
+                f"{pin.sha256}"
+            )
+    return found
+
+
 def authorize_batch(
     source: Path | None,
     trials: int,
@@ -244,8 +264,11 @@ def authorize_batch(
     if not gitproof.is_ancestor(root, prereg_commit, run_commit):
         check.fail(f"pre-registration commit {prereg_commit} is not an ancestor of {run_commit}")
 
-    # 2. the frozen checker
+    # 2. the frozen checker, and the builder of its input
     frozen = _frozen_checker(root, run_commit, prereg, prereg_commit, checker, check)
+    commits = (("pre-registration", prereg_commit), ("run", run_commit))
+    for reason in builder_problems(root, prereg, commits):
+        check.fail(reason)
 
     # 3. the cell and its scenario
     try:

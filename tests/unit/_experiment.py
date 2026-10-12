@@ -21,6 +21,7 @@ from crashcourt.experiment.gate import (
     Unavailable,
 )
 from crashcourt.experiment.preregistration import (
+    BUILDER_PATH,
     PREREGISTRATION_PATH,
     Preregistration,
     block,
@@ -45,6 +46,9 @@ SCENARIO_JSON = {
 }
 SCENARIOS = {c: hashlib.sha256(text.encode()).hexdigest() for c, text in SCENARIO_JSON.items()}
 N = 3
+#: The TrialScenario builder as the fixture repository commits it, and its pinned hash.
+BUILDER_TEXT = '"""The TrialScenario builder, as pre-registered."""\n'
+BUILDER_SHA = hashlib.sha256(BUILDER_TEXT.encode()).hexdigest()
 #: The effect ledger's export as the post-trial step writes it: the replication's published
 #: shape, two charge rows with attempts 1 and 2.
 LEDGER: dict[str, Any] = {
@@ -99,6 +103,7 @@ def prereg_model(**changes: Any) -> Preregistration:
             "effect_models": EFFECT_MODELS,
             "landmark_tables": LANDMARK_TABLES,
         },
+        "builder": {"path": BUILDER_PATH, "sha256": BUILDER_SHA},
         "environment": {"os_system": "Linux", "runner": "local", "git_dirty": False},
         "instrument_checks": [{"id": "AM", "requirement": "mutants", "evidence": "ci run 1"}],
         "cells": [
@@ -167,6 +172,7 @@ def make_repo(tmp: Path, prereg: Preregistration | None = None) -> Repo:
     commit(root, {".gitignore": "runs/\n", "README.md": "test\n"}, "init")
     freeze = commit(root, {str(FROZEN_PATH): FROZEN_MD}, "freeze the checker")
     files = {f"scenarios/{c}.yaml": f"cell: {c}\n" for c in SCENARIOS}
+    files[BUILDER_PATH] = BUILDER_TEXT
     files[str(PREREGISTRATION_PATH)] = prereg_text(prereg or prereg_model())
     prereg_commit = commit(root, files, "pre-register the matrix")
     return Repo(root, freeze, prereg_commit)

@@ -13,10 +13,11 @@ import yaml
 
 from crashcourt.checker.artifacts import ArmSpec, FaultSpec
 from crashcourt.checker.landmarks import LANDMARKS_ROOT, load_table
+from crashcourt.orchestrator import declared
 from crashcourt.orchestrator.declared import NotDeclared, trial_scenario
 from crashcourt.orchestrator.dispatcher import kill_fault_id
 from crashcourt.spec.content import canonical_json
-from crashcourt.spec.scenario import parse_scenario
+from crashcourt.spec.scenario import ScenarioError, parse_scenario
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "research" / "evidence" / "t-08" / "manifest-local.json"
@@ -44,11 +45,13 @@ def scenario(**changes: Any) -> dict[str, Any]:
     return data
 
 
-def batch(tmp_path: Path, data: dict[str, Any], **run_changes: Any) -> Path:
+def batch(
+    tmp_path: Path, data: dict[str, Any], *, root: Path = LANDMARKS_ROOT, **run_changes: Any
+) -> Path:
     """A batch directory as the runner writes it, with only what the builder reads."""
     directory = tmp_path / "b-1"
     directory.mkdir(parents=True)
-    parsed = parse_scenario(data)
+    parsed = parse_scenario(data, landmarks_root=root)
     (directory / "scenario.json").write_text(canonical_json(parsed) + "\n", encoding="utf-8")
     (directory / "manifest.json").write_bytes(MANIFEST.read_bytes())
     run: dict[str, Any] = {
@@ -130,14 +133,14 @@ def test_records_that_do_not_say_enough_are_refused(
         trial_scenario(batch(tmp_path, scenario(), **change), 2, evidence="control")
 
 
-def pause(point: str, occurrence: int, barrier: str = "B1") -> dict[str, Any]:
+def pause(point: str, occurrence: int, landmark: str, barrier: str = "B1") -> dict[str, Any]:
     on = {"fp": point, "worker": "w1", "op": "resume-1", "occurrence": occurrence}
-    return {"on": on, "do": {"pause": barrier}}
+    return {"on": on, "do": {"pause": barrier}, "landmark": landmark}
 
 
 def test_a_released_pause_is_a_pause_fault_at_its_landmark(tmp_path: Path) -> None:
     schedule = [
-        pause("put_writes.before", 2),
+        pause("put_writes.before", 2, "L-RES"),
         {"on": {"all_paused": ["B1"]}, "do": {"release": ["B1"]}},
     ]
     data = scenario(schedule=schedule, landmarks="langgraph-v1")
@@ -158,7 +161,7 @@ def test_a_released_pause_is_a_pause_fault_at_its_landmark(tmp_path: Path) -> No
 
 def test_a_pause_killed_while_held_is_an_arm_and_the_kill_a_sigkill(tmp_path: Path) -> None:
     schedule = [
-        pause("put.before", 3),
+        pause("put.before", 3, "L-T1"),
         {"on": {"all_paused": ["B1"]}, "do": {"kill": "w1"}},
     ]
     data = scenario(schedule=schedule, landmarks="langgraph-v1")
@@ -170,12 +173,14 @@ def test_a_pause_killed_while_held_is_an_arm_and_the_kill_a_sigkill(tmp_path: Pa
 
 def test_exit_and_sigkill_arms_are_their_faults(tmp_path: Path) -> None:
     on = {"fp": "get_tuple.after", "worker": "w1", "op": "resume-1"}
-    exits = scenario(schedule=[{"on": on, "do": {"exit": 3}}])
+    exit_step = {"on": on, "do": {"exit": 3}, "landmark": "L-GET"}
+    exits = scenario(schedule=[exit_step], landmarks="langgraph-v1")
     facts = trial_scenario(batch(tmp_path, exits), 1, evidence="control")
-    assert facts.arms[0].exit_code == 3 and facts.arms[0].landmark is None
+    assert facts.arms[0].exit_code == 3 and facts.arms[0].landmark == "L-GET"
     assert facts.faults == (FaultSpec(kind="exit", arm=0, exit_code=3),)
 
-    kills = scenario(schedule=[{"on": on, "do": {"signal": "SIGKILL"}}], landmarks="langgraph-v1")
+    kill_step = {"on": on, "do": {"signal": "SIGKILL"}, "landmark": "L-GET"}
+    kills = scenario(schedule=[kill_step], landmarks="langgraph-v1")
     facts = trial_scenario(batch(tmp_path / "k", kills), 1, evidence="control")
     assert [(a.action, a.signal, a.landmark) for a in facts.arms] == [
         ("signal", "SIGKILL", "L-GET")
@@ -185,22 +190,31 @@ def test_exit_and_sigkill_arms_are_their_faults(tmp_path: Path) -> None:
 
 def test_a_signal_with_no_fault_kind_is_refused(tmp_path: Path) -> None:
     on = {"fp": "get_tuple.after", "worker": "w1", "op": "resume-1"}
-    data = scenario(schedule=[{"on": on, "do": {"signal": "SIGQUIT"}}])
+    step = {"on": on, "do": {"signal": "SIGQUIT"}, "landmark": "L-GET"}
+    data = scenario(schedule=[step], landmarks="langgraph-v1")
     with pytest.raises(NotDeclared, match="no fault kind for a SIGQUIT arm"):
         trial_scenario(batch(tmp_path, data), 1, evidence="control")
 
 
-def test_an_arm_at_no_landmark_of_the_table_is_refused(tmp_path: Path) -> None:
+def test_a_batch_record_whose_step_names_a_wrong_landmark_is_refused(tmp_path: Path) -> None:
     schedule = [
-        pause("put.before", 4),
+        pause("put_writes.before", 2, "L-RES"),
         {"on": {"all_paused": ["B1"]}, "do": {"release": ["B1"]}},
     ]
-    data = scenario(schedule=schedule, landmarks="langgraph-v1")
-    with pytest.raises(NotDeclared, match="occurrence 4 is at 0 landmarks"):
-        trial_scenario(batch(tmp_path, data), 1, evidence="control")
+    directory = batch(tmp_path, scenario(schedule=schedule, landmarks="langgraph-v1"))
+    record = json.loads((directory / "scenario.json").read_text(encoding="utf-8"))
+    record["schedule"][0]["landmark"] = "L-EXW"  # put_writes, but occurrence 3
+    (directory / "scenario.json").write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ScenarioError, match="landmark L-EXW is put_writes occurrence 3"):
+        trial_scenario(directory, 1, evidence="control")
+    del record["schedule"][0]["landmark"]
+    (directory / "scenario.json").write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ScenarioError, match="landmark: Field required"):
+        trial_scenario(directory, 1, evidence="control")
 
 
-def test_an_arm_at_two_landmarks_is_refused(tmp_path: Path) -> None:
+def test_the_arm_carries_the_landmark_its_step_names(tmp_path: Path) -> None:
+    """Two landmarks at one method and occurrence: the step's name decides, nothing infers it."""
     table: dict[str, Any] = yaml.safe_load(
         (LANDMARKS_ROOT / "langgraph-v1.yaml").read_text(encoding="utf-8")
     )
@@ -211,12 +225,18 @@ def test_an_arm_at_two_landmarks_is_refused(tmp_path: Path) -> None:
     root.mkdir()
     (root / "twins.yaml").write_text(yaml.safe_dump(table), encoding="utf-8")
     schedule = [
-        pause("put_writes.before", 2),
+        pause("put_writes.before", 2, "L-RES-TWIN"),
         {"on": {"all_paused": ["B1"]}, "do": {"release": ["B1"]}},
     ]
     data = scenario(schedule=schedule, landmarks="twins")
-    with pytest.raises(NotDeclared, match=r"at 2 landmarks of table twins \(L-RES, L-RES-TWIN\)"):
-        trial_scenario(batch(tmp_path, data), 1, evidence="control", landmarks_root=root)
+    directory = batch(tmp_path, data, root=root)
+    facts = trial_scenario(directory, 1, evidence="control", landmarks_root=root)
+    assert [a.landmark for a in facts.arms] == ["L-RES-TWIN"]
+    # The builder holds the step to the table again rather than trusting the loader.
+    step = parse_scenario(data, landmarks_root=root).failpoint_steps()[0][1]
+    real = load_table(LANDMARKS_ROOT / "langgraph-v1.yaml")
+    with pytest.raises(NotDeclared, match="names landmark L-RES-TWIN, which table langgraph-v1"):
+        declared._landmark(step, real)  # pyright: ignore[reportPrivateUsage]
 
 
 def test_a_table_that_is_not_there_is_refused(tmp_path: Path) -> None:
