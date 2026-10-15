@@ -96,3 +96,13 @@ def test_last_seq_names_the_last_event_written(tmp_path: Path) -> None:
         history.emit("saver.put.call")
         history.emit("saver.put.return", status="ok")
         assert history.last_seq == 1
+
+
+def test_the_worker_runs_the_pinned_saver_unless_a_labeled_mutant_is_named() -> None:
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+    from crashcourt.worker.main import _saver_class  # pyright: ignore[reportPrivateUsage]
+    from tests.mutants.savers import M3NoParent
+
+    assert _saver_class(None) is AsyncPostgresSaver
+    assert _saver_class("M3") is M3NoParent

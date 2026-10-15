@@ -44,7 +44,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from crashcourt.experiment import gitproof
+from crashcourt.experiment import controls, gitproof
 from crashcourt.experiment.fingerprint import (
     CompatibilityRule,
     fingerprint,
@@ -391,19 +391,24 @@ def aggregate(
 def instrument_ready(repo: Path, rules: Sequence[CompatibilityRule] = ()) -> InstrumentCheck:
     """The gate's instrument check: every instrument cell of the pre-registration has one pooled
     group, from batches under the same pre-registration commit, that came out as predicted, and
-    every instrument cell ran in one environment, which new evidence must then match."""
+    every instrument cell ran in one environment, which new evidence must then match. Every
+    instrument check whose evidence is a controls report (C5) must pass as committed in the
+    pre-registration commit (crashcourt.experiment.controls)."""
 
     def check(
         prereg: Preregistration, prereg_commit: str, dirs: Sequence[Path]
     ) -> InstrumentEvidence:
+        reported = controls.missing(prereg, prereg_commit, repo)
         if not dirs:
             ids = [c.id for c in prereg.cells if c.phase == "instrument"]
-            return InstrumentEvidence([f"instrument cell {i} has no batch" for i in ids], [], None)
+            cells = [f"instrument cell {i} has no batch" for i in ids]
+            return InstrumentEvidence([*cells, *reported], [], None)
         try:
             report = aggregate(dirs, repo, rules)
         except AggregationRefused as exc:
-            return InstrumentEvidence([f"instrument batches: {p}" for p in exc.problems], [], None)
-        missing: list[str] = []
+            problems = [f"instrument batches: {p}" for p in exc.problems]
+            return InstrumentEvidence([*problems, *reported], [], None)
+        missing: list[str] = list(reported)
         if report.preregistration_commit != prereg_commit:
             missing.append("the instrument batches ran under another pre-registration")
         found = {c.cell: c for c in report.cells}

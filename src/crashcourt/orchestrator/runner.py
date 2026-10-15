@@ -31,7 +31,12 @@ is dispatched; nothing reads the target database to decide an outcome.
 
 A trial is valid when every history parses, the merge finds no contradiction, every
 `client.invoke` has exactly one terminal event, every scheduled step fired, every worker's exit is
-explained, and nothing broke the protocol. Validity is about the harness, never about the target.
+explained, every whole-trial toxic was installed and removed as declared, and nothing broke the
+protocol. Validity is about the harness, never about the target.
+
+A saver mutant (control C5) runs only in an ordinary batch of a scenario no pre-registration
+lists, written outside results/: its trials are a test of the instrument, never evidence about the
+target. run.json, trial.json, and each worker.start name it.
 """
 
 from __future__ import annotations
@@ -59,7 +64,7 @@ from crashcourt.history.merge import merge
 from crashcourt.history.reader import HistoryError, read_history
 from crashcourt.history.writer import HistoryWriter, RunIdentity
 from crashcourt.manifest import Manifest
-from crashcourt.orchestrator import evidence, preregistered, topology
+from crashcourt.orchestrator import evidence, placebo, preregistered, topology
 from crashcourt.orchestrator.dispatcher import EngineReport, Note, TrialEngine, describe_status
 from crashcourt.orchestrator.workers import ProcessWorker, socket_directory
 from crashcourt.probes import DEFAULT_PG_DSN, DEFAULT_SINK_URL, DEFAULT_TOXIPROXY_URL, SystemProbes
@@ -72,8 +77,8 @@ from crashcourt.spec.records import BatchRecord
 from crashcourt.spec.scenario import (
     Exit,
     FailpointStep,
-    Pause,
     Scenario,
+    SignalSelf,
     arm_of,
     scenario_sha256,
     trial_seed,
@@ -128,6 +133,9 @@ class RunOptions:
     own_database: bool = False
     #: Instrument batch directories a pre-registered new-evidence cell rests on.
     instrument: tuple[Path, ...] = ()
+    #: A labeled saver mutant from tests/mutants/savers.py to run instead of the pinned saver
+    #: (control C5); refused for pre-registered and canonical batches.
+    saver_mutant: str | None = None
 
 
 @dataclass
@@ -283,6 +291,7 @@ class _Batch:
     sink: SinkClient
     toxiproxy: ToxiproxyClient
     sink_source: str
+    saver_mutant: str | None = None
 
 
 async def run_trial(ctx: _Batch, number: int) -> TrialResult:
@@ -323,6 +332,13 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
                 "was the batch id reused?"
             )
     reasons.extend(await asyncio.to_thread(topology.unclean, ctx.toxiproxy, ctx.routes))
+    toxics: list[dict[str, Any]] = []
+    if scenario.toxics and not reasons:
+        # Before any worker starts, so that every connection of the trial goes through them.
+        toxics, problems = await asyncio.to_thread(
+            placebo.install, ctx.toxiproxy, ctx.routes, scenario.toxics
+        )
+        reasons.extend(problems)
 
     history = HistoryWriter(directory / f"{ORCHESTRATOR}.jsonl", run=identity, proc=ORCHESTRATOR)
     socket_dir = socket_directory()
@@ -340,6 +356,7 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
             history=history,
             notes=notes,
             cwd=ctx.settings.root,
+            saver_mutant=ctx.saver_mutant,
         )
         links.append(link)
         return link
@@ -360,6 +377,9 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
             await link.close()
         history.close()
         shutil.rmtree(socket_dir, ignore_errors=True)
+        if toxics:
+            # Every worker has exited: the trial is over, and the snapshot must find none.
+            reasons.extend(await asyncio.to_thread(placebo.remove, ctx.toxiproxy, toxics))
 
     after = await _collect_sink(ctx, trial, identity, directory, reasons)
     reasons.extend(
@@ -380,7 +400,7 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
     result = assess(scenario, report, directory, reasons)
     _write_json(
         directory / "trial.json",
-        _trial_record(ctx, identity, result, report, sink_rows, sink_pid),
+        _trial_record(ctx, identity, result, report, sink_rows, sink_pid, toxics),
     )
     return result
 
@@ -459,7 +479,7 @@ def _ending_status(scenario: Scenario, worker: str, events: Sequence[Event]) -> 
     }
     for _, step in scenario.failpoint_steps():
         action = step.do
-        if step.on.worker != worker or isinstance(action, Pause):
+        if step.on.worker != worker or not isinstance(action, Exit | SignalSelf):
             continue
         hit = _fired(events, step)
         if hit is None or hit.seq not in acted:
@@ -527,6 +547,9 @@ def assess(
                 observations.append(f"op {op_id} {op.reason or 'was never sent'}")
             if op.late_result is not None:
                 observations.append(f"op {op_id}: a {op.late_result} result came after its info")
+            if op.redelivered_to is not None:
+                observations.append(f"op {op_id} was redelivered to {op.redelivered_to}")
+            observations.extend(f"op {op_id}'s stale run: {s}" for s in op.stale)
 
     # Every scheduled failpoint fired where it was declared, and none failed to act.
     for proc, evs in events.items():
@@ -609,6 +632,7 @@ def _trial_record(
     report: EngineReport | None,
     sink_rows: int,
     sink_pid: int | None,
+    toxics: list[dict[str, Any]],
 ) -> dict[str, Any]:
     histories: dict[str, Any] = {}
     for path in sorted(result.directory.glob("*.jsonl")):
@@ -635,10 +659,23 @@ def _trial_record(
         },
         "histories": histories,
         "sink": {"rows": sink_rows, "pid": sink_pid},
+        # Written only when the scenario has them, so other trials' records keep their form.
+        **({"toxics": toxics} if ctx.scenario.toxics else {}),
+        **({"saver_mutant": ctx.saver_mutant} if ctx.saver_mutant is not None else {}),
     }
 
 
 # -- the batch --------------------------------------------------------------------------------
+
+
+def require_mutant_allowed(options: RunOptions, root: Path) -> None:
+    """A saver mutant runs only in an ordinary batch written outside results/."""
+    if options.canonical:
+        raise RunRefused("a saver mutant never runs in a canonical batch")
+    results = (root / "results").resolve()
+    out = options.out.resolve()
+    if out == results or results in out.parents:
+        raise RunRefused(f"a saver mutant's batch is never written under {results}")
 
 
 def run_batch(
@@ -659,9 +696,16 @@ def run_batch(
     directory = options.out / batch
     if directory.exists():
         raise RunRefused(f"{directory} already exists; batch ids are never reused")
+    if options.saver_mutant is not None:
+        require_mutant_allowed(options, settings.root)
     # A pre-registered cell runs only through T-13's gate (crashcourt.orchestrator.preregistered).
     try:
         cell = preregistered.preregistered_cell(scenario, source, settings.root)
+        if cell is not None and options.saver_mutant is not None:
+            raise RunRefused(
+                f"a saver mutant never runs as pre-registered cell {cell.id}: its trials are "
+                "not evidence"
+            )
         authorization = (
             None
             if cell is None
@@ -773,6 +817,7 @@ def run_batch(
             # The direct path the post-trial snapshot reads (the oracle's), password removed.
             "oracle_dsn": redact(settings.direct_dsn),
             "pool": POOL_SETTINGS,
+            **({"saver_mutant": options.saver_mutant} if options.saver_mutant is not None else {}),
         },
     )
 
@@ -785,6 +830,7 @@ def run_batch(
         sink=SinkClient(settings.sink_url),
         toxiproxy=toxiproxy,
         sink_source=source_hash,
+        saver_mutant=options.saver_mutant,
     )
 
     def unchanged() -> list[str]:

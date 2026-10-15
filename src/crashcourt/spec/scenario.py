@@ -13,23 +13,44 @@ Schedule. A step is a trigger and an action:
 - `on: {fp: <point>, worker: <w>, op: <op>, occurrence: <n>}` fires in the worker, at the nth
   matching call to reach the failpoint (op may be left out to match any op of that worker). Its
   action runs there: `pause: <barrier>` parks the call until the orchestrator releases it;
-  `signal: <name>` and `exit: <status>` end the worker at that point. Every such step names its
-  `landmark:`, the audited call it arms, by id in the scenario's landmark table (`landmarks:`);
-  the landmark must be the table's for the step's method and occurrence. The checker verifies
-  every hit against it, and the name enters the scenario's hash.
+  `signal: <name>` and `exit: <status>` end the worker at that point; `none: true` does nothing,
+  so the hit is recorded and the call goes on unchanged (the placebo control's arm, C3). Every
+  failpoint step names its `landmark:`, the audited call it arms, by id in the scenario's landmark
+  table (`landmarks:`); the landmark must be the table's for the step's method and occurrence. The
+  checker verifies every hit against it, and the name enters the scenario's hash.
 - `on: {all_paused: [<barrier>, ...]}` fires in the orchestrator, once, when every named barrier
   is held at the same time. Its action is `release: [<barrier>, ...]` (one barrier or several
-  at once) or `kill: <worker>` (SIGKILL, recorded as a fault).
+  at once), `kill: <worker>` (SIGKILL, recorded as a fault), or `redeliver: {op: <op>, to: <w>}`
+  for the op whose call one of the barriers holds: the held run goes stale and w takes the op
+  over.
+- `on: {exited: <worker>}` fires in the orchestrator, once, when the worker's exit is recorded.
+  Its action is `redeliver: {op: <op>, to: <w>}` for the op the worker was running when a step
+  ended it: w, the worker's replacement, takes the op over.
+- `on: {ended: <op>}` fires in the orchestrator, once, when the op has its terminal client event.
+  Its action is `release: [<barrier>, ...]` for barriers that hold the op's stale run: the run
+  goes on after the worker that took the op over has answered.
+
+Redelivery is the harness's queue handing an op to another worker, as a job queue does when a
+consumer dies or stalls. The op keeps its id: the client invoked it once and gets one terminal
+event, from the worker that took it over. The redelivery is recorded as `dispatch.redeliver`. A
+result the stale worker sends afterwards is not a client event; the trial record notes it.
+
+Toxics. `toxics:` lists toxics installed on a worker's Toxiproxy route for the whole trial: before
+any worker starts, and removed once every worker has exited. Only the placebo is supported, a
+`latency` toxic of 0 ms with 0 jitter (C3); network fault schedules are not.
 
 Loading refuses anything that could not run as declared, before any process starts: an unknown
 failpoint, worker, op, or barrier; a failpoint step on a worker its op is not sent to; two steps
 that could fire on one call; a barrier released twice; barriers that must be held together whose
 ops are ordered one after the other; SIGSTOP at a failpoint, which nothing in a schedule can
 continue yet; a failpoint step without a landmark, or one that is not in the scenario's table at
-the step's method and occurrence, or a scenario that arms failpoints without naming its table.
+the step's method and occurrence, or a scenario that arms failpoints without naming its table; a
+redelivery whose op is not certain to be in flight on its worker when it fires.
 
 The content hash (crashcourt.spec.content) is taken over the validated model, so it names the
-scenario's meaning, not its formatting. `v` versions the format and enters the hash.
+scenario's meaning, not its formatting. `v` versions the format and enters the hash. An empty
+`toxics` list is left out of the hashed form, so a scenario without toxics hashes as it did before
+the key existed.
 
 Scenario files read booleans as YAML 1.2 does: only true and false. YAML 1.1, which PyYAML
 follows, also reads on, off, yes, and no as booleans, and would turn every step's `on:` key
@@ -43,7 +64,7 @@ import json
 import re
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, ClassVar, Literal, Self
 
 import yaml
 from pydantic import (
@@ -127,12 +148,45 @@ class Exit(_Frozen):
     exit: int = Field(ge=0, le=255, strict=True)
 
 
+class Inert(_Frozen):
+    """An arm that fires and does nothing: `none: true`."""
+
+    none: Literal[True]
+
+
 class Release(_Frozen):
     release: tuple[PathName, ...] = Field(min_length=1)
 
 
 class Kill(_Frozen):
     kill: WorkerName
+
+
+class Redelivery(_Frozen):
+    op: PathName
+    to: WorkerName
+
+
+class Redeliver(_Frozen):
+    redeliver: Redelivery
+
+
+class ExitedTrigger(_Frozen):
+    exited: WorkerName
+
+
+class EndedTrigger(_Frozen):
+    ended: PathName
+
+
+class PlaceboToxic(_Frozen):
+    """A toxic on a worker's route for the whole trial that delays nothing (C3's placebo)."""
+
+    worker: WorkerName
+    type: Literal["latency"]
+    stream: Literal["downstream", "upstream"] = "downstream"
+    latency_ms: int = Field(ge=0, le=0, strict=True)
+    jitter_ms: int = Field(ge=0, le=0, strict=True)
 
 
 def _key_of(*names: str) -> Any:
@@ -150,12 +204,15 @@ def _key_of(*names: str) -> Any:
 FailpointAction = Annotated[
     Annotated[Pause, Tag("pause")]
     | Annotated[SignalSelf, Tag("signal")]
-    | Annotated[Exit, Tag("exit")],
-    _key_of("pause", "signal", "exit"),
+    | Annotated[Exit, Tag("exit")]
+    | Annotated[Inert, Tag("none")],
+    _key_of("pause", "signal", "exit", "none"),
 ]
 BarrierAction = Annotated[
-    Annotated[Release, Tag("release")] | Annotated[Kill, Tag("kill")],
-    _key_of("release", "kill"),
+    Annotated[Release, Tag("release")]
+    | Annotated[Kill, Tag("kill")]
+    | Annotated[Redeliver, Tag("redeliver")],
+    _key_of("release", "kill", "redeliver"),
 ]
 
 
@@ -173,21 +230,37 @@ class BarrierStep(_Frozen):
     do: BarrierAction
 
 
+class ExitedStep(_Frozen):
+    on: ExitedTrigger
+    do: Redeliver
+
+
+class EndedStep(_Frozen):
+    on: EndedTrigger
+    do: Release
+
+
+#: A step the orchestrator fires (every step but a failpoint's).
+OrchestratorStep = BarrierStep | ExitedStep | EndedStep
+
+_TRIGGERS = ("fp", "all_paused", "exited", "ended")
+
+
 def _step_kind(value: object) -> str | None:
     data = value.model_dump() if isinstance(value, BaseModel) else value
     if not isinstance(data, dict):
         return None
     on: object = data.get("on")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
     if isinstance(on, dict):
-        if "fp" in on:
-            return "fp"
-        if "all_paused" in on:
-            return "all_paused"
+        return next((key for key in _TRIGGERS if key in on), None)
     return None
 
 
 Step = Annotated[
-    Annotated[FailpointStep, Tag("fp")] | Annotated[BarrierStep, Tag("all_paused")],
+    Annotated[FailpointStep, Tag("fp")]
+    | Annotated[BarrierStep, Tag("all_paused")]
+    | Annotated[ExitedStep, Tag("exited")]
+    | Annotated[EndedStep, Tag("ended")],
     Discriminator(_step_kind),
 ]
 
@@ -220,6 +293,11 @@ class Scenario(_Frozen):
     #: each step's landmark is checked against it here; the checker verifies the table against
     #: its freeze.
     landmarks: PathName | None = None
+    toxics: tuple[PlaceboToxic, ...] = ()
+
+    #: Keys left out of the hashed form while empty (crashcourt.spec.content): added after
+    #: scenarios were first hashed, so a scenario that does not use them keeps its hash.
+    OMIT_WHEN_EMPTY: ClassVar[tuple[str, ...]] = ("toxics",)
 
     @model_validator(mode="after")
     def _runs_as_declared(self, info: ValidationInfo) -> Self:
@@ -241,6 +319,18 @@ class Scenario(_Frozen):
     def barrier_steps(self) -> list[tuple[int, BarrierStep]]:
         return [(i, s) for i, s in enumerate(self.schedule) if isinstance(s, BarrierStep)]
 
+    def orchestrator_steps(self) -> list[tuple[int, OrchestratorStep]]:
+        """Every step the orchestrator fires: all but the failpoint steps."""
+        return [(i, s) for i, s in enumerate(self.schedule) if not isinstance(s, FailpointStep)]
+
+    def redeliveries(self) -> list[tuple[int, Redelivery]]:
+        """Each step that redelivers an op, and the redelivery."""
+        return [
+            (i, s.do.redeliver)
+            for i, s in enumerate(self.schedule)
+            if isinstance(s, BarrierStep | ExitedStep) and isinstance(s.do, Redeliver)
+        ]
+
 
 def arm_of(step: FailpointStep) -> Arm:
     """The failpoint arm a step installs in its worker."""
@@ -255,7 +345,14 @@ def arm_of(step: FailpointStep) -> Arm:
         return Arm(action="pause", **common)
     if isinstance(action, SignalSelf):
         return Arm(action="signal", signal=action.signal, **common)
+    if isinstance(action, Inert):
+        return Arm(action="none", **common)
     return Arm(action="exit", exit_code=action.exit, **common)
+
+
+def ends_worker(step: FailpointStep) -> bool:
+    """Whether the step's action ends its worker at the failpoint (a signal or an exit)."""
+    return isinstance(step.do, SignalSelf | Exit)
 
 
 def _duplicates(values: Iterable[str]) -> list[str]:
@@ -298,8 +395,14 @@ def _problems(s: Scenario) -> list[str]:
                 f"(use {START!r} or the id of an op above it)"
             )
         ops[op.id] = op
-    for worker in sorted(workers - {op.worker for op in s.ops}):
+    taking_over = {redelivery.to for _, redelivery in s.redeliveries()}
+    for worker in sorted(workers - {op.worker for op in s.ops} - taking_over):
         problems.append(f"worker {worker} is sent no op")
+    for toxic in s.toxics:
+        if toxic.worker not in workers:
+            problems.append(f"a toxic is on {toxic.worker}, which is not a worker")
+    for key in _duplicates(f"{t.worker} {t.stream}" for t in s.toxics):
+        problems.append(f"two toxics on {key}")
 
     barriers: dict[str, FailpointStep] = {}
     arms: dict[tuple[str, str], list[FailpointStep]] = {}
@@ -365,12 +468,121 @@ def _problems(s: Scenario) -> list[str]:
                 elif name not in names:
                     problems.append(f"{where}: releases {name}, which its trigger does not hold")
             released.extend(action.release)
-        elif action.kill not in workers:
+        elif isinstance(action, Kill) and action.kill not in workers:
             problems.append(f"{where}: {action.kill} is not a worker")
+    for index, step in s.orchestrator_steps():
+        if isinstance(step, EndedStep):
+            for name in step.do.release:
+                if name not in barriers:
+                    problems.append(f"step {index}: barrier {name} is not paused by any step")
+            released.extend(step.do.release)
     for name in _duplicates(released):
         problems.append(f"barrier {name} is released by two steps")
     if not problems:
         problems.extend(_order_independence(s, barriers, before))
+    if not problems:
+        problems.extend(_redelivery_problems(s, ops, barriers))
+    return problems
+
+
+def _ending_steps(
+    s: Scenario, barriers: dict[str, FailpointStep]
+) -> dict[str, tuple[int, str | None]]:
+    """Each worker a step ends, with that step and the op whose call it ends the worker in."""
+    found: dict[str, tuple[int, str | None]] = {}
+    for index, step in enumerate(s.schedule):
+        if isinstance(step, FailpointStep) and ends_worker(step):
+            found.setdefault(step.on.worker, (index, step.on.op))
+        elif isinstance(step, BarrierStep) and isinstance(step.do, Kill):
+            worker = step.do.kill
+            held = [
+                barriers[n].on.op for n in step.on.all_paused if barriers[n].on.worker == worker
+            ]
+            found.setdefault(worker, (index, held[0] if held else None))
+    return found
+
+
+def _redelivery_problems(
+    s: Scenario, ops: dict[str, Op], barriers: dict[str, FailpointStep]
+) -> list[str]:
+    """Refuse a redelivery whose op is not certain to be in flight on its worker when it fires,
+    and a release after an op ends whose barrier is not certain to hold that op's stale run.
+
+    - `exited: w` redelivers the op w's ending step ends it in: a failpoint step's op, or the op a
+      kill's barrier holds. Any other op of w has ended before (only_before) or never started.
+    - `all_paused` redelivers the op one of its barriers holds on the op's own worker.
+    - `ended: op` releases only barriers that hold the op's stale run: barriers of that op, held
+      by the step that took it over, which nothing else releases.
+    - An op is redelivered once, to another worker that no step ends.
+    """
+    problems: list[str] = []
+    enders = _ending_steps(s, barriers)
+    taken: dict[str, int] = {}
+    for index, step in s.orchestrator_steps():
+        where = f"step {index}"
+        if isinstance(step, EndedStep):
+            ended = ops.get(step.on.ended)
+            if ended is None:
+                problems.append(f"{where}: op {step.on.ended} is not declared")
+                continue
+            takeover = next(
+                (
+                    st
+                    for _, st in s.barrier_steps()
+                    if isinstance(st.do, Redeliver) and st.do.redeliver.op == ended.id
+                ),
+                None,
+            )
+            if takeover is None:
+                problems.append(
+                    f"{where}: {ended.id} is not taken over from a held call, so what it "
+                    "releases is not certain to be held when it ends"
+                )
+                continue
+            for name in step.do.release:
+                if name not in takeover.on.all_paused or barriers[name].on.op != ended.id:
+                    problems.append(f"{where}: barrier {name} does not hold {ended.id}'s stale run")
+            continue
+        if not isinstance(step.do, Redeliver):
+            continue
+        redelivery = step.do.redeliver
+        op = ops.get(redelivery.op)
+        if op is None:
+            problems.append(f"{where}: op {redelivery.op} is not declared")
+            continue
+        if redelivery.to not in s.workers:
+            problems.append(f"{where}: {redelivery.to} is not a worker")
+            continue
+        if redelivery.to == op.worker:
+            problems.append(f"{where}: {op.id} is sent to {op.worker} already")
+        if redelivery.to in enders:
+            problems.append(
+                f"{where}: step {enders[redelivery.to][0]} ends {redelivery.to}, so it may be gone "
+                f"when {op.id} reaches it"
+            )
+        if op.id in taken:
+            problems.append(f"{where}: {op.id} is redelivered by step {taken[op.id]} too")
+        taken.setdefault(op.id, index)
+        if isinstance(step, ExitedStep):
+            ending = enders.get(step.on.exited)
+            if step.on.exited != op.worker:
+                problems.append(f"{where}: {op.id} is sent to {op.worker}, not {step.on.exited}")
+            elif ending is None:
+                problems.append(
+                    f"{where}: no step ends {op.worker}, so when it exits is up to the harness"
+                )
+            elif ending[1] != op.id:
+                problems.append(
+                    f"{where}: step {ending[0]} ends {op.worker} in {ending[1]}, not in {op.id}"
+                )
+        elif not any(
+            barriers[name].on.worker == op.worker and barriers[name].on.op == op.id
+            for name in step.on.all_paused
+        ):
+            problems.append(
+                f"{where}: none of its barriers holds a call of {op.id} on {op.worker}, so {op.id} "
+                "is not certain to be in flight"
+            )
     return problems
 
 
@@ -465,7 +677,7 @@ def _order_independence(
             else:
                 only_before(f"step {index}", worker, {str(on.op) for on in parked})
     for index, step in s.failpoint_steps():
-        if isinstance(step.do, Pause):
+        if not ends_worker(step):
             continue
         kills.setdefault(step.on.worker, []).append(index)
         if step.on.op is None:

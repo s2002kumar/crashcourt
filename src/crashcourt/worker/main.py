@@ -9,6 +9,10 @@ with the saver's documented settings (autocommit, prepare_threshold=0, dict_row)
 says hello. Each run executes as its own task, so the worker keeps reading while a run is parked
 at a barrier. Every run gets exactly one result.
 
+A saver mutant (control C5) replaces the pinned saver only when the runner names one with
+`--saver-mutant`: a labeled, test-only defect from tests/mutants/savers.py, which nothing else
+imports. The runner refuses to name one for a pre-registered or canonical batch.
+
 Exit statuses: 0 after shutdown; 2 when the orchestrator broke the protocol; 3 when the worker
 could not start; 4 when the control connection was lost; 5 when the worker's own code failed
 (a run completed but its output could not be reported). Any other ending (a signal, an exit armed
@@ -62,6 +66,8 @@ HARNESS_EXITS: Mapping[int, str] = {
 }
 
 DSN_ENV = "CRASHCOURT_WORKER_DSN"
+#: Where the labeled saver mutants live (control C5); imported only when a run names one.
+MUTANTS_MODULE = "tests.mutants.savers"
 #: Each scenario workload: its module, and the function there that builds its graph from a
 #: checkpointer and the worker's harness. The module also has summarize(output).
 WORKLOADS: Mapping[str, tuple[str, str]] = {
@@ -83,6 +89,8 @@ class WorkerConfig:
     sink_url: str
     #: How long to wait for the pool's first connections.
     connect_timeout: float = 30.0
+    #: A labeled saver mutant to run instead of the pinned saver (control C5 only).
+    saver_mutant: str | None = None
 
 
 def _fatal(status: int, message: str) -> NoReturn:
@@ -224,6 +232,21 @@ def _workload(name: str) -> tuple[ModuleType, str]:
     return importlib.import_module(module), builder
 
 
+def _saver_class(mutant: str | None) -> type[Any]:
+    """The pinned saver, or the labeled mutant of it the run names."""
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+    if mutant is None:
+        return AsyncPostgresSaver
+    try:
+        found = importlib.import_module(MUTANTS_MODULE).MUTANTS[mutant]
+    except (ImportError, AttributeError, KeyError) as exc:
+        _fatal(EXIT_STARTUP, f"no saver mutant {mutant!r} in {MUTANTS_MODULE}: {exc!r}")
+    if not (isinstance(found, type) and issubclass(found, AsyncPostgresSaver)):
+        _fatal(EXIT_STARTUP, f"saver mutant {mutant!r} is not an AsyncPostgresSaver")
+    return found
+
+
 def _arm(message: ArmMessage, worker: str) -> Arm:
     try:
         return Arm(
@@ -246,13 +269,13 @@ async def _connect(path: Path) -> tuple[asyncio.StreamReader, asyncio.StreamWrit
 
 
 async def serve(config: WorkerConfig) -> int:
-    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     from psycopg.rows import dict_row
     from psycopg_pool import AsyncConnectionPool
 
     from crashcourt.failpoints.saver import wrap
 
     workload, builder = _workload(config.workload)
+    saver_class = _saver_class(config.saver_mutant)
     loop = asyncio.get_running_loop()
     try:
         reader, writer = await _connect(config.socket)
@@ -272,7 +295,7 @@ async def serve(config: WorkerConfig) -> int:
         await pool.open(wait=True, timeout=config.connect_timeout)
     except Exception as exc:  # noqa: BLE001 - any failure to connect ends the worker the same way
         _fatal(EXIT_STARTUP, f"cannot open the connection pool: {type(exc).__name__}: {exc}")
-    saver = wrap(AsyncPostgresSaver(pool), history=history, registry=registry, barrier=barrier)
+    saver = wrap(saver_class(pool), history=history, registry=registry, barrier=barrier)
     from crashcourt.sink.client import SinkClient
     from crashcourt.workloads.harness import Harness
 
@@ -331,6 +354,7 @@ def parse_args(argv: Sequence[str] | None = None) -> WorkerConfig:
     parser.add_argument("--seed", required=True)
     parser.add_argument("--workload", required=True)
     parser.add_argument("--sink-url", required=True)
+    parser.add_argument("--saver-mutant", default=None)
     args = parser.parse_args(argv)
     dsn = os.environ.get(DSN_ENV)
     if not dsn:
@@ -343,6 +367,7 @@ def parse_args(argv: Sequence[str] | None = None) -> WorkerConfig:
         workload=args.workload,
         dsn=dsn,
         sink_url=args.sink_url,
+        saver_mutant=args.saver_mutant,
     )
 
 

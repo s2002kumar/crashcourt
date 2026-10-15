@@ -15,6 +15,13 @@ then lose its acknowledgment. What actually happened is the oracle's to say, nev
 An op is sent once the op it runs after has its terminal event (or at the start). An op whose
 worker is gone by then is never sent and has no client events: nothing was invoked.
 
+Redelivery. A schedule step can hand an op in flight to another worker (`dispatch.redeliver`), as
+a job queue does when a consumer dies or stalls. The op keeps its id and its single invoke; from
+then on it belongs to the new worker, whose result is its terminal event, and its timeout starts
+again. The worker it was taken from may still be running it, held at a barrier: that run is stale.
+A result it sends later is noted, never a client event, and the trial does not end while a stale
+run that is not held is still going (it gets the op's timeout once it is released).
+
 Everything the engine learns arrives as a note on one queue (a message, a lost connection, a
 process exit, a timeout) and is handled one at a time, so the bookkeeping has no races. Barrier
 steps fire on hits alone; timeouts only bound how long the client waits and never order anything.
@@ -34,7 +41,16 @@ from crashcourt.history.writer import HistoryWriter
 from crashcourt.orchestrator.barriers import BarrierBook, Held, ScheduleError
 from crashcourt.spec.events import EventKind
 from crashcourt.spec.protocol import Hello, Hit, ReleaseMessage, Result, Run, Shutdown
-from crashcourt.spec.scenario import START, Op, Release, Scenario
+from crashcourt.spec.scenario import (
+    START,
+    EndedStep,
+    ExitedStep,
+    Op,
+    Redeliver,
+    Redelivery,
+    Release,
+    Scenario,
+)
 
 
 class StartError(Exception):
@@ -74,13 +90,21 @@ class Deadline:
 
 
 @dataclass(frozen=True)
+class StaleDeadline:
+    """A stale run (one whose op was redelivered) was released and has had its time."""
+
+    worker: str
+    op_id: str
+
+
+@dataclass(frozen=True)
 class Grace:
     """A worker's connection ended (or it was asked to shut down) and it has had its time."""
 
     worker: str
 
 
-Note = Received | Disconnected | Exited | Deadline | Grace
+Note = Received | Disconnected | Exited | Deadline | StaleDeadline | Grace
 
 
 class WorkerLink(Protocol):
@@ -167,6 +191,12 @@ _TERMINAL: dict[Outcome, EventKind] = {
 class OpRecord:
     op: Op
     thread_id: str
+    #: The worker the op belongs to now: the one it was sent to, or the one it was redelivered to.
+    worker: str = ""
+    #: Workers the op was redelivered away from, in order.
+    former: list[str] = field(default_factory=list[str])
+    #: What each stale run did: `<worker> answered <status>`, or why it gave no result.
+    stale: list[str] = field(default_factory=list[str])
     state: OpState = "pending"
     outcome: Outcome | None = None
     reason: str | None = None
@@ -197,6 +227,10 @@ class OpReport:
     outcome: Outcome | None
     reason: str | None
     late_result: str | None
+    #: The worker the op was redelivered to, if it was.
+    redelivered_to: str | None = None
+    #: What the run on the worker it was taken from did afterwards.
+    stale: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -213,6 +247,7 @@ class WorkerReport:
 class EngineReport:
     ops: dict[str, OpReport]
     workers: dict[str, WorkerReport]
+    #: Orchestrator steps (every step but a failpoint's), by schedule index.
     fired_steps: list[int]
     unfired_steps: list[int]
     #: The worker broke the protocol or the schedule.
@@ -239,12 +274,19 @@ class TrialEngine:
         self.notes: asyncio.Queue[Note] = asyncio.Queue()
         self.book = BarrierBook(scenario)
         self.ops: dict[str, OpRecord] = {
-            op.id: OpRecord(op, f"{thread_prefix}/{op.thread}") for op in scenario.ops
+            op.id: OpRecord(op, f"{thread_prefix}/{op.thread}", op.worker) for op in scenario.ops
         }
         self.workers: dict[str, WorkerRecord] = {}
         self.violations: list[str] = []
         self.problems: list[str] = []
         self._shutting_down = False
+        steps = scenario.orchestrator_steps()
+        self._exit_steps = [(i, s) for i, s in steps if isinstance(s, ExitedStep)]
+        self._end_steps = [(i, s) for i, s in steps if isinstance(s, EndedStep)]
+        #: Orchestrator steps that fired, in firing order.
+        self._fired: list[int] = []
+        #: Stale runs not yet answered, by (worker, op): the timer bounding one once released.
+        self._stale: dict[tuple[str, str], asyncio.TimerHandle | None] = {}
 
     async def run(self) -> EngineReport:
         try:
@@ -311,6 +353,8 @@ class TrialEngine:
             await self._on_exited(note.worker, note.returncode)
         elif isinstance(note, Deadline):
             await self._on_deadline(note.op_id)
+        elif isinstance(note, StaleDeadline):
+            self._on_stale_deadline(note)
         else:
             await self._on_grace(note.worker)
 
@@ -323,23 +367,66 @@ class TrialEngine:
         if self._shutting_down:
             return  # a run the client gave up on parked again; nothing fires after the trial
         for index, step in self.book.due():
+            self._fired.append(index)
             action = step.do
             if isinstance(action, Release):
-                held = self.book.release(action.release)
-                self._check_late_release(index, held)
-                # Every release is logged before any is sent: they go out together.
-                for h in held:
-                    data: dict[str, JsonValue] = {
-                        "proc": h.worker,
-                        "hit_seq": h.hit_seq,
-                        "barrier": h.barrier,
-                        "step": index,
-                    }
-                    self.history.emit("fp.release", data=data)
-                for h in held:
-                    await self._send(h.worker, ReleaseMessage(hit_seq=h.hit_seq))
+                await self._release(index, action.release)
+            elif isinstance(action, Redeliver):
+                await self._redeliver(index, action.redeliver)
             else:
                 await self._kill(action.kill, kill_fault_id(index))
+
+    async def _release(self, index: int, barriers: tuple[str, ...]) -> None:
+        held = self.book.release(barriers)
+        self._check_late_release(index, held)
+        # Every release is logged before any is sent: they go out together.
+        for h in held:
+            data: dict[str, JsonValue] = {
+                "proc": h.worker,
+                "hit_seq": h.hit_seq,
+                "barrier": h.barrier,
+                "step": index,
+            }
+            self.history.emit("fp.release", data=data)
+        for h in held:
+            key = (h.worker, str(h.op_id))
+            if key in self._stale:
+                # A released stale run is waited for, but only for as long as a run is.
+                loop = asyncio.get_running_loop()
+                self._stale[key] = loop.call_later(
+                    self.scenario.timeouts.run_s,
+                    self.notes.put_nowait,
+                    StaleDeadline(h.worker, str(h.op_id)),
+                )
+            await self._send(h.worker, ReleaseMessage(hit_seq=h.hit_seq))
+
+    async def _redeliver(self, index: int, redelivery: Redelivery) -> None:
+        """Hand an op in flight to another worker; its run on the old worker, if any, is stale."""
+        record = self.ops[redelivery.op]
+        to = redelivery.to
+        if record.state != "sent":
+            self.problems.append(
+                f"step {index}: {record.op.id} was {record.state}, not in flight, when it was to "
+                "be redelivered"
+            )
+            return
+        if not self._usable(to):
+            self.problems.append(
+                f"step {index}: {to} was not running when {record.op.id} was to be redelivered"
+            )
+            return
+        old = record.worker
+        data: dict[str, JsonValue] = {"to": to, "from": old, "step": index}
+        self.history.emit(
+            "dispatch.redeliver", op_id=record.op.id, thread_id=record.thread_id, data=data
+        )
+        previous = self.workers[old]
+        if previous.connected and not previous.exited:
+            self._stale[(old, record.op.id)] = None
+        record.former.append(old)
+        record.worker = to
+        self._start_deadline(record)
+        await self._send(to, self._run(record))
 
     def _check_late_release(self, index: int, released: list[Held]) -> None:
         """A run released after its client gave up resumes beside whatever was sent since; the
@@ -366,7 +453,14 @@ class TrialEngine:
 
     async def _on_result(self, worker: str, result: Result) -> None:
         record = self.ops.get(result.op_id)
-        if record is None or record.op.worker != worker or record.state in ("pending", "skipped"):
+        if record is not None and worker in record.former and worker != record.worker:
+            # The run the op was taken from: noted, never the client's answer.
+            record.stale.append(f"{worker} answered {result.status}")
+            handle = self._stale.pop((worker, result.op_id), None)
+            if handle is not None:
+                handle.cancel()
+            return
+        if record is None or record.worker != worker or record.state in ("pending", "skipped"):
             self.violations.append(f"{worker} sent a result for {result.op_id}, never sent to it")
             return
         if record.state == "done":
@@ -386,7 +480,7 @@ class TrialEngine:
         else:
             data["error_type"] = result.error_type
             self._terminal(record, "fail", data=data, error=result.error)
-        await self._dispatch_after(record.op.id)
+        await self._ended(record.op.id)
 
     async def _on_deadline(self, op_id: str) -> None:
         record = self.ops[op_id]
@@ -394,7 +488,7 @@ class TrialEngine:
             return
         record.timed_out = True
         reason = f"no result within {self.scenario.timeouts.run_s:g} s"
-        if not self.book.parked(op_id):
+        if not self.book.parked(op_id, record.worker):
             # Parked at a barrier, the run cannot move until a step releases it, so giving up on
             # it orders nothing. Still running, it races whatever is sent next: from here on a
             # timer, not the schedule, decides the order.
@@ -402,8 +496,20 @@ class TrialEngine:
                 f"{op_id} passed its timeout while running, not parked at a barrier; what "
                 "followed was ordered by a timer"
             )
-        self._terminal(record, "info", data={"worker": record.op.worker, "reason": reason})
-        await self._dispatch_after(op_id)
+        self._terminal(record, "info", data={"worker": record.worker, "reason": reason})
+        await self._ended(op_id)
+
+    def _on_stale_deadline(self, note: StaleDeadline) -> None:
+        key = (note.worker, note.op_id)
+        if key not in self._stale:
+            return
+        del self._stale[key]
+        self.ops[note.op_id].stale.append(f"{note.worker} gave no result in time")
+        self.problems.append(
+            f"{note.op_id}'s stale run on {note.worker} gave no result within "
+            f"{self.scenario.timeouts.run_s:g} s of its release; what followed was ordered by a "
+            "timer"
+        )
 
     async def _on_disconnected(self, note: Disconnected) -> None:
         record = self.workers[note.worker]
@@ -425,6 +531,17 @@ class TrialEngine:
         data: dict[str, JsonValue] = {"proc": worker, "pid": record.link.pid}
         data.update(describe_status(returncode))
         self.history.emit("worker.exit", data=data)
+        for key in [key for key in self._stale if key[0] == worker]:
+            handle = self._stale.pop(key)
+            if handle is not None:
+                handle.cancel()
+            self.ops[key[1]].stale.append(f"{worker} exited before answering")
+        if not self._shutting_down:
+            # The replacement takes the op over before it could end as info for want of a result.
+            for index, step in self._exit_steps:
+                if step.on.exited == worker and index not in self._fired:
+                    self._fired.append(index)
+                    await self._redeliver(index, step.do.redeliver)
         if not record.connected:
             await self._finalize(worker)
         else:
@@ -474,11 +591,11 @@ class TrialEngine:
             if status is not None
             else f"lost the control connection to {worker}"
         )
-        unanswered = [r for r in self.ops.values() if r.op.worker == worker and r.state == "sent"]
+        unanswered = [r for r in self.ops.values() if r.worker == worker and r.state == "sent"]
         for op in unanswered:
             self._terminal(op, "info", data={"worker": worker, "reason": reason})
         for op in unanswered:
-            await self._dispatch_after(op.op.id)
+            await self._ended(op.op.id)
 
     # -- the client view --------------------------------------------------------------------
 
@@ -508,6 +625,24 @@ class TrialEngine:
         reason = data.get("reason")
         record.reason = reason if isinstance(reason, str) else error
 
+    async def _ended(self, op_id: str) -> None:
+        """The op has its terminal event: fire the steps it triggers, then send what follows it."""
+        if not self._shutting_down:
+            for index, step in self._end_steps:
+                if step.on.ended != op_id or index in self._fired:
+                    continue
+                self._fired.append(index)
+                held = {h.barrier for h in self.book.held}
+                missing = [name for name in step.do.release if name not in held]
+                if missing:
+                    self.problems.append(
+                        f"step {index}: {', '.join(missing)} not held when {op_id} ended"
+                    )
+                present = tuple(name for name in step.do.release if name in held)
+                if present:
+                    await self._release(index, present)
+        await self._dispatch_after(op_id)
+
     async def _dispatch_after(self, op_id: str) -> None:
         for op in self.scenario.ops:
             if op.after == op_id:
@@ -530,21 +665,34 @@ class TrialEngine:
             "dispatch.send", op_id=op.id, thread_id=record.thread_id, data={"to": op.worker}
         )
         record.state = "sent"
-        loop = asyncio.get_running_loop()
-        record.timer = loop.call_later(
-            self.scenario.timeouts.run_s, self.notes.put_nowait, Deadline(op.id)
-        )
-        run = Run(
+        self._start_deadline(record)
+        # If the send fails, the worker's death ends the op as info.
+        await self._send(op.worker, self._run(record))
+
+    def _run(self, record: OpRecord) -> Run:
+        op = record.op
+        return Run(
             op_id=op.id,
             thread_id=record.thread_id,
             durability=self.scenario.target.durability,
             input=op.input,
             resume=op.resume,
         )
-        await self._send(op.worker, run)  # if it fails, the worker's death ends the op as info
+
+    def _start_deadline(self, record: OpRecord) -> None:
+        if record.timer is not None:
+            record.timer.cancel()
+        loop = asyncio.get_running_loop()
+        record.timer = loop.call_later(
+            self.scenario.timeouts.run_s, self.notes.put_nowait, Deadline(record.op.id)
+        )
 
     def _resolved(self) -> bool:
-        return all(r.state in ("done", "skipped") for r in self.ops.values())
+        """Every op has ended or was never sent, and every stale run still going has answered.
+        A stale run held at a barrier is not waited for: nothing would release it."""
+        if not all(r.state in ("done", "skipped") for r in self.ops.values()):
+            return False
+        return all(self.book.parked(op_id, worker) for worker, op_id in self._stale)
 
     # -- the end of the trial ---------------------------------------------------------------
 
@@ -554,6 +702,11 @@ class TrialEngine:
             if record.timer is not None:
                 record.timer.cancel()
                 record.timer = None
+        for (worker, op_id), handle in self._stale.items():
+            if handle is not None:
+                handle.cancel()
+            self.ops[op_id].stale.append(f"{worker} gave no result before the trial ended")
+        self._stale.clear()
         for name, record in self.workers.items():
             if record.connected and not record.exited:
                 record.shutdown_sent = await self._send(name, Shutdown())
@@ -571,6 +724,8 @@ class TrialEngine:
                 outcome=r.outcome,
                 reason=r.reason,
                 late_result=r.late_result,
+                redelivered_to=r.worker if r.former else None,
+                stale=tuple(r.stale),
             )
             for op_id, r in self.ops.items()
         }
@@ -587,8 +742,10 @@ class TrialEngine:
         return EngineReport(
             ops=ops,
             workers=workers,
-            fired_steps=self.book.fired,
-            unfired_steps=self.book.unfired,
+            fired_steps=list(self._fired),
+            unfired_steps=[
+                i for i, _ in self.scenario.orchestrator_steps() if i not in self._fired
+            ],
             violations=list(self.violations),
             problems=list(self.problems),
         )

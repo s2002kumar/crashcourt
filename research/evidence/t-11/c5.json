@@ -1,0 +1,154 @@
+{
+  "v": 2,
+  "control": "C5",
+  "requirement": "Saver mutants, as revised before finalization after the original measurement failed (M1 0 of 20, M2 0 of 20, M5 on W1 INVALID by the I3 alarm; research/evidence/t-11/c5-original.json): M3 on W1 approve caught by I5a, M4 on W1 approve caught by I1b, and M5 on W5 sequential caught by I6b, each in at least 19 of 20 trials. M1 and M2 are NOT EXERCISED by the first matrix's workloads, out of scope for its instrument validation, and never counted or shown as passing: M1's dropped row is read back only after a crash that follows its commit, which is K1b's new-evidence question, and no first-matrix workload reads a checkpoint by id (M2).",
+  "threshold": {
+    "caught": 19,
+    "trials": 20
+  },
+  "specified": 5,
+  "applicable": 3,
+  "coverage": "3 of the 5 specified saver mutants are applicable to the first matrix and measured; M1, M2 are NOT_EXERCISED and are not counted as passing",
+  "checker": {
+    "version": "v1",
+    "checker_sha256": "d80951681c2b8656a08647d3ba60ee3b9b025e1ff118d83796ccdb433f111097",
+    "frozen_md_sha256": "ddff87d4d487ef211d385279951eaa2be37c71394956fcc0c4ff541667338e12",
+    "registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5"
+  },
+  "run_commit": "e389ae9bf23311aeb403fc3bd19a0ca12df73996",
+  "sources": {
+    "tests/mutants/savers.py": "339d4d10505c874f8ec3b70af6a8bd1bd93f99a371e5ed434e2de43d481cf9e8",
+    "tests/mutants/c5.py": "8b24de846b18ee714c26d4d6e6f06afd6441202169649cd345b99481c2da2b90",
+    "scenarios/w1-approve.yaml": "f7a84ada7a59cbc42c97a511811f6e6c8d0dd319dd9cb2c291c174e241b3d991",
+    "scenarios/w5-sequential.yaml": "458a96577fc5963d70857422056ca0cf74464ebd6819ed4dff685460c97b4711"
+  },
+  "manifest": {
+    "clause_registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5",
+    "compose_version": "2.39.4-desktop.1",
+    "docker_kernel": "6.6.87.2-microsoft-standard-WSL2",
+    "docker_version": "28.4.0",
+    "generated_at": "2026-10-12T20:57:36+00:00",
+    "git_dirty": false,
+    "git_sha": "e389ae9bf23311aeb403fc3bd19a0ca12df73996",
+    "image_ids": {
+      "postgres": "sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722",
+      "toxiproxy": "sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e"
+    },
+    "images": {
+      "postgres": "postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722",
+      "toxiproxy": "ghcr.io/shopify/toxiproxy:2.12.0@sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e"
+    },
+    "libpq_build_version": "18.6",
+    "libpq_version": "18.6",
+    "lockfile_sha256": "19a0dd0df75a86126dec1b617422001fedb30ac18978c7fe31585ce52a92702e",
+    "machine": "x86_64",
+    "os_release": "6.6.87.2-microsoft-standard-WSL2",
+    "os_system": "Linux",
+    "packages": {
+      "langgraph": "1.2.12",
+      "langgraph-checkpoint": "4.2.0",
+      "langgraph-checkpoint-conformance": "0.0.2",
+      "langgraph-checkpoint-postgres": "3.1.2",
+      "langgraph-checkpoint-sqlite": "3.1.1",
+      "langgraph-prebuilt": "1.1.0",
+      "langgraph-sdk": "0.4.5",
+      "psycopg": "3.3.6",
+      "psycopg-binary": "3.3.6",
+      "psycopg-pool": "3.3.3"
+    },
+    "postgres": {
+      "default_transaction_isolation": "read committed",
+      "fsync": "on",
+      "max_connections": "100",
+      "server_version": "18.6 (Debian 18.6-1.pgdg13+2)",
+      "synchronous_commit": "on",
+      "track_commit_timestamp": "on"
+    },
+    "psycopg_impl": "binary",
+    "psycopg_wheel": "cp312-cp312-manylinux2014_x86_64,cp312-cp312-manylinux_2_17_x86_64",
+    "python_implementation": "CPython",
+    "python_version": "3.12.13",
+    "runner": "local",
+    "schema_version": 1,
+    "sink_clock_offset_ns": 1350942,
+    "spec_sha256": "c6560f855c0bf80d9d1b18cd1407157dd619d84bc7e2b14dd7e1591f3cb45258",
+    "toxiproxy_version": "2.12.0"
+  },
+  "mutants": [
+    {
+      "id": "M3",
+      "defect": "put stores no parent",
+      "target": "I5a",
+      "scenario": "scenarios/w1-approve.yaml",
+      "batch": "c5-M3-20261012T205735Z",
+      "scenario_sha256": "498c98102bd53f0c737f8af97ced18ca8426bdc67ab0f34541586ef8486e5f52",
+      "manifest_sha256": "423a4f83fc09ed917037b4f007681c89886ff4cb1dc0810626305dea2cffb5ca",
+      "trials": 20,
+      "valid": 20,
+      "caught": 20,
+      "target_outcomes": {
+        "GAP": 20
+      },
+      "invalid": {},
+      "other_anomalies": {
+        "I8": 20
+      }
+    },
+    {
+      "id": "M4",
+      "defect": "the second put of each op is written in a transaction whose commit fails; the error is swallowed and the put reports success",
+      "target": "I1b",
+      "scenario": "scenarios/w1-approve.yaml",
+      "batch": "c5-M4-20261012T205735Z",
+      "scenario_sha256": "498c98102bd53f0c737f8af97ced18ca8426bdc67ab0f34541586ef8486e5f52",
+      "manifest_sha256": "0619d7bab46be75580e258e561c284db78434b22363690c2a4d27d45533b7fbd",
+      "trials": 20,
+      "valid": 20,
+      "caught": 20,
+      "target_outcomes": {
+        "VIOLATION_CANDIDATE": 20
+      },
+      "invalid": {},
+      "other_anomalies": {
+        "I5b": 20,
+        "I8": 20
+      }
+    },
+    {
+      "id": "M5",
+      "defect": "the latest-checkpoint read returns the head's parent",
+      "target": "I6b",
+      "scenario": "scenarios/w5-sequential.yaml",
+      "batch": "c5-M5-20261012T205735Z",
+      "scenario_sha256": "d65ea3159cfe7b61b4f2fd3a80b47a7f475f5b1116fe2034b01ff9d252138e7b",
+      "manifest_sha256": "9a354131ef85f58abd770a7c159e947fab535d0e96c879865dcefc2dacc1f77b",
+      "trials": 20,
+      "valid": 20,
+      "caught": 20,
+      "target_outcomes": {
+        "GAP": 20
+      },
+      "invalid": {},
+      "other_anomalies": {
+        "I5a": 20
+      }
+    }
+  ],
+  "excluded": [
+    {
+      "id": "M1",
+      "defect": "a put_writes call that writes two or more rows does not store its second row",
+      "target": "I7a",
+      "status": "NOT_EXERCISED",
+      "reason": "not exercised by the first matrix's workloads: a dropped pending-write row is read back only by a run that takes an op over after a crash that follows the row's commit, and that schedule is K1b's new-evidence question, which no control may preview"
+    },
+    {
+      "id": "M2",
+      "defect": "get_tuple by checkpoint id returns None",
+      "target": "I5a",
+      "status": "NOT_EXERCISED",
+      "reason": "not exercised by the first matrix's workloads: none of them reads a checkpoint by id"
+    }
+  ],
+  "applicable_passed": true
+}

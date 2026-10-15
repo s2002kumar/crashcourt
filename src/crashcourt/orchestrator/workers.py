@@ -20,7 +20,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import IO, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
 from crashcourt.faults import signals
 from crashcourt.history.writer import HistoryWriter, RunIdentity
@@ -145,6 +145,7 @@ class ProcessWorker:
         history: HistoryWriter,
         notes: asyncio.Queue[Note],
         cwd: Path,
+        saver_mutant: str | None = None,
     ) -> None:
         self.name = name
         self._history = history
@@ -176,6 +177,7 @@ class ProcessWorker:
             workload,
             "--sink-url",
             sink_url,
+            *(("--saver-mutant", saver_mutant) if saver_mutant is not None else ()),
         ]
         self.popen: subprocess.Popen[Any] = subprocess.Popen(
             argv,
@@ -187,10 +189,15 @@ class ProcessWorker:
             start_new_session=True,
         )
         self.pid = self.popen.pid
-        history.emit(
-            "worker.start",
-            data={"proc": name, "pid": self.pid, "proxy": route.proxy, "port": route.port},
-        )
+        data: dict[str, JsonValue] = {
+            "proc": name,
+            "pid": self.pid,
+            "proxy": route.proxy,
+            "port": route.port,
+        }
+        if saver_mutant is not None:
+            data["saver_mutant"] = saver_mutant  # a test-only defect: never evidence
+        history.emit("worker.start", data=data)
         loop = asyncio.get_running_loop()
         self._exited: asyncio.Future[int] = loop.create_future()
         self._waiter = asyncio.ensure_future(asyncio.to_thread(self.popen.wait))

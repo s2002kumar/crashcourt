@@ -43,7 +43,10 @@ The JSON block at the end is the binding part; the prose and the table explain i
   artifact and saver mutants (C5), checker determinism, transparency (C4), the sequential reference (C9), the
   clause registry (C6), environment equality (C7), the fault primitives' self-test, and the oracle's
   independence from the faults. Replay fidelity (C8) and the fixed-variant control (C10) apply to a candidate
-  finding during escalation, not to a batch, so they are not listed here.
+  finding during escalation, not to a batch, so they are not listed here. C5's evidence is the path of its
+  controls report, which the gate reads before any new evidence: its requirement must be the methodology's
+  words exactly (`crashcourt.experiment.controls.C5_REQUIREMENT`), and the report must hold its exclusions
+  beside its results (revised 2026-10-12, below).
 
 ## How it is enforced
 
@@ -143,7 +146,26 @@ My rulings on T-10's readings, applied here before the freeze:
 - **P6.** K1b, N4, A2, and A3's I2 cite LG-PW-CRASH: NO_ANOMALY_UNSPECIFIED when the committed writes are
   reused, GAP on a re-run.
 
+## Rulings applied (2026-10-12)
+
+- **C5, revised before finalization.** The original C5 measurement failed as specified
+  (research/evidence/t-11/c5-original.json, kept as it was; 20 trials per mutant on W1 approve): M1 0 of
+  20, M2 0 of 20, M3 20 of 20, M4 20 of 20, and M5 INVALID in every trial because checker v1's I3 alarm
+  fires before I6b is judged; an exploratory run of M5 on W5 sequential, which did not count, was caught by
+  I6b in 20 of 20. This is a failed instrument-design check before finalization, not a finding about
+  LangGraph: M1 and M2 are not exercised by this matrix's workloads, and W1 is the wrong workload for M5.
+  The first matrix's C5 is therefore M3 and M4 on W1 approve and M5 on W5 sequential, each caught by its
+  intended invariant in at least 19 of 20 trials. M1 and M2 are out of scope for this matrix's instrument
+  validation, recorded as NOT EXERCISED, and never counted or shown as passing; the C5 report names them
+  beside its results, so three measured mutants are never read as five of five. The checker and I3 are
+  unchanged, and no workload was added to exercise M1.
+
 ## Deferred from the first matrix
+
+- **C5's M1 and M2.** The instrument's sensitivity to a lost pending-write row (M1) and to a by-id read
+  that finds nothing (M2) is not measured by this matrix. M1's row is read back only after a crash that
+  follows its commit, which is K1b's new-evidence question, so no control may run it; no workload here
+  reads a checkpoint by id. Every results page that cites C5 states this limit.
 
 - **E1 (K1a under exit).** Under exit durability LangGraph makes no `put_writes` call during a run and saves
   checkpoints and writes only when the loop exits, so L-EXW never occurs and there is no kill point to arm.
@@ -203,7 +225,7 @@ affects.
 {
   "builder": {
     "path": "src/crashcourt/orchestrator/declared.py",
-    "sha256": "bc4426576c34b430a78c8535aba3cd1aa284863f49f12f56fb4094b9404bd7a8"
+    "sha256": "7a9a685fe8ae28b4eec8e8587b667a2ffabdb1e738d09665851883fdd790226e"
   },
   "cells": [
     {
@@ -1705,7 +1727,7 @@ affects.
     {
       "evidence": null,
       "id": "C5",
-      "requirement": "saver mutants M1-M5 each caught by its target invariant in at least 19 of 20 trials (T-11)"
+      "requirement": "Saver mutants, as revised before finalization after the original measurement failed (M1 0 of 20, M2 0 of 20, M5 on W1 INVALID by the I3 alarm; research/evidence/t-11/c5-original.json): M3 on W1 approve caught by I5a, M4 on W1 approve caught by I1b, and M5 on W5 sequential caught by I6b, each in at least 19 of 20 trials. M1 and M2 are NOT EXERCISED by the first matrix's workloads, out of scope for its instrument validation, and never counted or shown as passing: M1's dropped row is read back only after a crash that follows its commit, which is K1b's new-evidence question, and no first-matrix workload reads a checkpoint by id (M2)."
     },
     {
       "evidence": null,
