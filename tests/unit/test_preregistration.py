@@ -40,14 +40,53 @@ def test_the_committed_preregistration_is_a_valid_draft() -> None:
     assert "cell A1: pending" in missing  # no fault-free async histories audited yet
 
 
-def test_the_draft_can_authorize_no_cell_yet_and_never_new_evidence() -> None:
+def test_the_draft_can_authorize_k1a_and_never_new_evidence() -> None:
     prereg = parse(committed())
-    assert prereg.runnable() == []
+    assert prereg.runnable() == ["K1a"]
     for c in prereg.cells:
         if c.phase == "new-evidence":
             assert prereg.refusals(c) == [
                 f"the pre-registration is a draft; new-evidence cell {c.id} needs it final"
             ]
+
+
+def test_every_written_scenario_is_its_cells() -> None:
+    """A cell whose scenario file exists names that file's hash, master seed, and workers, and
+    the file's landmark table is one the freeze pins; a cell with a hash has its file."""
+    from crashcourt.checker import freeze
+    from crashcourt.clauses import registry_sha256
+    from crashcourt.experiment.gate import FROZEN_PATH
+    from crashcourt.spec.scenario import load_scenario, scenario_sha256
+
+    prereg = parse(committed())
+    assert prereg.checker is not None
+    frozen_md = (ROOT / FROZEN_PATH).read_text(encoding="utf-8")
+    registry = registry_sha256(ROOT / "clauses")
+    written = [c for c in prereg.cells if (ROOT / c.scenario).is_file()]
+    assert [c.id for c in written] == ["K1a"]
+    for c in prereg.cells:
+        assert (c.scenario_sha256 is None) == (c not in written), c.id
+    for c in written:
+        scenario = load_scenario(ROOT / c.scenario)
+        assert (scenario_sha256(scenario), scenario.seed, scenario.cell) == (
+            c.scenario_sha256,
+            c.master_seed,
+            c.id,
+        )
+        assert len(scenario.workers) == c.workers
+        table = freeze.verify_scenario(frozen_md, registry, ROOT / c.scenario)
+        assert table in prereg.checker.landmark_tables.values()
+
+
+def test_k1a_runs_the_shape_t11_validated() -> None:
+    """K1a's scenario is T-11's K1a shape (research/evidence/t-11/shapes.json) under K1a's own
+    name, cell, and master seed: nothing else differs."""
+    from crashcourt.spec.scenario import load_scenario
+
+    other = {"name", "cell", "seed"}
+    k1a = load_scenario(ROOT / "scenarios/first-matrix/K1a.yaml")
+    shape = load_scenario(ROOT / "tests/integration/scenarios/t11-k1a-shape.yaml")
+    assert k1a.model_dump(exclude=other) == shape.model_dump(exclude=other)
 
 
 def test_a_redelivery_cell_declares_its_replacement() -> None:
@@ -57,6 +96,17 @@ def test_a_redelivery_cell_declares_its_replacement() -> None:
     redelivering = {i for i, c in cells.items() if "redeliver" in c.trigger}
     assert redelivering == {"K1a", "K1b", "K3", "N8", "N11", "A1", "A2"}
     assert all(cells[i].workers == 2 for i in redelivering)
+
+
+def test_the_draft_pins_the_environment_it_runs_in() -> None:
+    """The canonical runner (decision 17 in tasks/T-13.md), and the lockfile and specification
+    hashes doctor records: a uv.lock change moves its pin in the same commit."""
+    env = parse(committed()).environment
+    assert env["runner"] == "github-hosted"
+    assert env["lockfile_sha256"] == hashlib.sha256((ROOT / "uv.lock").read_bytes()).hexdigest()
+    provenance = json.loads((ROOT / "spec-provenance.json").read_text(encoding="utf-8"))
+    assert env["spec_sha256"] == provenance["sha256"]
+    assert all(value is not None for value in env.values())
 
 
 def test_the_draft_holds_the_first_matrix_and_its_controls() -> None:
@@ -297,5 +347,5 @@ def test_cli_check_reports_what_is_missing(capsys: pytest.CaptureFixture[str]) -
     assert main(["experiment", "check", "--root", str(ROOT)]) == 0
     out = capsys.readouterr().out
     assert "draft, 36 cells (18 instrument, 18 new evidence)" in out
-    assert "the draft can authorize: no cell\n" in out
+    assert "the draft can authorize: K1a\n" in out
     assert "before it can be final" in out

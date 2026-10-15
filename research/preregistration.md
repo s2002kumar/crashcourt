@@ -121,7 +121,9 @@ It stays a draft until every one of these holds:
   need fault-free async histories audited as T-09's sync corpus was.
 - Every checker record a cell observes (K4's) is worded as the frozen checker writes it. Done: a test reads
   the frozen checker's wording.
-- The environment and runner fingerprint is fixed under `environment`.
+- The environment and runner fingerprint is fixed under `environment`. Done (2026-10-15): the runner is
+  GitHub-hosted (decision 17 in tasks/T-13.md), and the lockfile and specification hashes are pinned; a test
+  holds the lockfile pin to uv.lock, so a dependency change moves the pin in the same commit.
 - Every instrument requirement is represented, as a cell or as an instrument check with its evidence recorded.
 
 Then `state` becomes `final` in my commit.
@@ -904,7 +906,7 @@ affects.
       "fault": "F01",
       "hypothesis": "H4",
       "id": "K1a",
-      "master_seed": null,
+      "master_seed": "K1a-v1",
       "n": 20,
       "observations": [
         {
@@ -945,7 +947,7 @@ affects.
       ],
       "replication_of": "langgraph#8039",
       "scenario": "scenarios/first-matrix/K1a.yaml",
-      "scenario_sha256": null,
+      "scenario_sha256": "cfec4076e08f9daa555745f82c32f521012ab1889e8d5d332fb657e5448c5ee7",
       "trigger": "SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before: execute has ended and its writes are not committed; resume-1 redelivered to the worker's replacement",
       "workers": 2,
       "workload": "w1"
@@ -1729,13 +1731,13 @@ affects.
   "environment": {
     "clause_registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5",
     "git_dirty": false,
-    "lockfile_sha256": null,
+    "lockfile_sha256": "19a0dd0df75a86126dec1b617422001fedb30ac18978c7fe31585ce52a92702e",
     "os_system": "Linux",
     "postgres.fsync": "on",
     "postgres.synchronous_commit": "on",
     "postgres.track_commit_timestamp": "on",
-    "runner": null,
-    "spec_sha256": null
+    "runner": "github-hosted",
+    "spec_sha256": "c6560f855c0bf80d9d1b18cd1407157dd619d84bc7e2b14dd7e1591f3cb45258"
   },
   "instrument_checks": [
     {

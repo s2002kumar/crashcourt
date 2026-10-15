@@ -352,9 +352,10 @@ def test_the_recorded_revised_report_passes_with_its_exclusions_and_matches_the_
     draft = parse((ROOT / PREREGISTRATION_PATH).read_text(encoding="utf-8"))
     [check] = [c for c in draft.instrument_checks if c.id == "C5"]
     assert check.requirement == report.requirement == C5_REQUIREMENT
-    # Only the environment values the draft has not pinned yet stand in the way.
+    # Only the runner stands in the way: C5 ran on WSL2, and the draft pins the canonical runner,
+    # so C5 runs again there before any new evidence.
     reasons = judge(report, draft.checker, draft.environment)
-    assert reasons and all(r.endswith("the pre-registration requires None") for r in reasons)
+    assert reasons == ["it ran with runner 'local'; the pre-registration requires 'github-hosted'"]
     assert report.applicable_passed and recount(report) == []
     assert [(e.id, e.status) for e in report.excluded] == [
         ("M1", "NOT_EXERCISED"),
