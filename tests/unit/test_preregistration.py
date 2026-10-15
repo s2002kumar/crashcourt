@@ -40,6 +40,16 @@ def test_the_committed_preregistration_is_a_valid_draft() -> None:
     assert "cell A1: pending" in missing  # no fault-free async histories audited yet
 
 
+def test_the_draft_can_authorize_no_cell_yet_and_never_new_evidence() -> None:
+    prereg = parse(committed())
+    assert prereg.runnable() == []
+    for c in prereg.cells:
+        if c.phase == "new-evidence":
+            assert prereg.refusals(c) == [
+                f"the pre-registration is a draft; new-evidence cell {c.id} needs it final"
+            ]
+
+
 def test_a_redelivery_cell_declares_its_replacement() -> None:
     """A redelivered op goes to another worker the scenario declares, so a cell whose trigger
     redelivers has two workers; the gate holds each scenario to its cell's count."""
@@ -287,4 +297,5 @@ def test_cli_check_reports_what_is_missing(capsys: pytest.CaptureFixture[str]) -
     assert main(["experiment", "check", "--root", str(ROOT)]) == 0
     out = capsys.readouterr().out
     assert "draft, 36 cells (18 instrument, 18 new evidence)" in out
+    assert "the draft can authorize: no cell\n" in out
     assert "before it can be final" in out

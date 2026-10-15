@@ -177,6 +177,7 @@ def authorization(run_commit: str) -> Authorization:
         run_commit=run_commit,
         preregistration_commit="a" * 40,
         preregistration_sha256="b" * 64,
+        preregistration_state="final",
         freeze_commit="c" * 40,
         frozen_md_sha256="d" * 64,
         checker_version="v1",

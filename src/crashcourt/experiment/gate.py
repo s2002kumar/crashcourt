@@ -3,8 +3,10 @@
 `authorize_batch(source, trials, root)` is called by `crashcourt run` before doctor, for a scenario
 file the pre-registration lists. It refuses, naming every reason at once, unless:
 
-1. the checkout is clean, and research/preregistration.md is `final` and unchanged since the
-   commit that last changed it (the pre-registration commit), which is an ancestor of HEAD;
+1. the checkout is clean, and research/preregistration.md is unchanged since the commit that
+   last changed it (the pre-registration commit), which is an ancestor of HEAD, and can authorize
+   the cell: a final pre-registration any cell, a draft only an instrument cell that is complete
+   under complete pins (`Preregistration.refusals`);
 2. the checker is FROZEN: src/crashcourt/checker/FROZEN.md exists, its bytes hash to the
    pre-registered value, the checker files, effect models, and clause registry verify against it
    (T-10's `freeze.verify_checker`), its checker hash is the pre-registered one, and the commit
@@ -175,6 +177,9 @@ class Authorization(BaseModel):
     run_commit: str
     preregistration_commit: str
     preregistration_sha256: str
+    #: The pre-registration's state at its commit: a draft authorizes only complete instrument
+    #: cells, whose batches never count toward new evidence.
+    preregistration_state: Literal["draft", "final"]
     freeze_commit: str
     frozen_md_sha256: str
     checker_version: str
@@ -264,8 +269,6 @@ def authorize_batch(
         prereg = parse(committed.decode("utf-8"))
     except PreregistrationError as exc:
         raise NotAuthorized([*check.reasons, f"{PREREG}: {exc}"]) from exc
-    if prereg.state != "final":
-        check.fail(f"the pre-registration is a {prereg.state}, not final")
     if not gitproof.is_ancestor(root, prereg_commit, run_commit):
         check.fail(f"pre-registration commit {prereg_commit} is not an ancestor of {run_commit}")
 
@@ -284,6 +287,8 @@ def authorize_batch(
         cell = prereg.by_scenario(rel.as_posix())
     except KeyError:
         raise NotAuthorized([*check.reasons, f"{rel} is not a pre-registered scenario"]) from None
+    for reason in prereg.refusals(cell):
+        check.fail(reason)
     landmarks = _scenario(root / rel, cell, trials, scenarios, checker, frozen, check)
 
     # 4. instrument before new evidence
@@ -313,6 +318,7 @@ def authorize_batch(
         run_commit=run_commit,
         preregistration_commit=prereg_commit,
         preregistration_sha256=hashlib.sha256(committed).hexdigest(),
+        preregistration_state=prereg.state,
         freeze_commit=frozen.commit,
         frozen_md_sha256=frozen.sha256,
         checker_version=frozen.checker.version,

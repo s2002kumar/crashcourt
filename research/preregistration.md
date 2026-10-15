@@ -1,7 +1,9 @@
 # Pre-registration: the first fault matrix
 
-**Status: DRAFT.** This file authorizes nothing. `crashcourt experiment authorize` refuses every batch until
-`state` is `final`, which needs everything under "Before this is final" and my commit.
+**Status: DRAFT.** A draft authorizes only an instrument cell that is complete on its own, under complete
+pins, and never new evidence (below, "Instrument cells before the final commit"). `crashcourt experiment
+authorize` refuses every new-evidence batch until `state` is `final`, which needs everything under "Before
+this is final" and my commit.
 
 This file fixes, before any batch of the first matrix runs, what each cell runs, how many trials it gets, and
 what I predict it shows. The commit that last changes it is the pre-registration commit. A batch runs only
@@ -52,7 +54,8 @@ The JSON block at the end is the binding part; the prose and the table explain i
 ## How it is enforced
 
 - `crashcourt experiment authorize <scenario> --trials N` runs before doctor and refuses unless the checkout
-  is clean; this file is final and committed; the checker is FROZEN and verifies against FROZEN.md, whose
+  is clean; this file is committed and can authorize the cell (final, or a draft and the cell a complete
+  instrument cell under complete pins); the checker is FROZEN and verifies against FROZEN.md, whose
   hash and checker hash are the ones named here; the TrialScenario builder is the pinned file at this
   file's commit and at HEAD; the scenario's hash, cell, master seed, and number of workers match its cell;
   N is the cell's N; the scenario's landmark table verifies against the freeze; and, for a new-evidence
@@ -60,9 +63,10 @@ The JSON block at the end is the binding part; the prose and the table explain i
 - After doctor, the batch's manifest must hold the pre-registered environment, name the authorized commit,
   and record a clean checkout.
 - `crashcourt experiment verify <batch>` re-proves an archived batch from git: this file's commit is an
-  ancestor of the run commit and did not change before it, the freeze commit is an ancestor of this file's
-  commit, every hash matches (the builder's among them), there are exactly N trials, and every trial's
-  checker.json was written by the frozen checker and authorized for new evidence.
+  ancestor of the run commit and did not change before it, and could authorize the cell as it stood there;
+  the freeze commit is an ancestor of this file's commit, every hash matches (the builder's among them),
+  there are exactly N trials, and every trial's checker.json was written by the frozen checker and
+  authorized for new evidence.
 - `crashcourt experiment aggregate <batch>...` summarizes verified batches only, into `cells.json`. Batches
   are pooled only when they share this commit, the checker, and the scenario, and their manifests differ in
   no material field a recorded compatibility rule does not cover. Anything else is reported as separate
@@ -124,6 +128,20 @@ Then `state` becomes `final` in my commit.
 
 T-09's fault-free histories, the current set and the final one after the restack, are inputs to the instrument
 and to the landmark derivation before the freeze. Neither is evidence about any cell here.
+
+## Instrument cells before the final commit
+
+Added 2026-10-15, before any batch was authorized. A draft can authorize an instrument cell once that cell
+is complete (its scenario file exists, its hash and master seed are copied in, nothing is pending) and the
+pins are complete (the frozen checker, the builder, every value under `environment`). It never authorizes a
+new-evidence cell. This lets the instrument be run and inspected one cell at a time, K1a first, without
+writing scenarios for cells whose fault schedules do not exist yet.
+
+It loosens nothing for new evidence. A new-evidence cell needs this file final, and every instrument cell
+as predicted under the same pre-registration commit as the new-evidence cell, so every instrument cell runs
+again under the final commit and the batches run under a draft never count toward new evidence. Each
+batch's authorization.json records the state it ran under, and verification checks it. Once a cell has an
+authorized batch, any change to its entry is listed under Deviations with the batches it affects.
 
 ## Rulings applied (2026-10-10)
 

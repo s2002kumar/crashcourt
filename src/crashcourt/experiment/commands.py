@@ -65,6 +65,9 @@ def _check(args: argparse.Namespace) -> int:
         f"{path}: {prereg.state}, {len(prereg.cells)} cells "
         f"({phases['instrument']} instrument, {phases['new-evidence']} new evidence)"
     )
+    if prereg.state == "draft":
+        runnable = prereg.runnable()
+        print(f"the draft can authorize: {', '.join(runnable) or 'no cell'}")
     missing = prereg.missing()
     if missing:
         print(f"before it can be final ({len(missing)}):")

@@ -7,7 +7,9 @@ batch says about itself:
 
 - the manifest names the authorized commit, from a clean checkout;
 - the pre-registration commit is an ancestor of that commit, the file did not change between the
-  two, and its bytes at the pre-registration commit hash to the recorded value;
+  two, its bytes at the pre-registration commit hash to the recorded value, and as it stood there
+  it could authorize the cell (final, or a draft and the cell a complete instrument cell under
+  complete pins), in the state the authorization records;
 - the freeze commit is an ancestor of the pre-registration commit, FROZEN.md did not change
   between the freeze and the run, and its bytes hash to the recorded and pre-registered value;
 - the TrialScenario builder (orchestrator/declared.py) at the pre-registration and run commits is
@@ -160,8 +162,6 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
         prereg = parse((raw or b"").decode("utf-8"))
     except PreregistrationError as exc:
         raise BatchNotVerified(batch_dir, [*problems, f"pre-registration: {exc}"]) from exc
-    if prereg.state != "final":
-        problems.append("the pre-registration was a draft")
     commits = (("pre-registration", prereg_commit), ("run", run))
     problems.extend(builder_problems(repo, prereg, commits))
     try:
@@ -170,6 +170,12 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
         raise BatchNotVerified(
             batch_dir, [*problems, f"cell {auth.cell} is not pre-registered"]
         ) from None
+    problems.extend(f"at the pre-registration commit, {r}" for r in prereg.refusals(cell))
+    if auth.preregistration_state != prereg.state:
+        problems.append(
+            f"the authorization records a {auth.preregistration_state} pre-registration; "
+            f"it was {prereg.state} at its commit"
+        )
 
     pin = prereg.checker
     if pin is None or (

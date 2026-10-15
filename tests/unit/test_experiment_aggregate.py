@@ -128,6 +128,34 @@ def test_the_environment_must_be_the_preregistered_one(repo: Repo) -> None:
     assert "manifest os_system is 'Windows'" in problems(repo, d)
 
 
+def test_an_instrument_batch_authorized_under_a_draft_verifies(tmp_path: Path) -> None:
+    draft = make_repo(tmp_path, prereg_model(state="draft"))
+    verified = verify_batch(batch(draft, "b1"), draft.root)
+    assert verified.authorization.preregistration_state == "draft"
+
+
+def test_verification_applies_the_draft_rule_again(tmp_path: Path) -> None:
+    draft = make_repo(tmp_path, prereg_model(state="draft"))
+    d = batch(draft, "b1")
+    auth = json.loads((d / "authorization.json").read_text(encoding="utf-8"))
+    auth["cell"] = "X1"
+    (d / "authorization.json").write_text(json.dumps(auth), encoding="utf-8")
+    assert (
+        "at the pre-registration commit, the pre-registration is a draft; new-evidence cell X1 "
+        "needs it final" in problems(draft, d)
+    )
+
+
+def test_the_recorded_state_must_be_the_preregistrations(repo: Repo) -> None:
+    d = batch(repo, "b1")
+    auth = json.loads((d / "authorization.json").read_text(encoding="utf-8"))
+    auth["preregistration_state"] = "draft"
+    (d / "authorization.json").write_text(json.dumps(auth), encoding="utf-8")
+    assert "the authorization records a draft pre-registration; it was final at its commit" in (
+        problems(repo, d)
+    )
+
+
 def test_the_scenario_run_must_declare_the_cells_workers(repo: Repo) -> None:
     one = batch(repo, "b1", scenario_text='{"cell":"R1","seed":"seed-r1","workers":["w1"]}')
     assert "scenario.json declares 1 worker, pre-registered 2" in problems(repo, one)

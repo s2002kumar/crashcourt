@@ -100,11 +100,47 @@ def test_later_commits_that_leave_the_preregistration_alone_still_run(tmp_path: 
     assert (auth.run_commit, auth.preregistration_commit) == (later, repo.prereg_commit)
 
 
-def test_a_draft_authorizes_nothing(tmp_path: Path) -> None:
-    draft = prereg_model(state="draft", checker=None)
-    reasons = refused(authorize, make_repo(tmp_path, draft))
-    assert "the pre-registration is a draft, not final" in reasons
-    assert "names no frozen checker" in reasons
+def test_a_final_preregistration_records_its_state(tmp_path: Path) -> None:
+    assert authorize(make_repo(tmp_path)).preregistration_state == "final"
+
+
+def test_a_draft_authorizes_a_complete_instrument_cell(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, prereg_model(state="draft"))
+    auth = authorize(repo)
+    assert (auth.cell, auth.phase, auth.preregistration_state) == ("R1", "instrument", "draft")
+
+
+def test_a_draft_never_authorizes_new_evidence(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, prereg_model(state="draft"))
+    reasons = refused(authorize, repo, "X1", instrument_missing=[])
+    assert "the pre-registration is a draft; new-evidence cell X1 needs it final" in reasons
+
+
+def _r1_with(**change: object) -> list[dict[str, object]]:
+    cells = prereg_model().model_dump(mode="json")["cells"]
+    cells[0].update(change)
+    return cells
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"checker": None}, "no frozen checker is named"),
+        ({"builder": None}, "no TrialScenario builder is pinned"),
+        (
+            {"environment": {"os_system": "Linux", "runner": None}},
+            "environment runner is not pinned",
+        ),
+        ({"cells": _r1_with(scenario_sha256=None)}, "cell R1: no scenario hash"),
+        ({"cells": _r1_with(master_seed=None)}, "cell R1: no master seed"),
+        ({"cells": _r1_with(pending="an audit")}, "cell R1: pending an audit"),
+    ],
+)
+def test_a_draft_refuses_an_incomplete_cell_or_incomplete_pins(
+    tmp_path: Path, change: dict[str, object], message: str
+) -> None:
+    repo = make_repo(tmp_path, prereg_model(state="draft", **change))
+    assert f"the pre-registration is a draft and {message}" in refused(authorize, repo)
 
 
 def test_a_dirty_checkout_is_refused(tmp_path: Path) -> None:
