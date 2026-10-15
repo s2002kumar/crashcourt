@@ -53,9 +53,12 @@ EFFECT_MODELS = {"w1": "a" * 64, "w5": "b" * 64}
 LANDMARK_TABLES = {"langgraph-v1": LANDMARK_SHA}
 #: C3 is a placebo control some tests add to the matrix; the default pre-registration has R1 and X1.
 SEEDS = {"R1": "seed-r1", "X1": "seed-x1", "C3": "seed-c3"}
+#: The workers each cell's scenario declares: R1's replacement takes a redelivered op over.
+WORKERS = {"R1": ["w1", "w2"], "X1": ["w1", "w2"], "C3": ["w1"]}
 #: Each cell's scenario in canonical form, as the runner writes scenario.json, and its hash.
 SCENARIO_JSON = {
-    c: json.dumps({"cell": c, "seed": s}, separators=(",", ":")) for c, s in SEEDS.items()
+    c: json.dumps({"cell": c, "seed": s, "workers": WORKERS[c]}, separators=(",", ":"))
+    for c, s in SEEDS.items()
 }
 SCENARIOS = {c: hashlib.sha256(text.encode()).hexdigest() for c, text in SCENARIO_JSON.items()}
 N = 3
@@ -139,8 +142,8 @@ def prereg_model(**changes: Any) -> Preregistration:
                 "workload": "w1",
                 "durability": "sync",
                 "fault": "F01",
-                "workers": 1,
-                "trigger": "kill before the writes commit",
+                "workers": 2,
+                "trigger": "kill before the writes commit; the op redelivered to a replacement",
                 "scenario": "scenarios/R1.yaml",
                 "scenario_sha256": SCENARIOS["R1"],
                 "master_seed": SEEDS["R1"],
@@ -298,7 +301,9 @@ class FakeScenarios:
     """T-07's scenario loader as the gate sees it: facts by cell file name."""
 
     facts: dict[str, ScenarioFacts] = field(
-        default_factory=lambda: {c: ScenarioFacts(SCENARIOS[c], c, SEEDS[c]) for c in SCENARIOS}
+        default_factory=lambda: {
+            c: ScenarioFacts(SCENARIOS[c], c, SEEDS[c], len(WORKERS[c])) for c in SCENARIOS
+        }
     )
     unavailable: bool = False
 

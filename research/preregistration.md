@@ -27,10 +27,11 @@ The JSON block at the end is the binding part; the prose and the table explain i
   occurrence; loading refuses a missing, unknown, or mismatched one, and the name is part of the
   scenario's hash.
 - **The cells.** Each cell names its scenario file and that scenario's content hash, its master seed, N, its
-  phase, and its predicted outcome per invariant. One prediction value is firm; several mean one of them, the
-  same in every trial; `*` covers every invariant the cell does not name. `NOT_EXERCISED` predicts that the
-  invariant is omitted from the results. Cells whose outcome is honestly unknown say `unknown`; their
-  predictions record the expected shape and are compared, but not flagged.
+  phase, the number of worker processes its scenario declares (`workers`, a replacement that takes a
+  redelivered op over included), and its predicted outcome per invariant. One prediction value is firm;
+  several mean one of them, the same in every trial; `*` covers every invariant the cell does not name.
+  `NOT_EXERCISED` predicts that the invariant is omitted from the results. Cells whose outcome is honestly
+  unknown say `unknown`; their predictions record the expected shape and are compared, but not flagged.
 - **Observations.** A cell may also predict what it observes apart from any outcome: rows of the effect
   ledger's export (by effect, with their count and attempts), a record in `checker.json` that is not an
   outcome, or whether an invariant showed an anomaly at all, whatever its class. Each is matched in every
@@ -53,7 +54,7 @@ The JSON block at the end is the binding part; the prose and the table explain i
 - `crashcourt experiment authorize <scenario> --trials N` runs before doctor and refuses unless the checkout
   is clean; this file is final and committed; the checker is FROZEN and verifies against FROZEN.md, whose
   hash and checker hash are the ones named here; the TrialScenario builder is the pinned file at this
-  file's commit and at HEAD; the scenario's hash, cell, and master seed match its cell;
+  file's commit and at HEAD; the scenario's hash, cell, master seed, and number of workers match its cell;
   N is the cell's N; the scenario's landmark table verifies against the freeze; and, for a new-evidence
   cell, every instrument cell has come out as predicted. It writes `authorization.json` into the batch.
 - After doctor, the batch's manifest must hold the pre-registered environment, name the authorized commit,
@@ -192,10 +193,10 @@ My rulings on T-10's readings, applied here before the freeze:
 | K2 | instrument | control (C2) | w5 | sync | F06 | 2 | 20 | I5a: GAP; I6a: NO_ANOMALY_UNSPECIFIED or GAP | anomaly on I5a: present |  |
 | K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 1 row, attempts [1] |  |
 | K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 0 rows, attempts [] |  |
-| K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 1 | 20 | I4: GAP; I7a: GAP; I1b: PASS | ledger charge: 2 rows, attempts [1, 2] |  |
+| K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 2 | 20 | I4: GAP; I7a: GAP; I1b: PASS | ledger charge: 2 rows, attempts [1, 2] |  |
 | K3 | instrument | replication (langgraph#8796) | w5 | sync | F05 | 2 | 20 | I5a: GAP; I6a: GAP | anomaly on I5a: present |  |
 | K4 | instrument | replication (langgraph#8764) | w1 | sync | F01 | 1 | 20 | I1a: NOT_EXERCISED; I1b: NOT_EXERCISED | checker observation 'accepted run with no durable record: op start-1 ended': 1 |  |
-| K1b | new-evidence | new-evidence | w1 | sync | F01 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - |  |
+| K1b | new-evidence | new-evidence | w1 | sync | F01 | 2 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - |  |
 | N1 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: GAP; I7a: GAP | - | unknown |
 | N2 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown |
 | N3 | new-evidence | new-evidence | w1 | sync | F10 | 1 | 20 | I4: GAP | - |  |
@@ -206,11 +207,11 @@ My rulings on T-10's readings, applied here before the freeze:
 | N8 | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP | - |  |
 | N9 | new-evidence | new-evidence | w1 | sync | F13 | 1 | 20 | I1b: PASS | - |  |
 | N10 | new-evidence | new-evidence | w1 | sync | F12 | 1 | 20 | I1a: PASS; I1b: PASS; I11: PASS; I4: NO_ANOMALY_UNSPECIFIED | - |  |
-| N11 | new-evidence | new-evidence | w1 | sync | F01 | 1 | 20 | I7c: PASS or NO_ANOMALY_UNSPECIFIED | - | unknown |
+| N11 | new-evidence | new-evidence | w1 | sync | F01 | 2 | 20 | I7c: PASS or NO_ANOMALY_UNSPECIFIED | - | unknown |
 | N12 | new-evidence | new-evidence | w5 | sync | F11 | 1 | 20 | I5: NO_ANOMALY_UNSPECIFIED | - | unknown |
 | N12b | new-evidence | new-evidence | w5 | sync | F10 | 1 | 20 | I5b: GAP | - |  |
-| A1 | new-evidence | new-evidence | w1 | async | F01 | 1 | 20 | I4: GAP; I7a: GAP; I1b: NOT_EXERCISED or EXPECTED | - | pending |
-| A2 | new-evidence | new-evidence | w1 | async | F01 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | pending |
+| A1 | new-evidence | new-evidence | w1 | async | F01 | 2 | 20 | I4: GAP; I7a: GAP; I1b: NOT_EXERCISED or EXPECTED | - | pending |
+| A2 | new-evidence | new-evidence | w1 | async | F01 | 2 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | pending |
 | A3 | new-evidence | new-evidence | w1 | async | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown, pending |
 | A4 | new-evidence | new-evidence | w1 | async | F12 | 1 | 20 | I4: NO_ANOMALY_UNSPECIFIED; *: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | pending |
 
@@ -928,7 +929,7 @@ affects.
       "scenario": "scenarios/first-matrix/K1a.yaml",
       "scenario_sha256": null,
       "trigger": "SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before: execute has ended and its writes are not committed; resume-1 redelivered to the worker's replacement",
-      "workers": 1,
+      "workers": 2,
       "workload": "w1"
     },
     {
@@ -1050,7 +1051,7 @@ affects.
       "scenario": "scenarios/first-matrix/K1b.yaml",
       "scenario_sha256": null,
       "trigger": "SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.after (writes committed); resume-1 redelivered",
-      "workers": 1,
+      "workers": 2,
       "workload": "w1"
     },
     {
@@ -1471,7 +1472,7 @@ affects.
       "scenario": "scenarios/first-matrix/N11.yaml",
       "scenario_sha256": null,
       "trigger": "W1 with the resume rejected; SIGKILL at L-RES (occurrence 2 of resume-1's put_writes), put_writes.after (resume committed); redeliver",
-      "workers": 1,
+      "workers": 2,
       "workload": "w1"
     },
     {
@@ -1579,7 +1580,7 @@ affects.
       "scenario": "scenarios/first-matrix/A1.yaml",
       "scenario_sha256": null,
       "trigger": "K1a under async: SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before; resume-1 redelivered",
-      "workers": 1,
+      "workers": 2,
       "workload": "w1"
     },
     {
@@ -1611,7 +1612,7 @@ affects.
       "scenario": "scenarios/first-matrix/A2.yaml",
       "scenario_sha256": null,
       "trigger": "K1b under async: SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.after; resume-1 redelivered",
-      "workers": 1,
+      "workers": 2,
       "workload": "w1"
     },
     {

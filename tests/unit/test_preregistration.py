@@ -40,6 +40,15 @@ def test_the_committed_preregistration_is_a_valid_draft() -> None:
     assert "cell A1: pending" in missing  # no fault-free async histories audited yet
 
 
+def test_a_redelivery_cell_declares_its_replacement() -> None:
+    """A redelivered op goes to another worker the scenario declares, so a cell whose trigger
+    redelivers has two workers; the gate holds each scenario to its cell's count."""
+    cells = {c.id: c for c in parse(committed()).cells}
+    redelivering = {i for i, c in cells.items() if "redeliver" in c.trigger}
+    assert redelivering == {"K1a", "K1b", "K3", "N8", "N11", "A1", "A2"}
+    assert all(cells[i].workers == 2 for i in redelivering)
+
+
 def test_the_draft_holds_the_first_matrix_and_its_controls() -> None:
     prereg = parse(committed())
     ids = {c.id for c in prereg.cells}

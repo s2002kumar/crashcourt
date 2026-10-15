@@ -128,6 +128,13 @@ def test_the_environment_must_be_the_preregistered_one(repo: Repo) -> None:
     assert "manifest os_system is 'Windows'" in problems(repo, d)
 
 
+def test_the_scenario_run_must_declare_the_cells_workers(repo: Repo) -> None:
+    one = batch(repo, "b1", scenario_text='{"cell":"R1","seed":"seed-r1","workers":["w1"]}')
+    assert "scenario.json declares 1 worker, pre-registered 2" in problems(repo, one)
+    none = batch(repo, "b2", scenario_text='{"cell":"R1","seed":"seed-r1"}')
+    assert "scenario.json declares no workers, pre-registered 2" in problems(repo, none)
+
+
 # -- aggregation ---------------------------------------------------------------------------------
 
 

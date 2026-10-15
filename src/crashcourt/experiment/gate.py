@@ -12,9 +12,9 @@ file the pre-registration lists. It refuses, naming every reason at once, unless
    the TrialScenario builder (orchestrator/declared.py), which is outside the freeze, is the file
    the pre-registration pins, at its commit and at HEAD;
 3. the scenario is the one pre-registered for its cell: same content hash, same cell id, same
-   master seed; the landmark table it names is audited and frozen (T-10's
-   `freeze.verify_scenario`), and a cell that injects a fault names one; and `trials` is the
-   pre-registered N (no optional stopping, no extra trials);
+   master seed, and as many workers as the cell names; the landmark table it names is audited
+   and frozen (T-10's `freeze.verify_scenario`), and a cell that injects a fault names one; and
+   `trials` is the pre-registered N (no optional stopping, no extra trials);
 4. for a new-evidence cell, every instrument cell (controls and published replications) of the
    same pre-registration, checker, and environment has batches that came out as predicted.
 
@@ -52,6 +52,7 @@ from crashcourt.experiment.preregistration import (
     Cell,
     Preregistration,
     PreregistrationError,
+    counted,
     parse,
 )
 from crashcourt.manifest import Manifest
@@ -103,6 +104,8 @@ class ScenarioFacts:
     sha256: str
     cell: str
     master_seed: str
+    #: The worker processes the scenario declares.
+    workers: int
 
 
 class CheckerView(Protocol):
@@ -151,7 +154,9 @@ class T07Scenarios:
 
     def load(self, path: Path) -> ScenarioFacts:
         scenario = load_scenario(path)
-        return ScenarioFacts(scenario_sha256(scenario), scenario.cell, scenario.seed)
+        return ScenarioFacts(
+            scenario_sha256(scenario), scenario.cell, scenario.seed, len(scenario.workers)
+        )
 
 
 class Authorization(BaseModel):
@@ -398,6 +403,11 @@ def _scenario(
         check.fail(f"{path} names cell {facts.cell}, the pre-registration lists it as {cell.id}")
     if facts.master_seed != cell.master_seed:
         check.fail(f"{path} has master seed {facts.master_seed}, not {cell.master_seed}")
+    if facts.workers != cell.workers:
+        check.fail(
+            f"{path} declares {counted(facts.workers, 'worker')}; cell {cell.id} is "
+            f"pre-registered with {cell.workers}"
+        )
     if frozen is None:
         return None
     try:

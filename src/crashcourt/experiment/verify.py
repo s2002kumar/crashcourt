@@ -17,8 +17,9 @@ batch says about itself:
   holds the pre-registered environment, and for new evidence the instrument batches' environment
   under the compatibility rules recorded at the run commit;
 - the runner's own records agree, recomputed rather than read: scenario.json hashes to the
-  pre-registered scenario hash, run.json names the cell, the master seed, N, and canonical mode,
-  and every trial's seed is sha256 of [master_seed, cell, trial];
+  pre-registered scenario hash and declares the cell's number of workers, run.json names the
+  cell, the master seed, N, and canonical mode, and every trial's seed is sha256 of
+  [master_seed, cell, trial];
 - there are exactly N trials, numbered 1 to N as the runner numbers them, and each trial's
   checker.json was written by the frozen checker (its checker hash, registry, and landmark table
   are the authorized ones), authorized for new evidence; a trial without result.json lists what
@@ -53,6 +54,7 @@ from crashcourt.experiment.preregistration import (
     Cell,
     Preregistration,
     PreregistrationError,
+    counted,
     derive_seed,
     parse,
 )
@@ -251,6 +253,13 @@ def _runner_problems(batch_dir: Path, cell: Cell, auth: Authorization) -> list[s
     digest = hashlib.sha256(scenario.rstrip(b"\n")).hexdigest()
     if digest != cell.scenario_sha256:
         found.append(f"scenario.json hashes to {digest}, pre-registered {cell.scenario_sha256}")
+    try:
+        workers = len(json.loads(scenario)["workers"])
+    except (ValueError, KeyError, TypeError):
+        workers = None
+    if workers != cell.workers:
+        declared = "no workers" if workers is None else counted(workers, "worker")
+        found.append(f"scenario.json declares {declared}, pre-registered {cell.workers}")
     for key, want in (
         ("cell", auth.cell),
         ("master_seed", auth.master_seed),

@@ -167,6 +167,9 @@ class Cell(_Model):
     workload: Id
     durability: Literal["sync", "async", "exit"]
     fault: Id | None = None
+    #: The worker processes the scenario declares (its `workers:` list), a replacement that takes
+    #: a redelivered op over included. The gate and verification refuse a scenario that declares
+    #: another number.
     workers: int = Field(ge=1, le=2)
     #: The trigger in words; the scenario file is the definition.
     trigger: Text

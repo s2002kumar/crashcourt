@@ -157,9 +157,14 @@ def test_a_freeze_after_the_preregistration_is_refused(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("facts", "message"),
     [
-        (ScenarioFacts("9" * 64, "R1", "seed-r1"), "not the pre-registered"),
-        (ScenarioFacts("1" * 64, "R2", "seed-r1"), "names cell R2"),
-        (ScenarioFacts("1" * 64, "R1", "another-seed"), "master seed another-seed"),
+        (ScenarioFacts("9" * 64, "R1", "seed-r1", 2), "not the pre-registered"),
+        (ScenarioFacts("1" * 64, "R2", "seed-r1", 2), "names cell R2"),
+        (ScenarioFacts("1" * 64, "R1", "another-seed", 2), "master seed another-seed"),
+        # Same hash, so only the workers differ: the cell's count must be the scenario's.
+        (
+            ScenarioFacts(SCENARIOS["R1"], "R1", "seed-r1", 1),
+            "declares 1 worker; cell R1 is pre-registered with 2",
+        ),
     ],
 )
 def test_the_scenario_must_be_the_preregistered_one(
@@ -282,7 +287,9 @@ def test_the_runner_scenario_loader_is_the_real_one() -> None:
     smoke = Path(__file__).resolve().parents[2] / "scenarios" / "smoke.yaml"
     facts = T07Scenarios().load(smoke)
     loaded = load_scenario(smoke)
-    assert facts == ScenarioFacts(scenario_sha256(loaded), loaded.cell, loaded.seed)
+    assert facts == ScenarioFacts(
+        scenario_sha256(loaded), loaded.cell, loaded.seed, len(loaded.workers)
+    )
 
 
 # -- the TrialScenario builder ------------------------------------------------------------------

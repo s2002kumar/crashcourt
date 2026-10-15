@@ -295,6 +295,7 @@ def c3_prereg() -> Any:
         "replication_of": None,
         "control": "C3",
         "fault": None,
+        "workers": 1,
         "trigger": "every new-evidence failpoint armed with action none; a 0 ms latency toxic",
         "scenario": "scenarios/C3.yaml",
         "scenario_sha256": SCENARIOS["C3"],
