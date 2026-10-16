@@ -125,6 +125,10 @@ def test_a_held_runs_op_is_taken_over_and_the_stale_run_released_after(tmp_path:
     assert terminal_counts(events) == {"turn-1": 1}
     order = [e.kind for e in events if e.kind in {"dispatch.redeliver", "client.ok", "fp.release"}]
     assert order == ["dispatch.redeliver", "client.ok", "fp.release"]
+    # The takeover names the hold it waited for, as the release names the hold it ends.
+    redeliver = next(e for e in events if e.kind == "dispatch.redeliver")
+    held = [{"proc": "w1", "hit_seq": 7, "barrier": "A"}]
+    assert redeliver.data == {"to": "w2", "from": "w1", "step": 1, "held": held}
     release = next(e for e in events if e.kind == "fp.release")
     assert release.data == {"proc": "w1", "hit_seq": 7, "barrier": "A", "step": 2}
     sent = [type(m).__name__ for m in trial.workers["w1"].sent]

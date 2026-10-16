@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
@@ -372,7 +372,8 @@ class TrialEngine:
             if isinstance(action, Release):
                 await self._release(index, action.release)
             elif isinstance(action, Redeliver):
-                await self._redeliver(index, action.redeliver)
+                waited = [h for h in self.book.held if h.barrier in step.on.all_paused]
+                await self._redeliver(index, action.redeliver, waited)
             else:
                 await self._kill(action.kill, kill_fault_id(index))
 
@@ -400,8 +401,12 @@ class TrialEngine:
                 )
             await self._send(h.worker, ReleaseMessage(hit_seq=h.hit_seq))
 
-    async def _redeliver(self, index: int, redelivery: Redelivery) -> None:
-        """Hand an op in flight to another worker; its run on the old worker, if any, is stale."""
+    async def _redeliver(
+        self, index: int, redelivery: Redelivery, held: Sequence[Held] = ()
+    ) -> None:
+        """Hand an op in flight to another worker; its run on the old worker, if any, is stale.
+        A redelivery that waited for barriers names the hits it waited for, as a release names
+        the hit it ends, so the history shows it came after them."""
         record = self.ops[redelivery.op]
         to = redelivery.to
         if record.state != "sent":
@@ -417,6 +422,10 @@ class TrialEngine:
             return
         old = record.worker
         data: dict[str, JsonValue] = {"to": to, "from": old, "step": index}
+        if held:
+            data["held"] = [
+                {"proc": h.worker, "hit_seq": h.hit_seq, "barrier": h.barrier} for h in held
+            ]
         self.history.emit(
             "dispatch.redeliver", op_id=record.op.id, thread_id=record.thread_id, data=data
         )
