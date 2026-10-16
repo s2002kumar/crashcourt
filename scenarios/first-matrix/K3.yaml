@@ -1,0 +1,28 @@
+# K3: the replication of langgraph#8796, an instrument cell (never new evidence), as a held barrier.
+# W5, one turn on one thread. w1 (A) runs turn-1 and is held at L-T1, the third put of turn-1, before
+# it commits (put.before, after respond): its last committed checkpoint is the one the held put
+# extends. Once A is held, turn-1 is redelivered to w2 (B), which reads that same checkpoint and
+# completes the turn. Once turn-1 has ended, A is released: its stale put commits a second child of
+# the same parent. What it is predicted to show is research/preregistration.md's cell K3.
+v: 1
+name: K3
+cell: K3
+seed: K3-v1
+workload: w5
+target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
+workers: [w1, w2]
+ops:
+  - id: turn-1
+    worker: w1
+    thread: t1
+    after: start
+    input: {messages: [{role: user, content: First request., id: human-1}]}
+schedule:
+  - on: {fp: put.before, worker: w1, op: turn-1, occurrence: 3}
+    do: {pause: A}
+    landmark: L-T1
+  - on: {all_paused: [A]}
+    do: {redeliver: {op: turn-1, to: w2}}
+  - on: {ended: turn-1}
+    do: {release: [A]}

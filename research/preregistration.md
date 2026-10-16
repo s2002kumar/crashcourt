@@ -1024,7 +1024,7 @@ final, is listed here with its reason and the batches it affects.
       "fault": "F05",
       "hypothesis": "H3",
       "id": "K3",
-      "master_seed": null,
+      "master_seed": "K3-v1",
       "n": 20,
       "observations": [
         {
@@ -1063,7 +1063,7 @@ final, is listed here with its reason and the batches it affects.
       ],
       "replication_of": "langgraph#8796",
       "scenario": "scenarios/first-matrix/K3.yaml",
-      "scenario_sha256": null,
+      "scenario_sha256": "8d270b489c0f8b411cc42e3c1004e0c648a5310bb48536ca2b423d62953a7db3",
       "trigger": "A held at L-T1 (occurrence 3 of turn-1's put: after respond), put.before; turn-1 redelivered to B; after B's client.ok, A released: a held pause in C2's shape, not SIGSTOP",
       "workers": 2,
       "workload": "w5"

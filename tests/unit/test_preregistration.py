@@ -42,7 +42,7 @@ def test_the_committed_preregistration_is_a_valid_draft() -> None:
 
 def test_the_draft_can_authorize_k1a_and_never_new_evidence() -> None:
     prereg = parse(committed())
-    assert prereg.runnable() == ["K1a"]
+    assert prereg.runnable() == ["K1a", "K3"]
     for c in prereg.cells:
         if c.phase == "new-evidence":
             assert prereg.refusals(c) == [
@@ -63,7 +63,7 @@ def test_every_written_scenario_is_its_cells() -> None:
     frozen_md = (ROOT / FROZEN_PATH).read_text(encoding="utf-8")
     registry = registry_sha256(ROOT / "clauses")
     written = [c for c in prereg.cells if (ROOT / c.scenario).is_file()]
-    assert [c.id for c in written] == ["K1a"]
+    assert [c.id for c in written] == ["K1a", "K3"]
     for c in prereg.cells:
         assert (c.scenario_sha256 is None) == (c not in written), c.id
     for c in written:
@@ -78,15 +78,16 @@ def test_every_written_scenario_is_its_cells() -> None:
         assert table in prereg.checker.landmark_tables.values()
 
 
-def test_k1a_runs_the_shape_t11_validated() -> None:
-    """K1a's scenario is T-11's K1a shape (research/evidence/t-11/shapes.json) under K1a's own
-    name, cell, and master seed: nothing else differs."""
+@pytest.mark.parametrize(("cell", "shape"), [("K1a", "t11-k1a-shape"), ("K3", "t11-k3-shape")])
+def test_a_replication_runs_the_shape_t11_validated(cell: str, shape: str) -> None:
+    """K1a's and K3's scenarios are T-11's shapes (research/evidence/t-11/shapes.json) under the
+    cell's own name, cell id, and master seed: nothing else differs."""
     from crashcourt.spec.scenario import load_scenario
 
     other = {"name", "cell", "seed"}
-    k1a = load_scenario(ROOT / "scenarios/first-matrix/K1a.yaml")
-    shape = load_scenario(ROOT / "tests/integration/scenarios/t11-k1a-shape.yaml")
-    assert k1a.model_dump(exclude=other) == shape.model_dump(exclude=other)
+    scenario = load_scenario(ROOT / f"scenarios/first-matrix/{cell}.yaml")
+    validated = load_scenario(ROOT / f"tests/integration/scenarios/{shape}.yaml")
+    assert scenario.model_dump(exclude=other) == validated.model_dump(exclude=other)
 
 
 def test_a_redelivery_cell_declares_its_replacement() -> None:
@@ -386,5 +387,5 @@ def test_cli_check_reports_what_is_missing(capsys: pytest.CaptureFixture[str]) -
     assert main(["experiment", "check", "--root", str(ROOT)]) == 0
     out = capsys.readouterr().out
     assert "draft, 36 cells (18 instrument, 18 new evidence)" in out
-    assert "the draft can authorize: K1a\n" in out
+    assert "the draft can authorize: K1a, K3\n" in out
     assert "before it can be final" in out
