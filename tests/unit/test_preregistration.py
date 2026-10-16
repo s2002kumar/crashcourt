@@ -199,10 +199,10 @@ def test_the_completeness_ruling_of_2026_10_16() -> None:
     deviations = text[text.index("## Deviations") : text.index("## Pre-registration data")]
     assert "K1a-gh38926456031-1" in deviations
     assert "never counted as a passing replication" in deviations
-    # I7c stays as ruled, and the cells cannot run until it is ruled on again.
+    # I7c, corrected before either cell ran: checker v1 exercises it on w1-misuse.
     for name in ("K5", "K5-reject"):
-        assert _expect(cells[name], "I7c") == ("NOT_EXERCISED",)
-        assert "a ruling on I7c" in (cells[name].pending or "")
+        assert _expect(cells[name], "I7c") == ("NO_ANOMALY_UNSPECIFIED",)
+        assert cells[name].pending is None
 
 
 def test_the_draft_pins_the_frozen_checker() -> None:
