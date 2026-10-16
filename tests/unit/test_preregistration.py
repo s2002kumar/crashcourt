@@ -166,6 +166,45 @@ def test_the_draft_applies_the_rulings_of_2026_10_10() -> None:
     assert "L-GET" in cells["K2"].trigger
 
 
+def test_every_instrument_cell_predicts_every_invariant_the_aggregator_can_score() -> None:
+    """The aggregator reads an exercised invariant that a cell does not name as `recorded`, and the
+    instrument gate refuses a cell that is not as predicted (K1a's first formal batch,
+    K1a-gh38926456031-1). So every instrument cell has a prediction for every invariant checker v1
+    reports, as the aggregator itself looks it up."""
+    from crashcourt.checker.invariants import INVARIANTS
+    from crashcourt.experiment.aggregate import summarize_invariant
+    from crashcourt.experiment.verify import TrialFiles
+
+    instrument = [c for c in parse(committed()).cells if c.phase == "instrument"]
+    assert {"K1a", "K2", "K3", "K4", "K5", "K5-reject"} <= {c.id for c in instrument}
+    for cell in instrument:
+        for invariant in INVARIANTS:
+            outcome = {"invariant": invariant, "outcome": "NO_ANOMALY_UNSPECIFIED"}
+            trial = TrialFiles(1, ROOT, {"not_exercised": []}, {"results": [outcome]})
+            summary = summarize_invariant(cell, invariant, [trial])
+            assert summary.predicted is not None, (cell.id, invariant)
+            assert summary.prediction != "recorded", (cell.id, invariant)
+
+
+def test_the_completeness_ruling_of_2026_10_16() -> None:
+    text = committed()
+    cells = {c.id: c for c in parse(text).cells}
+    no_other = ("PASS", "NO_ANOMALY_UNSPECIFIED", "NOT_EXERCISED")
+    for name in ("K1a", "K2", "K3", "K5", "K5-reject"):
+        assert _expect(cells[name], "*") == no_other, name
+    assert _expect(cells["K4"], "*") == ("NOT_EXERCISED",)  # P2: K4 scores no outcome
+    # K1a's named predictions are the ones its first batch ran under; only the default is new.
+    k1a = cells["K1a"]
+    assert [_expect(k1a, i) for i in ("I4", "I7a", "I1b")] == [("GAP",), ("GAP",), ("PASS",)]
+    deviations = text[text.index("## Deviations") : text.index("## Pre-registration data")]
+    assert "K1a-gh38926456031-1" in deviations
+    assert "never counted as a passing replication" in deviations
+    # I7c stays as ruled, and the cells cannot run until it is ruled on again.
+    for name in ("K5", "K5-reject"):
+        assert _expect(cells[name], "I7c") == ("NOT_EXERCISED",)
+        assert "a ruling on I7c" in (cells[name].pending or "")
+
+
 def test_the_draft_pins_the_frozen_checker() -> None:
     """Every hash pinned is the one T-10's FROZEN.md records, and the checker files verify against
     it (freeze.verify_checker raises otherwise)."""

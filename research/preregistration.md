@@ -181,6 +181,21 @@ My rulings on T-10's readings, applied here before the freeze:
   beside its results, so three measured mutants are never read as five of five. The checker and I3 are
   unchanged, and no workload was added to exercise M1.
 
+## Rulings applied (2026-10-16)
+
+- **Every instrument cell predicts every invariant.** The aggregator reads an exercised invariant
+  that a cell does not name as `recorded`, never as predicted, and an instrument cell counts only
+  when it comes out as predicted. K1a's first formal batch showed the gap (Deviations). Each K-cell
+  now says what it predicts for the invariants it does not name: K1a, K2, K3, K5, and K5-reject
+  predict no other anomaly (`*`: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED); K4 predicts that
+  nothing else is exercised (`*`: NOT_EXERCISED), since by P2 it scores no outcome. K2's I6a stays
+  named as variable. The aggregator is unchanged and stays strict, and a test holds every instrument
+  cell to full coverage under its rules.
+- **K5 and K5-reject wait on I7c.** The audit found that checker v1 exercises I7c on w1-misuse (its
+  approval effect is charge) and gives NO_ANOMALY_UNSPECIFIED, with approve and with reject, so the
+  named NOT_EXERCISED would differ in every trial. Both cells are `pending` until I rule on it; I7c's
+  prediction is unchanged.
+
 ## Deferred from the first matrix
 
 - **C5's M1 and M2.** The instrument's sensitivity to a lost pending-write row (M1) and to a by-id read
@@ -210,12 +225,12 @@ My rulings on T-10's readings, applied here before the freeze:
 | C3-w1-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
 | C3-w1-reject-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
 | C3-w5-sync | instrument | control (C3) | w5 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| K2 | instrument | control (C2) | w5 | sync | F06 | 2 | 20 | I5a: GAP; I6a: NO_ANOMALY_UNSPECIFIED or GAP | anomaly on I5a: present |  |
-| K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 1 row, attempts [1] |  |
-| K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 0 rows, attempts [] |  |
-| K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 2 | 20 | I4: GAP; I7a: GAP; I1b: PASS | ledger charge: 2 rows, attempts [1, 2] |  |
-| K3 | instrument | replication (langgraph#8796) | w5 | sync | F05 | 2 | 20 | I5a: GAP; I6a: GAP | anomaly on I5a: present |  |
-| K4 | instrument | replication (langgraph#8764) | w1 | sync | F01 | 1 | 20 | I1a: NOT_EXERCISED; I1b: NOT_EXERCISED | checker observation 'accepted run with no durable record: op start-1 ended': 1 |  |
+| K2 | instrument | control (C2) | w5 | sync | F06 | 2 | 20 | I5a: GAP; I6a: NO_ANOMALY_UNSPECIFIED or GAP; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | anomaly on I5a: present |  |
+| K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 1 row, attempts [1] | pending |
+| K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 0 rows, attempts [] | pending |
+| K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 2 | 20 | I4: GAP; I7a: GAP; I1b: PASS; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger charge: 2 rows, attempts [1, 2] |  |
+| K3 | instrument | replication (langgraph#8796) | w5 | sync | F05 | 2 | 20 | I5a: GAP; I6a: GAP; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | anomaly on I5a: present |  |
+| K4 | instrument | replication (langgraph#8764) | w1 | sync | F01 | 1 | 20 | I1a: NOT_EXERCISED; I1b: NOT_EXERCISED; *: NOT_EXERCISED | checker observation 'accepted run with no durable record: op start-1 ended': 1 |  |
 | K1b | new-evidence | new-evidence | w1 | sync | F01 | 2 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - |  |
 | N1 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: GAP; I7a: GAP | - | unknown |
 | N2 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown |
@@ -237,8 +252,17 @@ My rulings on T-10's readings, applied here before the freeze:
 
 ## Deviations
 
-None yet. Any change to this file after it is final is listed here with its reason and the batches it
-affects.
+Any change to a cell's entry after it has an authorized batch, and any change to this file after it is
+final, is listed here with its reason and the batches it affects.
+
+- **K1a: the `*` prediction, added 2026-10-16, after a batch.** Batch K1a-gh38926456031-1 (run
+  commit f4ca5f9, pre-registration 68704ff, Actions run 38926456031) came out as predicted on I4,
+  I7a, I1b, and the ledger observation in 20 of 20 trials, but K1a named no other invariant, so the 11
+  others the checker exercised were recorded without a prediction and the cell read `recorded`, not
+  as predicted; the gate refused it as an instrument cell. `*`: PASS or NO_ANOMALY_UNSPECIFIED or
+  NOT_EXERCISED (no anomaly beyond K1a's predicted behavior) was added only after that batch exposed
+  the gap. The batch stays archived as it ran, under the pre-registration it ran under, as the run
+  that found the defect; it is never counted as a passing replication. K1a runs again as a new batch.
 
 ## Pre-registration data
 
@@ -773,6 +797,15 @@ affects.
           ],
           "invariant": "I6a",
           "note": "C2 forces the fork, not which branch the acknowledgments and the head agree on; either class, the same in every trial (alternation makes the cell UNSTABLE)"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": "no anomaly beyond the named ones; completeness audit of 2026-10-16, before any batch of this cell"
         }
       ],
       "replication_of": null,
@@ -815,7 +848,7 @@ affects.
           "source": "ledger"
         }
       ],
-      "pending": null,
+      "pending": "a ruling on I7c: checker v1 exercises it on w1-misuse, whose approval effect is charge, and gives NO_ANOMALY_UNSPECIFIED (its unit tests on misuse with approve and with reject; T-10's validation on T-09's fault-free misuse histories, 50 of 50), so NOT_EXERCISED would differ in every trial (completeness audit of 2026-10-16)",
       "phase": "instrument",
       "predicted": [
         {
@@ -831,6 +864,15 @@ affects.
           ],
           "invariant": "I7c",
           "note": "precheck is exempt by the effect model, so no executed action is judged"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": "no anomaly beyond the named ones; completeness audit of 2026-10-16, before any batch of this cell"
         }
       ],
       "replication_of": null,
@@ -871,7 +913,7 @@ affects.
           "source": "ledger"
         }
       ],
-      "pending": null,
+      "pending": "a ruling on I7c: checker v1 exercises it on w1-misuse, whose approval effect is charge, and gives NO_ANOMALY_UNSPECIFIED (its unit tests on misuse with approve and with reject; T-10's validation on T-09's fault-free misuse histories, 50 of 50), so NOT_EXERCISED would differ in every trial (completeness audit of 2026-10-16)",
       "phase": "instrument",
       "predicted": [
         {
@@ -887,6 +929,15 @@ affects.
           ],
           "invariant": "I7c",
           "note": "no charge is executed, so no executed action is judged"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": "no anomaly beyond the named ones; completeness audit of 2026-10-16, before any batch of this cell"
         }
       ],
       "replication_of": null,
@@ -943,6 +994,15 @@ affects.
           ],
           "invariant": "I1b",
           "note": "D1: the redelivery does not suppress I1b; every acknowledged checkpoint survives"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": "no anomaly beyond K1a's predicted behavior; added on 2026-10-16 after batch K1a-gh38926456031-1 exposed the gap (Deviations)"
         }
       ],
       "replication_of": "langgraph#8039",
@@ -988,6 +1048,15 @@ affects.
           ],
           "invariant": "I6a",
           "note": "concurrent writers: the head's writer and the larger id are named (R3)"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": "no anomaly beyond the named ones; completeness audit of 2026-10-16, before any batch of this cell"
         }
       ],
       "replication_of": "langgraph#8796",
@@ -1033,6 +1102,13 @@ affects.
           ],
           "invariant": "I1b",
           "note": "no checkpoint was acknowledged"
+        },
+        {
+          "expect": [
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": "P2: K4 scores no outcome, and the frozen checker exercises no invariant on this shape; completeness audit of 2026-10-16, before any batch of this cell"
         }
       ],
       "replication_of": "langgraph#8764",
