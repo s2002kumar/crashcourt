@@ -1,0 +1,23 @@
+# K1a: the replication of langgraph#8039, an instrument cell (never new evidence).
+# W1 approve on one thread. w1 starts the run, which pauses at approval's interrupt, then resumes
+# it. At L-EXW, resume-1's third put_writes call, before it commits (put_writes.before), w1 is
+# killed: execute has run and charged once, and its writes are not committed. Once w1's exit is
+# recorded, resume-1 is redelivered to w2, its replacement, which runs execute again from the last
+# committed checkpoint. What it is predicted to show is research/preregistration.md's cell K1a.
+v: 1
+name: K1a
+cell: K1a
+seed: K1a-v1
+workload: w1
+target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
+workers: [w1, w2]
+ops:
+  - {id: start-1, worker: w1, thread: t1, after: start, input: {order: order-17}}
+  - {id: resume-1, worker: w1, thread: t1, after: start-1, resume: approve}
+schedule:
+  - on: {fp: put_writes.before, worker: w1, op: resume-1, occurrence: 3}
+    do: {signal: SIGKILL}
+    landmark: L-EXW
+  - on: {exited: w1}
+    do: {redeliver: {op: resume-1, to: w2}}

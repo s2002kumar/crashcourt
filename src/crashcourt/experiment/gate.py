@@ -3,8 +3,10 @@
 `authorize_batch(source, trials, root)` is called by `crashcourt run` before doctor, for a scenario
 file the pre-registration lists. It refuses, naming every reason at once, unless:
 
-1. the checkout is clean, and research/preregistration.md is `final` and unchanged since the
-   commit that last changed it (the pre-registration commit), which is an ancestor of HEAD;
+1. the checkout is clean, and research/preregistration.md is unchanged since the commit that
+   last changed it (the pre-registration commit), which is an ancestor of HEAD, and can authorize
+   the cell: a final pre-registration any cell, a draft only an instrument cell that is complete
+   under complete pins (`Preregistration.refusals`);
 2. the checker is FROZEN: src/crashcourt/checker/FROZEN.md exists, its bytes hash to the
    pre-registered value, the checker files, effect models, and clause registry verify against it
    (T-10's `freeze.verify_checker`), its checker hash is the pre-registered one, and the commit
@@ -12,9 +14,9 @@ file the pre-registration lists. It refuses, naming every reason at once, unless
    the TrialScenario builder (orchestrator/declared.py), which is outside the freeze, is the file
    the pre-registration pins, at its commit and at HEAD;
 3. the scenario is the one pre-registered for its cell: same content hash, same cell id, same
-   master seed; the landmark table it names is audited and frozen (T-10's
-   `freeze.verify_scenario`), and a cell that injects a fault names one; and `trials` is the
-   pre-registered N (no optional stopping, no extra trials);
+   master seed, and as many workers as the cell names; the landmark table it names is audited
+   and frozen (T-10's `freeze.verify_scenario`), and a cell that injects a fault names one; and
+   `trials` is the pre-registered N (no optional stopping, no extra trials);
 4. for a new-evidence cell, every instrument cell (controls and published replications) of the
    same pre-registration, checker, and environment has batches that came out as predicted.
 
@@ -42,6 +44,7 @@ from crashcourt.experiment import gitproof
 from crashcourt.experiment.fingerprint import (
     RULES_PATH,
     CompatibilityRule,
+    Host,
     fingerprint,
     mismatched,
     parse_rules,
@@ -52,6 +55,7 @@ from crashcourt.experiment.preregistration import (
     Cell,
     Preregistration,
     PreregistrationError,
+    counted,
     parse,
 )
 from crashcourt.manifest import Manifest
@@ -103,6 +107,8 @@ class ScenarioFacts:
     sha256: str
     cell: str
     master_seed: str
+    #: The worker processes the scenario declares.
+    workers: int
 
 
 class CheckerView(Protocol):
@@ -151,7 +157,9 @@ class T07Scenarios:
 
     def load(self, path: Path) -> ScenarioFacts:
         scenario = load_scenario(path)
-        return ScenarioFacts(scenario_sha256(scenario), scenario.cell, scenario.seed)
+        return ScenarioFacts(
+            scenario_sha256(scenario), scenario.cell, scenario.seed, len(scenario.workers)
+        )
 
 
 class Authorization(BaseModel):
@@ -170,6 +178,9 @@ class Authorization(BaseModel):
     run_commit: str
     preregistration_commit: str
     preregistration_sha256: str
+    #: The pre-registration's state at its commit: a draft authorizes only complete instrument
+    #: cells, whose batches never count toward new evidence.
+    preregistration_state: Literal["draft", "final"]
     freeze_commit: str
     frozen_md_sha256: str
     checker_version: str
@@ -259,8 +270,6 @@ def authorize_batch(
         prereg = parse(committed.decode("utf-8"))
     except PreregistrationError as exc:
         raise NotAuthorized([*check.reasons, f"{PREREG}: {exc}"]) from exc
-    if prereg.state != "final":
-        check.fail(f"the pre-registration is a {prereg.state}, not final")
     if not gitproof.is_ancestor(root, prereg_commit, run_commit):
         check.fail(f"pre-registration commit {prereg_commit} is not an ancestor of {run_commit}")
 
@@ -279,6 +288,8 @@ def authorize_batch(
         cell = prereg.by_scenario(rel.as_posix())
     except KeyError:
         raise NotAuthorized([*check.reasons, f"{rel} is not a pre-registered scenario"]) from None
+    for reason in prereg.refusals(cell):
+        check.fail(reason)
     landmarks = _scenario(root / rel, cell, trials, scenarios, checker, frozen, check)
 
     # 4. instrument before new evidence
@@ -308,6 +319,7 @@ def authorize_batch(
         run_commit=run_commit,
         preregistration_commit=prereg_commit,
         preregistration_sha256=hashlib.sha256(committed).hexdigest(),
+        preregistration_state=prereg.state,
         freeze_commit=frozen.commit,
         frozen_md_sha256=frozen.sha256,
         checker_version=frozen.checker.version,
@@ -398,6 +410,11 @@ def _scenario(
         check.fail(f"{path} names cell {facts.cell}, the pre-registration lists it as {cell.id}")
     if facts.master_seed != cell.master_seed:
         check.fail(f"{path} has master seed {facts.master_seed}, not {cell.master_seed}")
+    if facts.workers != cell.workers:
+        check.fail(
+            f"{path} declares {counted(facts.workers, 'worker')}; cell {cell.id} is "
+            f"pre-registered with {cell.workers}"
+        )
     if frozen is None:
         return None
     try:
@@ -425,10 +442,11 @@ def confirm_environment(
     authorization: Authorization,
     manifest: Manifest,
     rules: Sequence[CompatibilityRule] = (),
+    host: Host | None = None,
 ) -> list[str]:
     """Why the batch's manifest is not the pre-registered environment; empty when it is. For a
-    new-evidence batch, the manifest must also match the instrument batches' environment in every
-    material field a recorded compatibility rule does not cover."""
+    new-evidence batch, the manifest and the host must also match the instrument batches'
+    environment in every material field a recorded compatibility rule does not cover."""
     problems = [
         f"manifest {key} is {got!r}, the pre-registration requires {want!r}"
         for key, (want, got) in mismatched(manifest, prereg.environment).items()
@@ -444,7 +462,7 @@ def confirm_environment(
             problems.append("a new-evidence batch names no instrument environment")
         else:
             differing = unexplained_between(
-                authorization.instrument_fingerprint, fingerprint(manifest), rules
+                authorization.instrument_fingerprint, fingerprint(manifest, host), rules
             )
             for key, (then, now) in differing.items():
                 problems.append(f"{key} is {now!r}; the instrument cells ran with {then!r}")
@@ -456,11 +474,14 @@ def rules_at(root: Path, commit: str) -> list[CompatibilityRule]:
     return parse_rules(gitproof.blob(root, commit, RULES_PATH))
 
 
-def confirm(authorization: Authorization, manifest: Manifest, root: Path) -> list[str]:
+def confirm(
+    authorization: Authorization, manifest: Manifest, root: Path, host: Host | None = None
+) -> list[str]:
     """`confirm_environment` against the pre-registration as committed and the compatibility rules
-    as recorded at the authorized commit: what the runner calls after doctor."""
+    as recorded at the authorized commit: what the runner calls after doctor, with the host it
+    will record."""
     text = gitproof.blob(root, authorization.preregistration_commit, PREREG)
     if text is None:
         return [f"{PREREG} is not in commit {authorization.preregistration_commit}"]
     rules = rules_at(root, authorization.run_commit)
-    return confirm_environment(parse(text.decode("utf-8")), authorization, manifest, rules)
+    return confirm_environment(parse(text.decode("utf-8")), authorization, manifest, rules, host)

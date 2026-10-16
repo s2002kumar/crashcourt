@@ -22,9 +22,10 @@ from crashcourt.checker.engine import check_trial
 from crashcourt.checker.load import load_trial, write_outputs
 from crashcourt.checker.status import EvidenceClass
 from crashcourt.clauses.registry import ClauseRegistry, registry_sha256
+from crashcourt.experiment.classify import NotClassified, classify_batch
 from crashcourt.experiment.observe import mismatch
 from crashcourt.experiment.preregistration import EVERY_INVARIANT, PREREGISTRATION_PATH, parse
-from crashcourt.experiment.verify import TrialFiles
+from crashcourt.experiment.verify import TrialFiles, read_trials
 from crashcourt.history.reader import read_history
 from crashcourt.orchestrator.declared import trial_scenario
 from crashcourt.orchestrator.runner import BatchSummary, RunOptions, Settings, run_batch
@@ -141,6 +142,27 @@ def test_k1a_shape_replicates_8039_as_preregistered(tmp_path: Path) -> None:
             ("client.invoke", "w1"),
             ("client.ok", "w2"),
         ]
+
+
+def test_a_batch_is_classified_once_and_identically_again(tmp_path: Path) -> None:
+    """`crashcourt experiment classify` on K1a's shape: every trial as the draft predicts K1a, the
+    checker run again on the same histories byte-identical, and a verdict never replaced."""
+    path = SHAPES / "t11-k1a-shape.yaml"
+    summary = run_batch(
+        load_scenario(path),
+        RunOptions(trials=TRIALS, out=tmp_path),
+        Settings.from_environment(REPO),
+        source=path,
+    )
+    host = json.loads((summary.directory / "run.json").read_text())["host"]
+    assert all(isinstance(host[k], int) and host[k] > 0 for k in ("cpu_count", "memory_gib"))
+    first = classify_batch(summary.directory, REPO)
+    assert [c.invalid for c in first] == [None] * TRIALS
+    assert [as_predicted("K1a", t) for t in read_trials(summary.directory)] == [[]] * TRIALS
+    again = classify_batch(summary.directory, REPO, compare=True)
+    assert [c.differs for c in again] == [()] * TRIALS
+    with pytest.raises(NotClassified, match="already classified"):
+        classify_batch(summary.directory, REPO)
 
 
 def test_k3_shape_replicates_8796_as_preregistered(tmp_path: Path) -> None:

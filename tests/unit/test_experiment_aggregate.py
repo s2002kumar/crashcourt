@@ -21,6 +21,7 @@ from crashcourt.experiment.verify import BatchNotVerified, verify_batch
 from ._experiment import (
     BUILDER_SHA,
     BUILDER_TEXT,
+    HOST,
     LEDGER,
     SEEDS,
     FakeChecker,
@@ -49,7 +50,9 @@ def authorized(repo: Repo, cell: str = "R1") -> Authorization:
         scenarios=FakeScenarios(),
         instrument_check=(
             lambda *_: InstrumentEvidence(
-                [], ["inst"], fingerprint(manifest_for(git(repo.root, "rev-parse", "HEAD")))
+                [],
+                ["inst"],
+                fingerprint(manifest_for(git(repo.root, "rev-parse", "HEAD")), HOST),
             )
         )
         if cell == "X1"
@@ -128,6 +131,41 @@ def test_the_environment_must_be_the_preregistered_one(repo: Repo) -> None:
     assert "manifest os_system is 'Windows'" in problems(repo, d)
 
 
+def test_an_instrument_batch_authorized_under_a_draft_verifies(tmp_path: Path) -> None:
+    draft = make_repo(tmp_path, prereg_model(state="draft"))
+    verified = verify_batch(batch(draft, "b1"), draft.root)
+    assert verified.authorization.preregistration_state == "draft"
+
+
+def test_verification_applies_the_draft_rule_again(tmp_path: Path) -> None:
+    draft = make_repo(tmp_path, prereg_model(state="draft"))
+    d = batch(draft, "b1")
+    auth = json.loads((d / "authorization.json").read_text(encoding="utf-8"))
+    auth["cell"] = "X1"
+    (d / "authorization.json").write_text(json.dumps(auth), encoding="utf-8")
+    assert (
+        "at the pre-registration commit, the pre-registration is a draft; new-evidence cell X1 "
+        "needs it final" in problems(draft, d)
+    )
+
+
+def test_the_recorded_state_must_be_the_preregistrations(repo: Repo) -> None:
+    d = batch(repo, "b1")
+    auth = json.loads((d / "authorization.json").read_text(encoding="utf-8"))
+    auth["preregistration_state"] = "draft"
+    (d / "authorization.json").write_text(json.dumps(auth), encoding="utf-8")
+    assert "the authorization records a draft pre-registration; it was final at its commit" in (
+        problems(repo, d)
+    )
+
+
+def test_the_scenario_run_must_declare_the_cells_workers(repo: Repo) -> None:
+    one = batch(repo, "b1", scenario_text='{"cell":"R1","seed":"seed-r1","workers":["w1"]}')
+    assert "scenario.json declares 1 worker, pre-registered 2" in problems(repo, one)
+    none = batch(repo, "b2", scenario_text='{"cell":"R1","seed":"seed-r1"}')
+    assert "scenario.json declares no workers, pre-registered 2" in problems(repo, none)
+
+
 # -- aggregation ---------------------------------------------------------------------------------
 
 
@@ -154,6 +192,25 @@ def test_a_different_runner_is_never_pooled_silently(repo: Repo) -> None:
     assert cell.not_pooled_because == {"os_release": ["'6.11.0'", "'6.8.0'"]}
     rule = CompatibilityRule(field="os_release", values=("6.8.0", "6.11.0"), reason="kernel bump")
     assert aggregate([a, b], repo.root, [rule]).cells[0].pooled
+
+
+def test_runners_of_one_label_but_another_size_are_never_pooled_silently(repo: Repo) -> None:
+    """One GitHub-hosted label gives a public repository 4 CPUs and 16 GB and a private one 2 and
+    8, and the manifest names neither; run.json's host does, and no two of these pool."""
+    public = batch(repo, "b1")
+    private = batch(repo, "b2", run_changes={"host": {"cpu_count": 2, "memory_gib": 8}})
+    unrecorded = batch(repo, "b3", run_changes={"host": None})
+    for other, why in ((private, {"host.cpu_count", "host.memory_gib"}), (unrecorded, None)):
+        [cell] = aggregate([public, other], repo.root).cells
+        assert not cell.pooled
+        assert set(cell.not_pooled_because) == (why or {"host.cpu_count", "host.memory_gib"})
+    assert aggregate([public, batch(repo, "b4")], repo.root).cells[0].pooled
+
+
+def test_a_verified_batch_carries_the_host_its_run_json_records(repo: Repo) -> None:
+    verified = verify_batch(batch(repo, "b1"), repo.root)
+    assert verified.host == HOST
+    assert verified.environment["host.cpu_count"] == 4
 
 
 def test_one_unverified_batch_refuses_the_whole_summary(repo: Repo) -> None:

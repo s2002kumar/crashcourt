@@ -1,7 +1,9 @@
 # Pre-registration: the first fault matrix
 
-**Status: DRAFT.** This file authorizes nothing. `crashcourt experiment authorize` refuses every batch until
-`state` is `final`, which needs everything under "Before this is final" and my commit.
+**Status: DRAFT.** A draft authorizes only an instrument cell that is complete on its own, under complete
+pins, and never new evidence (below, "Instrument cells before the final commit"). `crashcourt experiment
+authorize` refuses every new-evidence batch until `state` is `final`, which needs everything under "Before
+this is final" and my commit.
 
 This file fixes, before any batch of the first matrix runs, what each cell runs, how many trials it gets, and
 what I predict it shows. The commit that last changes it is the pre-registration commit. A batch runs only
@@ -27,10 +29,11 @@ The JSON block at the end is the binding part; the prose and the table explain i
   occurrence; loading refuses a missing, unknown, or mismatched one, and the name is part of the
   scenario's hash.
 - **The cells.** Each cell names its scenario file and that scenario's content hash, its master seed, N, its
-  phase, and its predicted outcome per invariant. One prediction value is firm; several mean one of them, the
-  same in every trial; `*` covers every invariant the cell does not name. `NOT_EXERCISED` predicts that the
-  invariant is omitted from the results. Cells whose outcome is honestly unknown say `unknown`; their
-  predictions record the expected shape and are compared, but not flagged.
+  phase, the number of worker processes its scenario declares (`workers`, a replacement that takes a
+  redelivered op over included), and its predicted outcome per invariant. One prediction value is firm;
+  several mean one of them, the same in every trial; `*` covers every invariant the cell does not name.
+  `NOT_EXERCISED` predicts that the invariant is omitted from the results. Cells whose outcome is honestly
+  unknown say `unknown`; their predictions record the expected shape and are compared, but not flagged.
 - **Observations.** A cell may also predict what it observes apart from any outcome: rows of the effect
   ledger's export (by effect, with their count and attempts), a record in `checker.json` that is not an
   outcome, or whether an invariant showed an anomaly at all, whatever its class. Each is matched in every
@@ -51,17 +54,19 @@ The JSON block at the end is the binding part; the prose and the table explain i
 ## How it is enforced
 
 - `crashcourt experiment authorize <scenario> --trials N` runs before doctor and refuses unless the checkout
-  is clean; this file is final and committed; the checker is FROZEN and verifies against FROZEN.md, whose
+  is clean; this file is committed and can authorize the cell (final, or a draft and the cell a complete
+  instrument cell under complete pins); the checker is FROZEN and verifies against FROZEN.md, whose
   hash and checker hash are the ones named here; the TrialScenario builder is the pinned file at this
-  file's commit and at HEAD; the scenario's hash, cell, and master seed match its cell;
+  file's commit and at HEAD; the scenario's hash, cell, master seed, and number of workers match its cell;
   N is the cell's N; the scenario's landmark table verifies against the freeze; and, for a new-evidence
   cell, every instrument cell has come out as predicted. It writes `authorization.json` into the batch.
 - After doctor, the batch's manifest must hold the pre-registered environment, name the authorized commit,
   and record a clean checkout.
 - `crashcourt experiment verify <batch>` re-proves an archived batch from git: this file's commit is an
-  ancestor of the run commit and did not change before it, the freeze commit is an ancestor of this file's
-  commit, every hash matches (the builder's among them), there are exactly N trials, and every trial's
-  checker.json was written by the frozen checker and authorized for new evidence.
+  ancestor of the run commit and did not change before it, and could authorize the cell as it stood there;
+  the freeze commit is an ancestor of this file's commit, every hash matches (the builder's among them),
+  there are exactly N trials, and every trial's checker.json was written by the frozen checker and
+  authorized for new evidence.
 - `crashcourt experiment aggregate <batch>...` summarizes verified batches only, into `cells.json`. Batches
   are pooled only when they share this commit, the checker, and the scenario, and their manifests differ in
   no material field a recorded compatibility rule does not cover. Anything else is reported as separate
@@ -116,13 +121,29 @@ It stays a draft until every one of these holds:
   need fault-free async histories audited as T-09's sync corpus was.
 - Every checker record a cell observes (K4's) is worded as the frozen checker writes it. Done: a test reads
   the frozen checker's wording.
-- The environment and runner fingerprint is fixed under `environment`.
+- The environment and runner fingerprint is fixed under `environment`. Done (2026-10-15): the runner is
+  GitHub-hosted (decision 17 in tasks/T-13.md), and the lockfile and specification hashes are pinned; a test
+  holds the lockfile pin to uv.lock, so a dependency change moves the pin in the same commit.
 - Every instrument requirement is represented, as a cell or as an instrument check with its evidence recorded.
 
 Then `state` becomes `final` in my commit.
 
 T-09's fault-free histories, the current set and the final one after the restack, are inputs to the instrument
 and to the landmark derivation before the freeze. Neither is evidence about any cell here.
+
+## Instrument cells before the final commit
+
+Added 2026-10-15, before any batch was authorized. A draft can authorize an instrument cell once that cell
+is complete (its scenario file exists, its hash and master seed are copied in, nothing is pending) and the
+pins are complete (the frozen checker, the builder, every value under `environment`). It never authorizes a
+new-evidence cell. This lets the instrument be run and inspected one cell at a time, K1a first, without
+writing scenarios for cells whose fault schedules do not exist yet.
+
+It loosens nothing for new evidence. A new-evidence cell needs this file final, and every instrument cell
+as predicted under the same pre-registration commit as the new-evidence cell, so every instrument cell runs
+again under the final commit and the batches run under a draft never count toward new evidence. Each
+batch's authorization.json records the state it ran under, and verification checks it. Once a cell has an
+authorized batch, any change to its entry is listed under Deviations with the batches it affects.
 
 ## Rulings applied (2026-10-10)
 
@@ -192,10 +213,10 @@ My rulings on T-10's readings, applied here before the freeze:
 | K2 | instrument | control (C2) | w5 | sync | F06 | 2 | 20 | I5a: GAP; I6a: NO_ANOMALY_UNSPECIFIED or GAP | anomaly on I5a: present |  |
 | K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 1 row, attempts [1] |  |
 | K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 0 rows, attempts [] |  |
-| K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 1 | 20 | I4: GAP; I7a: GAP; I1b: PASS | ledger charge: 2 rows, attempts [1, 2] |  |
+| K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 2 | 20 | I4: GAP; I7a: GAP; I1b: PASS | ledger charge: 2 rows, attempts [1, 2] |  |
 | K3 | instrument | replication (langgraph#8796) | w5 | sync | F05 | 2 | 20 | I5a: GAP; I6a: GAP | anomaly on I5a: present |  |
 | K4 | instrument | replication (langgraph#8764) | w1 | sync | F01 | 1 | 20 | I1a: NOT_EXERCISED; I1b: NOT_EXERCISED | checker observation 'accepted run with no durable record: op start-1 ended': 1 |  |
-| K1b | new-evidence | new-evidence | w1 | sync | F01 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - |  |
+| K1b | new-evidence | new-evidence | w1 | sync | F01 | 2 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - |  |
 | N1 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: GAP; I7a: GAP | - | unknown |
 | N2 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown |
 | N3 | new-evidence | new-evidence | w1 | sync | F10 | 1 | 20 | I4: GAP | - |  |
@@ -206,11 +227,11 @@ My rulings on T-10's readings, applied here before the freeze:
 | N8 | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP | - |  |
 | N9 | new-evidence | new-evidence | w1 | sync | F13 | 1 | 20 | I1b: PASS | - |  |
 | N10 | new-evidence | new-evidence | w1 | sync | F12 | 1 | 20 | I1a: PASS; I1b: PASS; I11: PASS; I4: NO_ANOMALY_UNSPECIFIED | - |  |
-| N11 | new-evidence | new-evidence | w1 | sync | F01 | 1 | 20 | I7c: PASS or NO_ANOMALY_UNSPECIFIED | - | unknown |
+| N11 | new-evidence | new-evidence | w1 | sync | F01 | 2 | 20 | I7c: PASS or NO_ANOMALY_UNSPECIFIED | - | unknown |
 | N12 | new-evidence | new-evidence | w5 | sync | F11 | 1 | 20 | I5: NO_ANOMALY_UNSPECIFIED | - | unknown |
 | N12b | new-evidence | new-evidence | w5 | sync | F10 | 1 | 20 | I5b: GAP | - |  |
-| A1 | new-evidence | new-evidence | w1 | async | F01 | 1 | 20 | I4: GAP; I7a: GAP; I1b: NOT_EXERCISED or EXPECTED | - | pending |
-| A2 | new-evidence | new-evidence | w1 | async | F01 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | pending |
+| A1 | new-evidence | new-evidence | w1 | async | F01 | 2 | 20 | I4: GAP; I7a: GAP; I1b: NOT_EXERCISED or EXPECTED | - | pending |
+| A2 | new-evidence | new-evidence | w1 | async | F01 | 2 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | pending |
 | A3 | new-evidence | new-evidence | w1 | async | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown, pending |
 | A4 | new-evidence | new-evidence | w1 | async | F12 | 1 | 20 | I4: NO_ANOMALY_UNSPECIFIED; *: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | pending |
 
@@ -885,7 +906,7 @@ affects.
       "fault": "F01",
       "hypothesis": "H4",
       "id": "K1a",
-      "master_seed": null,
+      "master_seed": "K1a-v1",
       "n": 20,
       "observations": [
         {
@@ -926,9 +947,9 @@ affects.
       ],
       "replication_of": "langgraph#8039",
       "scenario": "scenarios/first-matrix/K1a.yaml",
-      "scenario_sha256": null,
+      "scenario_sha256": "cfec4076e08f9daa555745f82c32f521012ab1889e8d5d332fb657e5448c5ee7",
       "trigger": "SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before: execute has ended and its writes are not committed; resume-1 redelivered to the worker's replacement",
-      "workers": 1,
+      "workers": 2,
       "workload": "w1"
     },
     {
@@ -1050,7 +1071,7 @@ affects.
       "scenario": "scenarios/first-matrix/K1b.yaml",
       "scenario_sha256": null,
       "trigger": "SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.after (writes committed); resume-1 redelivered",
-      "workers": 1,
+      "workers": 2,
       "workload": "w1"
     },
     {
@@ -1471,7 +1492,7 @@ affects.
       "scenario": "scenarios/first-matrix/N11.yaml",
       "scenario_sha256": null,
       "trigger": "W1 with the resume rejected; SIGKILL at L-RES (occurrence 2 of resume-1's put_writes), put_writes.after (resume committed); redeliver",
-      "workers": 1,
+      "workers": 2,
       "workload": "w1"
     },
     {
@@ -1579,7 +1600,7 @@ affects.
       "scenario": "scenarios/first-matrix/A1.yaml",
       "scenario_sha256": null,
       "trigger": "K1a under async: SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before; resume-1 redelivered",
-      "workers": 1,
+      "workers": 2,
       "workload": "w1"
     },
     {
@@ -1611,7 +1632,7 @@ affects.
       "scenario": "scenarios/first-matrix/A2.yaml",
       "scenario_sha256": null,
       "trigger": "K1b under async: SIGKILL at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.after; resume-1 redelivered",
-      "workers": 1,
+      "workers": 2,
       "workload": "w1"
     },
     {
@@ -1710,13 +1731,13 @@ affects.
   "environment": {
     "clause_registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5",
     "git_dirty": false,
-    "lockfile_sha256": null,
+    "lockfile_sha256": "19a0dd0df75a86126dec1b617422001fedb30ac18978c7fe31585ce52a92702e",
     "os_system": "Linux",
     "postgres.fsync": "on",
     "postgres.synchronous_commit": "on",
     "postgres.track_commit_timestamp": "on",
-    "runner": null,
-    "spec_sha256": null
+    "runner": "github-hosted",
+    "spec_sha256": "c6560f855c0bf80d9d1b18cd1407157dd619d84bc7e2b14dd7e1591f3cb45258"
   },
   "instrument_checks": [
     {

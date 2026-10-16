@@ -1,5 +1,6 @@
-"""`crashcourt experiment`: check the pre-registration, authorize a batch, verify batches, and
-summarize them. Heavy imports wait until a subcommand runs."""
+"""`crashcourt experiment`: check the pre-registration, authorize a batch, classify its trials
+with the frozen checker, verify batches, and summarize them. Heavy imports wait until a subcommand
+runs."""
 
 from __future__ import annotations
 
@@ -27,6 +28,16 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     authorize.add_argument("--root", type=Path, default=Path())
     authorize.add_argument(
         "--instrument", type=Path, nargs="*", default=[], help="instrument batch directories"
+    )
+    classify = sub.add_parser(
+        "classify", help="classify every trial of a batch with the frozen checker"
+    )
+    classify.add_argument("batch", type=Path)
+    classify.add_argument("--root", type=Path, default=Path())
+    classify.add_argument(
+        "--compare",
+        action="store_true",
+        help="classify again without writing; fail unless every output is byte-identical",
     )
     verify = sub.add_parser("verify", help="re-prove archived batches against git")
     verify.add_argument("batches", type=Path, nargs="+")
@@ -65,6 +76,9 @@ def _check(args: argparse.Namespace) -> int:
         f"{path}: {prereg.state}, {len(prereg.cells)} cells "
         f"({phases['instrument']} instrument, {phases['new-evidence']} new evidence)"
     )
+    if prereg.state == "draft":
+        runnable = prereg.runnable()
+        print(f"the draft can authorize: {', '.join(runnable) or 'no cell'}")
     missing = prereg.missing()
     if missing:
         print(f"before it can be final ({len(missing)}):")
@@ -83,6 +97,31 @@ def _authorize(args: argparse.Namespace) -> int:
         print("\n".join(f"  {r}" for r in exc.reasons))
         return 1
     print(auth.to_json(), end="")
+    return 0
+
+
+def _classify(args: argparse.Namespace) -> int:
+    from crashcourt.experiment.classify import NotClassified, classify_batch
+
+    try:
+        found = classify_batch(args.batch, args.root, compare=args.compare)
+    except NotClassified as exc:
+        print(f"not classified: {exc}")
+        return 1
+    for c in found:
+        if args.compare:
+            state = f"differs ({', '.join(c.differs)})" if c.differs else "identical"
+        elif c.invalid is not None:
+            state = f"INVALID, {c.invalid}"
+        else:
+            state = ", ".join(f"{i} {o}" for i, o in sorted(c.outcomes.items())) or "none exercised"
+        print(f"trial {c.trial}: {state}")
+    if args.compare:
+        same = sum(not c.differs for c in found)
+        print(f"{same} of {len(found)} trials byte-identical")
+        return 0 if same == len(found) else 1
+    valid = sum(c.invalid is None for c in found)
+    print(f"{len(found)} trials classified, {valid} valid")
     return 0
 
 
@@ -132,6 +171,7 @@ def run(args: argparse.Namespace) -> int:
     handlers = {
         "check": _check,
         "authorize": _authorize,
+        "classify": _classify,
         "verify": _verify,
         "aggregate": _aggregate,
     }

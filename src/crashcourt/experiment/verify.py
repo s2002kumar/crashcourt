@@ -7,7 +7,9 @@ batch says about itself:
 
 - the manifest names the authorized commit, from a clean checkout;
 - the pre-registration commit is an ancestor of that commit, the file did not change between the
-  two, and its bytes at the pre-registration commit hash to the recorded value;
+  two, its bytes at the pre-registration commit hash to the recorded value, and as it stood there
+  it could authorize the cell (final, or a draft and the cell a complete instrument cell under
+  complete pins), in the state the authorization records;
 - the freeze commit is an ancestor of the pre-registration commit, FROZEN.md did not change
   between the freeze and the run, and its bytes hash to the recorded and pre-registered value;
 - the TrialScenario builder (orchestrator/declared.py) at the pre-registration and run commits is
@@ -17,8 +19,9 @@ batch says about itself:
   holds the pre-registered environment, and for new evidence the instrument batches' environment
   under the compatibility rules recorded at the run commit;
 - the runner's own records agree, recomputed rather than read: scenario.json hashes to the
-  pre-registered scenario hash, run.json names the cell, the master seed, N, and canonical mode,
-  and every trial's seed is sha256 of [master_seed, cell, trial];
+  pre-registered scenario hash and declares the cell's number of workers, run.json names the
+  cell, the master seed, N, and canonical mode, and every trial's seed is sha256 of
+  [master_seed, cell, trial];
 - there are exactly N trials, numbered 1 to N as the runner numbers them, and each trial's
   checker.json was written by the frozen checker (its checker hash, registry, and landmark table
   are the authorized ones), authorized for new evidence; a trial without result.json lists what
@@ -38,7 +41,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from pydantic import JsonValue
+
 from crashcourt.experiment import gitproof
+from crashcourt.experiment.fingerprint import fingerprint, host_record
 from crashcourt.experiment.gate import (
     AUTHORIZATION_FILE,
     FROZEN_PATH,
@@ -53,6 +59,7 @@ from crashcourt.experiment.preregistration import (
     Cell,
     Preregistration,
     PreregistrationError,
+    counted,
     derive_seed,
     parse,
 )
@@ -78,6 +85,13 @@ class VerifiedBatch:
     authorization: Authorization
     prereg: Preregistration
     trials: tuple[TrialFiles, ...]
+    #: The host its run.json records (crashcourt.experiment.fingerprint.host_record).
+    host: dict[str, JsonValue]
+
+    @property
+    def environment(self) -> dict[str, JsonValue]:
+        """The batch's fingerprint: its manifest and its host."""
+        return fingerprint(self.manifest, self.host)
 
 
 class BatchNotVerified(Exception):
@@ -158,8 +172,6 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
         prereg = parse((raw or b"").decode("utf-8"))
     except PreregistrationError as exc:
         raise BatchNotVerified(batch_dir, [*problems, f"pre-registration: {exc}"]) from exc
-    if prereg.state != "final":
-        problems.append("the pre-registration was a draft")
     commits = (("pre-registration", prereg_commit), ("run", run))
     problems.extend(builder_problems(repo, prereg, commits))
     try:
@@ -168,6 +180,12 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
         raise BatchNotVerified(
             batch_dir, [*problems, f"cell {auth.cell} is not pre-registered"]
         ) from None
+    problems.extend(f"at the pre-registration commit, {r}" for r in prereg.refusals(cell))
+    if auth.preregistration_state != prereg.state:
+        problems.append(
+            f"the authorization records a {auth.preregistration_state} pre-registration; "
+            f"it was {prereg.state} at its commit"
+        )
 
     pin = prereg.checker
     if pin is None or (
@@ -194,7 +212,8 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
     digest = hashlib.sha256((batch_dir / "manifest.json").read_bytes()).hexdigest()
     if digest != batch.manifest_sha256:
         problems.append("batch.json's manifest_sha256 is not the sha256 of manifest.json")
-    problems.extend(confirm_environment(prereg, auth, manifest, rules_at(repo, run)))
+    host = _host(batch_dir)
+    problems.extend(confirm_environment(prereg, auth, manifest, rules_at(repo, run), host))
     problems.extend(_runner_problems(batch_dir, cell, auth))
 
     trials = read_trials(batch_dir)
@@ -204,7 +223,14 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
         problems.extend(_trial_problems(t, batch, auth))
     if problems:
         raise BatchNotVerified(batch_dir, problems)
-    return VerifiedBatch(batch_dir, batch, manifest, auth, prereg, tuple(trials))
+    return VerifiedBatch(batch_dir, batch, manifest, auth, prereg, tuple(trials), host)
+
+
+def _host(batch_dir: Path) -> dict[str, JsonValue]:
+    try:
+        return host_record(_json(batch_dir / "run.json"))
+    except (OSError, ValueError, AttributeError):
+        return host_record({})  # an unreadable run.json is reported by _runner_problems
 
 
 def _trial_problems(t: TrialFiles, batch: BatchRecord, auth: Authorization) -> list[str]:
@@ -251,6 +277,13 @@ def _runner_problems(batch_dir: Path, cell: Cell, auth: Authorization) -> list[s
     digest = hashlib.sha256(scenario.rstrip(b"\n")).hexdigest()
     if digest != cell.scenario_sha256:
         found.append(f"scenario.json hashes to {digest}, pre-registered {cell.scenario_sha256}")
+    try:
+        workers = len(json.loads(scenario)["workers"])
+    except (ValueError, KeyError, TypeError):
+        workers = None
+    if workers != cell.workers:
+        declared = "no workers" if workers is None else counted(workers, "worker")
+        found.append(f"scenario.json declares {declared}, pre-registered {cell.workers}")
     for key, want in (
         ("cell", auth.cell),
         ("master_seed", auth.master_seed),

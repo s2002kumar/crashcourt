@@ -1,0 +1,88 @@
+# One pre-registered batch on the canonical runner, GitHub-hosted Ubuntu 24.04 (decision 17 in
+# tasks/T-13.md). Started by hand, from main only, so the run commit stays in main's history and the
+# batch can be re-proved from any clone. The gate refuses whatever the pre-registration does not
+# authorize at this commit. The batch, its controls, and the checks after it are uploaded whatever
+# happened, a refused or failed batch included.
+name: experiment
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: the pre-registered scenario file, e.g. scenarios/first-matrix/K1a.yaml
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: experiment
+  cancel-in-progress: false
+env:
+  UV_VERSION: "0.12.1"  # the uv that wrote uv.lock
+  SCENARIO: ${{ inputs.scenario }}
+defaults:
+  run:
+    shell: bash  # runs with -eo pipefail, so a command piped into tee still fails its step
+jobs:
+  batch:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # the gate and verification read the history of both pins
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --locked --group dev
+      - name: The cell, its pre-registered N, and the batch id
+        run: |
+          found=$(uv run python -c '
+          import sys
+          from pathlib import Path
+          from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, parse
+          cell = parse(Path(PREREGISTRATION_PATH).read_text("utf-8")).by_scenario(sys.argv[1])
+          print(cell.id, cell.n)' "$SCENARIO")
+          read -r cell trials <<< "$found"
+          out="$RUNNER_TEMP/experiment"
+          mkdir -p "$out"
+          {
+            echo "TRIALS=$trials"
+            echo "BATCH=$cell-gh$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            echo "OUT=$out"
+          } >> "$GITHUB_ENV"
+      # The gate before anything starts: it prints the authorization or every reason it refuses.
+      - run: >-
+          uv run crashcourt experiment authorize "$SCENARIO" --trials "$TRIALS"
+          | tee "$OUT/gate.txt"
+      - run: docker compose up -d --wait
+      - run: uv run crashcourt clauses check | tee "$OUT/clauses-check.txt"  # control C6
+      # Every fault primitive behaves as the fault model assumes, in this environment.
+      - run: uv run crashcourt faults selftest --trials 20 --report "$OUT/fault-selftest.md"
+      - run: docker compose up -d --wait postgres  # the self-test restarts it
+      - id: run
+        run: >-
+          uv run crashcourt run "$SCENARIO" --trials "$TRIALS" --canonical
+          --out "$OUT/runs" --batch "$BATCH" | tee "$OUT/run.txt"
+      # A batch with an invalid trial is still classified, verified, and kept.
+      - if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
+        run: uv run crashcourt experiment classify "$OUT/runs/$BATCH" | tee "$OUT/classify.txt"
+      # The checker run again on the same histories gives byte-identical output.
+      - if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
+        run: >-
+          uv run crashcourt experiment classify --compare "$OUT/runs/$BATCH"
+          | tee "$OUT/classify-again.txt"
+      - if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
+        run: uv run crashcourt experiment verify "$OUT/runs/$BATCH" | tee "$OUT/verify.txt"
+      - if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
+        run: >-
+          uv run crashcourt experiment aggregate "$OUT/runs/$BATCH" --out "$OUT/cells.json"
+          | tee "$OUT/aggregate.txt"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: experiment-${{ env.BATCH || github.run_id }}
+          path: ${{ runner.temp }}/experiment
+          if-no-files-found: error
+          retention-days: 90

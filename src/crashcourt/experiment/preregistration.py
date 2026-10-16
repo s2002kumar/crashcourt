@@ -8,8 +8,14 @@ trials, its phase, and its predicted outcome per invariant. The commit that last
 is the pre-registration commit; it must be an ancestor of every batch it covers, and it must come
 after the checker's freeze commit (crashcourt.experiment.gate).
 
-A draft names no frozen checker and leaves scenario hashes unset; the gate refuses to authorize any
-batch from a draft. Finalizing fills them in, sets `state` to `final`, and is the founder's commit.
+A draft may leave the checker, the builder, the environment, and any cell's scenario hash unset.
+Finalizing fills everything in, sets `state` to `final`, and is the founder's commit. A final
+pre-registration can authorize any of its cells. A draft can authorize only an instrument cell
+that is complete on its own (scenario hash, master seed, nothing pending) under complete pins (the
+frozen checker, the builder, every environment value); it never authorizes new evidence
+(`Preregistration.refusals`). Such a batch can never count toward new evidence: that needs every
+instrument cell as predicted under the same pre-registration commit as the new-evidence cell, and
+a final pre-registration is a later commit than any draft (crashcourt.experiment.aggregate).
 
 The builder. The code that turns a batch's records into the checker's input
 (crashcourt.orchestrator.declared) is outside the frozen checker, so the block pins its file by
@@ -167,6 +173,9 @@ class Cell(_Model):
     workload: Id
     durability: Literal["sync", "async", "exit"]
     fault: Id | None = None
+    #: The worker processes the scenario declares (its `workers:` list), a replacement that takes
+    #: a redelivered op over included. The gate and verification refuse a scenario that declares
+    #: another number.
     workers: int = Field(ge=1, le=2)
     #: The trigger in words; the scenario file is the definition.
     trigger: Text
@@ -304,8 +313,7 @@ class Preregistration(_Model):
                 raise ValueError("a final pre-registration is complete: " + "; ".join(missing))
         return self
 
-    def missing(self) -> list[str]:
-        """What a draft still lacks before it can be final."""
+    def _pins_missing(self) -> list[str]:
         found: list[str] = []
         if self.checker is None:
             found.append("no frozen checker is named")
@@ -314,17 +322,44 @@ class Preregistration(_Model):
         for name, value in self.environment.items():
             if value is None:
                 found.append(f"environment {name} is not pinned")
+        return found
+
+    @staticmethod
+    def _cell_missing(c: Cell) -> list[str]:
+        found: list[str] = []
+        if c.scenario_sha256 is None:
+            found.append(f"cell {c.id}: no scenario hash")
+        if c.master_seed is None:
+            found.append(f"cell {c.id}: no master seed")
+        if c.pending is not None:
+            found.append(f"cell {c.id}: pending {c.pending}")
+        return found
+
+    def missing(self) -> list[str]:
+        """What a draft still lacks before it can be final."""
+        found = self._pins_missing()
         for c in self.cells:
-            if c.scenario_sha256 is None:
-                found.append(f"cell {c.id}: no scenario hash")
-            if c.master_seed is None:
-                found.append(f"cell {c.id}: no master seed")
-            if c.pending is not None:
-                found.append(f"cell {c.id}: pending {c.pending}")
+            found.extend(self._cell_missing(c))
         for check in self.instrument_checks:
             if check.evidence is None:
                 found.append(f"instrument check {check.id}: no evidence recorded")
         return found
+
+    def refusals(self, cell: Cell) -> list[str]:
+        """Why this pre-registration, as it stands, cannot authorize a batch of `cell`; empty
+        when it can. A final one can authorize every cell. A draft can authorize an instrument
+        cell that is complete under complete pins, and nothing else."""
+        if self.state == "final":
+            return []
+        if cell.phase != "instrument":
+            return [f"the pre-registration is a draft; new-evidence cell {cell.id} needs it final"]
+        found = [f"the pre-registration is a draft and {m}" for m in self._pins_missing()]
+        found.extend(f"the pre-registration is a draft and {m}" for m in self._cell_missing(cell))
+        return found
+
+    def runnable(self) -> list[str]:
+        """The cells this pre-registration, as it stands, can authorize."""
+        return [c.id for c in self.cells if not self.refusals(c)]
 
     def cell(self, cell_id: str) -> Cell:
         for c in self.cells:

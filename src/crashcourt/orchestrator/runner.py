@@ -726,9 +726,14 @@ def run_batch(
     manifest: Manifest | None = report.manifest
     if manifest is None:
         raise RunRefused("doctor did not pass:\n" + format_report(report))
+    # The host is material to pooling (crashcourt.experiment.fingerprint), so it goes in run.json.
+    cpu_count, memory_gib = probes.hardware()
+    host = {"cpu_count": cpu_count, "memory_gib": memory_gib}
+    if options.canonical and None in host.values():
+        raise RunRefused("canonical batch refused: the host's CPU count or memory is unknown")
     if authorization is not None:
         try:
-            preregistered.confirm(authorization, manifest, settings.root)
+            preregistered.confirm(authorization, manifest, settings.root, host)
         except preregistered.GateRefused as exc:
             raise RunRefused(str(exc)) from exc
     if options.canonical and manifest.git_dirty:
@@ -788,6 +793,7 @@ def run_batch(
             "preregistered_cell": authorization.cell if authorization else None,
             "phase": authorization.phase if authorization else None,
             "own_database": options.own_database,
+            "host": host,
             "started": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
             "trials": options.trials,
             "scenario": {

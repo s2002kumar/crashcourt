@@ -100,11 +100,47 @@ def test_later_commits_that_leave_the_preregistration_alone_still_run(tmp_path: 
     assert (auth.run_commit, auth.preregistration_commit) == (later, repo.prereg_commit)
 
 
-def test_a_draft_authorizes_nothing(tmp_path: Path) -> None:
-    draft = prereg_model(state="draft", checker=None)
-    reasons = refused(authorize, make_repo(tmp_path, draft))
-    assert "the pre-registration is a draft, not final" in reasons
-    assert "names no frozen checker" in reasons
+def test_a_final_preregistration_records_its_state(tmp_path: Path) -> None:
+    assert authorize(make_repo(tmp_path)).preregistration_state == "final"
+
+
+def test_a_draft_authorizes_a_complete_instrument_cell(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, prereg_model(state="draft"))
+    auth = authorize(repo)
+    assert (auth.cell, auth.phase, auth.preregistration_state) == ("R1", "instrument", "draft")
+
+
+def test_a_draft_never_authorizes_new_evidence(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, prereg_model(state="draft"))
+    reasons = refused(authorize, repo, "X1", instrument_missing=[])
+    assert "the pre-registration is a draft; new-evidence cell X1 needs it final" in reasons
+
+
+def _r1_with(**change: object) -> list[dict[str, object]]:
+    cells = prereg_model().model_dump(mode="json")["cells"]
+    cells[0].update(change)
+    return cells
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"checker": None}, "no frozen checker is named"),
+        ({"builder": None}, "no TrialScenario builder is pinned"),
+        (
+            {"environment": {"os_system": "Linux", "runner": None}},
+            "environment runner is not pinned",
+        ),
+        ({"cells": _r1_with(scenario_sha256=None)}, "cell R1: no scenario hash"),
+        ({"cells": _r1_with(master_seed=None)}, "cell R1: no master seed"),
+        ({"cells": _r1_with(pending="an audit")}, "cell R1: pending an audit"),
+    ],
+)
+def test_a_draft_refuses_an_incomplete_cell_or_incomplete_pins(
+    tmp_path: Path, change: dict[str, object], message: str
+) -> None:
+    repo = make_repo(tmp_path, prereg_model(state="draft", **change))
+    assert f"the pre-registration is a draft and {message}" in refused(authorize, repo)
 
 
 def test_a_dirty_checkout_is_refused(tmp_path: Path) -> None:
@@ -157,9 +193,14 @@ def test_a_freeze_after_the_preregistration_is_refused(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("facts", "message"),
     [
-        (ScenarioFacts("9" * 64, "R1", "seed-r1"), "not the pre-registered"),
-        (ScenarioFacts("1" * 64, "R2", "seed-r1"), "names cell R2"),
-        (ScenarioFacts("1" * 64, "R1", "another-seed"), "master seed another-seed"),
+        (ScenarioFacts("9" * 64, "R1", "seed-r1", 2), "not the pre-registered"),
+        (ScenarioFacts("1" * 64, "R2", "seed-r1", 2), "names cell R2"),
+        (ScenarioFacts("1" * 64, "R1", "another-seed", 2), "master seed another-seed"),
+        # Same hash, so only the workers differ: the cell's count must be the scenario's.
+        (
+            ScenarioFacts(SCENARIOS["R1"], "R1", "seed-r1", 1),
+            "declares 1 worker; cell R1 is pre-registered with 2",
+        ),
     ],
 )
 def test_the_scenario_must_be_the_preregistered_one(
@@ -276,13 +317,29 @@ def test_new_evidence_must_run_where_the_instrument_ran(tmp_path: Path) -> None:
     assert any("os_release" in p for p in confirm_environment(prereg, auth, other, [rule]))
 
 
+def test_new_evidence_must_run_on_the_instrument_cells_host(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    auth = authorize(repo, "X1", instrument_missing=[])
+    prereg = prereg_model()
+    manifest = manifest_for(auth.run_commit)
+    host = {"cpu_count": 4, "memory_gib": 16}
+    hosted = auth.model_copy(update={"instrument_fingerprint": fingerprint(manifest, host)})
+    assert confirm_environment(prereg, hosted, manifest, [], host) == []
+    smaller = confirm_environment(prereg, hosted, manifest, [], {"cpu_count": 2, "memory_gib": 8})
+    assert "host.cpu_count is 2; the instrument cells ran with 4" in smaller
+    assert "host.memory_gib is 8; the instrument cells ran with 16" in smaller
+    assert any("host.cpu_count is None" in p for p in confirm_environment(prereg, hosted, manifest))
+
+
 def test_the_runner_scenario_loader_is_the_real_one() -> None:
     from crashcourt.spec.scenario import load_scenario, scenario_sha256
 
     smoke = Path(__file__).resolve().parents[2] / "scenarios" / "smoke.yaml"
     facts = T07Scenarios().load(smoke)
     loaded = load_scenario(smoke)
-    assert facts == ScenarioFacts(scenario_sha256(loaded), loaded.cell, loaded.seed)
+    assert facts == ScenarioFacts(
+        scenario_sha256(loaded), loaded.cell, loaded.seed, len(loaded.workers)
+    )
 
 
 # -- the TrialScenario builder ------------------------------------------------------------------

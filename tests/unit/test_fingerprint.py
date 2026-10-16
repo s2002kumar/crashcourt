@@ -6,8 +6,10 @@ from crashcourt.experiment.fingerprint import (
     differences,
     fingerprint,
     fingerprint_sha256,
+    host_record,
     mismatched,
     unexplained,
+    unexplained_between,
 )
 
 from ._factories import make_manifest
@@ -39,6 +41,31 @@ def test_a_material_difference_keeps_batches_apart() -> None:
     }
     assert fingerprint_sha256(a) != fingerprint_sha256(b)
     assert unexplained(a, b) == found
+
+
+def test_the_host_is_material_and_unrecorded_is_null() -> None:
+    m = make_manifest()
+    public, private = {"cpu_count": 4, "memory_gib": 16}, {"cpu_count": 2, "memory_gib": 8}
+    assert (fingerprint(m)["host.cpu_count"], fingerprint(m)["host.memory_gib"]) == (None, None)
+    assert fingerprint(m, public)["host.memory_gib"] == 16
+    assert unexplained_between(fingerprint(m, public), fingerprint(m, private)) == {
+        "host.cpu_count": (4, 2),
+        "host.memory_gib": (16, 8),
+    }
+    assert set(unexplained_between(fingerprint(m, public), fingerprint(m))) == {
+        "host.cpu_count",
+        "host.memory_gib",
+    }
+    assert fingerprint_sha256(m, public) != fingerprint_sha256(m, private)
+
+
+def test_the_host_record_is_read_from_run_json() -> None:
+    assert host_record({"host": {"cpu_count": 4, "memory_gib": 16, "other": 1}}) == {
+        "cpu_count": 4,
+        "memory_gib": 16,
+    }
+    for run in ({}, {"host": None}, {"host": "4 CPUs"}):
+        assert host_record(run) == {"cpu_count": None, "memory_gib": None}
 
 
 def test_only_a_recorded_rule_naming_both_values_lets_them_pool() -> None:

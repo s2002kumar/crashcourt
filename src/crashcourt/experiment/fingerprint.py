@@ -7,6 +7,12 @@ commit. Every manifest field is material except the three that describe one run 
 environment: when it was generated, whether the tree was dirty (the gate requires it clean), and
 the sink's measured clock offset (recorded, never an input to a verdict).
 
+The host is material too: its CPU count and memory, which the runner records in run.json (`host`)
+because the manifest's schema (v1) is frozen and names only the runner kind. One GitHub-hosted
+label runs a public repository's jobs on 4 CPUs and 16 GB and a private repository's on 2 and 8
+(docs.github.com/en/actions/reference/runners/github-hosted-runners, read 2026-10-16). A batch
+that did not record its host has nulls there, which never pool with recorded values.
+
 Fail closed: a difference in any material field keeps the batches apart, unless a compatibility
 rule recorded in the repository names that exact field and both values with a reason. Rules are
 data a reviewer can read; nothing is pooled by default.
@@ -27,6 +33,18 @@ from crashcourt.manifest import Manifest
 #: Manifest fields that describe one run, not the environment it ran in.
 NOT_MATERIAL: frozenset[str] = frozenset({"generated_at", "git_dirty", "sink_clock_offset_ns"})
 
+#: What run.json's `host` records about the machine a batch ran on.
+HOST_FIELDS: tuple[str, ...] = ("cpu_count", "memory_gib")
+
+Host = Mapping[str, JsonValue]
+
+
+def host_record(run: Mapping[str, Any]) -> dict[str, JsonValue]:
+    """The host a batch's run.json records; each field null when it records none."""
+    raw: Any = run.get("host")
+    host: Mapping[str, Any] = cast("Mapping[str, Any]", raw) if isinstance(raw, Mapping) else {}
+    return {name: host.get(name) for name in HOST_FIELDS}
+
 
 def _flatten(prefix: str, value: Any, into: dict[str, JsonValue]) -> None:
     if isinstance(value, Mapping):
@@ -36,18 +54,21 @@ def _flatten(prefix: str, value: Any, into: dict[str, JsonValue]) -> None:
         into[prefix] = value
 
 
-def fingerprint(manifest: Manifest) -> dict[str, JsonValue]:
-    """The material fields of a manifest, flattened to dotted paths (`packages.langgraph`)."""
+def fingerprint(manifest: Manifest, host: Host | None = None) -> dict[str, JsonValue]:
+    """The material fields of a manifest, flattened to dotted paths (`packages.langgraph`), and
+    the host's (`host.cpu_count`), null where none is recorded."""
     found: dict[str, JsonValue] = {}
     for name, value in manifest.to_dict().items():
         if name not in NOT_MATERIAL:
             _flatten(name, value, found)
+    for name in HOST_FIELDS:
+        found[f"host.{name}"] = (host or {}).get(name)
     return dict(sorted(found.items()))
 
 
-def fingerprint_sha256(manifest: Manifest) -> str:
+def fingerprint_sha256(manifest: Manifest, host: Host | None = None) -> str:
     """sha256 of the fingerprint's canonical JSON: equal exactly when the fingerprints are."""
-    text = json.dumps(fingerprint(manifest), sort_keys=True, separators=(",", ":"))
+    text = json.dumps(fingerprint(manifest, host), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
