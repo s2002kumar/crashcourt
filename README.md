@@ -2,12 +2,16 @@
 
 An open-source conformance and reliability lab for durable agent execution.
 
-**Status: pre-results.** Nothing has been measured yet, so this repository makes no claims.
+**Status: pre-results.** CrashCourt already contains control and instrument measurements; no new
+experimental finding has been claimed.
 
 Crashcourt will crash, freeze, and partition the persistence layers under agent runtimes (starting with
 LangGraph checkpointers on real Postgres), then judge each outcome against the runtime's documented
 guarantees and an independent record of real-world effects. Every verdict will carry its evidence, and
 every failure will ship as a standalone repro.
+
+The project specification is private and is not in this repository; `spec-provenance.json` holds only
+its provenance metadata and sha256 hash.
 
 ## Quickstart (environment only, T-01)
 

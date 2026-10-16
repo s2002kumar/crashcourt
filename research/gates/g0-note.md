@@ -44,15 +44,19 @@ Decision: PASS. GO: the target is sufficiently evidenced and technically interes
   new finding.
 - The six ambiguous-commit windows (AW1 to AW6) are located in code at the pinned tags, so the lost-acknowledgment,
   connection-reset, and database-restart cells have real targets. That is why experimentation continues.
-- The functional-API ordering under `sync` (reading R1) remains a private hypothesis to measure, not a public finding.
+- The functional-API ordering under `sync` (reading R1) remains a hypothesis to measure, not a finding; it may be public
+  only as a labeled reading (see Conditions).
 
 This is not a novelty claim, and it is not permission to report anything upstream.
 
 Conditions:
-- Reading R1 (the functional-API entrypoint under `sync`) stays private. It is a hypothesis to measure, with its
-  experiment cell preserved in the audit. It is not called a bug or a violation unless T-10's frozen checker and a
-  standalone reproduction support that, and any report upstream is a separate decision.
+- Reading R1 (the functional-API entrypoint under `sync`) and the other unmeasured source-code readings may be public
+  only as explicitly labeled readings or hypotheses. They are not experimental results, findings, violations, or
+  demonstrated runtime behavior until measured. (Amended 2026-10-16 for the public release; this condition first
+  kept R1 private.) R1 is a hypothesis to measure, with its experiment cell preserved in the audit. It is not called
+  a bug or a violation unless T-10's frozen checker and a standalone reproduction support that, and any report
+  upstream is a separate decision.
 - The other readings in the audit (task writes not awaited under `sync`, missing parents and channels after a failed
-  put) are measured in their cells before anything is said about them.
+  put) are measured in their cells before anything beyond the labeled reading is said about them.
 - Overlapping prior art (#8796, #8039, #8764, #8234, the xbstack repro) stays credited; replicating it is a control,
   never a finding.
