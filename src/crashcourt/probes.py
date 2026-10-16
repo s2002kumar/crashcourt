@@ -12,6 +12,7 @@ import os
 import platform
 import re
 import subprocess
+import sys
 import urllib.request
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
@@ -87,6 +88,36 @@ def read_python_pin(text: str) -> str | None:
         if line and not line.startswith("#"):
             return line
     return None
+
+
+def total_memory_bytes() -> int | None:
+    """The host's physical memory: GlobalMemoryStatusEx on Windows, sysconf elsewhere."""
+    if sys.platform == "win32":
+        import ctypes
+
+        class _MemoryStatus(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+
+        status = _MemoryStatus()
+        status.dwLength = ctypes.sizeof(_MemoryStatus)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return None
+        return int(status.ullTotalPhys)
+    else:
+        try:
+            return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+        except (OSError, ValueError):
+            return None
 
 
 def runner_kind(env: Mapping[str, str]) -> str:
@@ -295,6 +326,10 @@ class SystemProbes:
 
     def platform_info(self) -> tuple[str, str, str]:
         return platform.system(), platform.release(), platform.machine()
+
+    def hardware(self) -> tuple[int | None, int | None]:
+        memory = total_memory_bytes()
+        return os.cpu_count(), None if memory is None else round(memory / 2**30)
 
     def runner(self) -> str:
         return runner_kind(os.environ)

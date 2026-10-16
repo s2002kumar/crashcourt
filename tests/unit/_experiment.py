@@ -62,6 +62,8 @@ SCENARIO_JSON = {
 }
 SCENARIOS = {c: hashlib.sha256(text.encode()).hexdigest() for c, text in SCENARIO_JSON.items()}
 N = 3
+#: The host a batch's run.json records: a GitHub-hosted runner of a public repository.
+HOST = {"cpu_count": 4, "memory_gib": 16}
 #: The TrialScenario builder as the fixture repository commits it, and its pinned hash.
 BUILDER_TEXT = '"""The TrialScenario builder, as pre-registered."""\n'
 BUILDER_SHA = hashlib.sha256(BUILDER_TEXT.encode()).hexdigest()
@@ -366,6 +368,7 @@ def make_batch(
         "batch": batch,
         "cell": auth.cell,
         "mode": "canonical",
+        "host": HOST,
         "trials": len(trials),
         "master_seed": auth.master_seed,
         "trial_seeds": {

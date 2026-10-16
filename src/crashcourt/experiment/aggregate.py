@@ -47,9 +47,8 @@ from pydantic import BaseModel, ConfigDict
 from crashcourt.experiment import controls, gitproof
 from crashcourt.experiment.fingerprint import (
     CompatibilityRule,
-    fingerprint,
     fingerprint_sha256,
-    unexplained,
+    unexplained_between,
 )
 from crashcourt.experiment.gate import (
     Authorization,
@@ -284,7 +283,7 @@ def summarize_group(
     statuses: list[Status] = ["excluded"] if excluded else readings or ["missing"]
     return GroupSummary(
         batches=tuple(b.batch.batch for b in batches),
-        fingerprint_sha256=fingerprint_sha256(batches[0].manifest),
+        fingerprint_sha256=fingerprint_sha256(batches[0].manifest, batches[0].host),
         trials=len(trials),
         invalid=invalid,
         invalid_reasons=dict(sorted(reasons.items())),
@@ -313,8 +312,8 @@ def group(
     groups: list[list[VerifiedBatch]] = []
     for b in batches:
         for g in groups:
-            if _pool_key(g[0]) == _pool_key(b) and not unexplained(
-                g[0].manifest, b.manifest, rules
+            if _pool_key(g[0]) == _pool_key(b) and not unexplained_between(
+                g[0].environment, b.environment, rules
             ):
                 g.append(b)
                 break
@@ -329,7 +328,7 @@ def _apart(
     found: dict[str, set[str]] = {}
     first = groups[0][0]
     for g in groups[1:]:
-        for key, (x, y) in unexplained(first.manifest, g[0].manifest, rules).items():
+        for key, (x, y) in unexplained_between(first.environment, g[0].environment, rules).items():
             found.setdefault(key, set()).update({repr(x), repr(y)})
         names = ("cell", "preregistration", "checker", "freeze", "scenario")
         for name, x, y in zip(names, _pool_key(first), _pool_key(g[0]), strict=True):
@@ -424,16 +423,16 @@ def instrument_ready(repo: Path, rules: Sequence[CompatibilityRule] = ()) -> Ins
                 missing.append(
                     f"instrument cell {cell.id} is {summary.groups[0].status}, not as predicted"
                 )
-        manifests = [verify_batch(d, repo).manifest for d in dirs]
-        for other in manifests[1:]:
-            differing = unexplained(manifests[0], other, rules)
+        environments = [verify_batch(d, repo).environment for d in dirs]
+        for other in environments[1:]:
+            differing = unexplained_between(environments[0], other, rules)
             if differing:
                 missing.append(
                     f"the instrument cells ran in different environments ({', '.join(differing)})"
                 )
                 break
         used = sorted(b for c in report.cells for g in c.groups for b in g.batches)
-        return InstrumentEvidence(missing, used, fingerprint(manifests[0]))
+        return InstrumentEvidence(missing, used, environments[0])
 
     return check
 

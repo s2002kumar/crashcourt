@@ -21,6 +21,7 @@ from crashcourt.experiment.verify import BatchNotVerified, verify_batch
 from ._experiment import (
     BUILDER_SHA,
     BUILDER_TEXT,
+    HOST,
     LEDGER,
     SEEDS,
     FakeChecker,
@@ -49,7 +50,9 @@ def authorized(repo: Repo, cell: str = "R1") -> Authorization:
         scenarios=FakeScenarios(),
         instrument_check=(
             lambda *_: InstrumentEvidence(
-                [], ["inst"], fingerprint(manifest_for(git(repo.root, "rev-parse", "HEAD")))
+                [],
+                ["inst"],
+                fingerprint(manifest_for(git(repo.root, "rev-parse", "HEAD")), HOST),
             )
         )
         if cell == "X1"
@@ -189,6 +192,25 @@ def test_a_different_runner_is_never_pooled_silently(repo: Repo) -> None:
     assert cell.not_pooled_because == {"os_release": ["'6.11.0'", "'6.8.0'"]}
     rule = CompatibilityRule(field="os_release", values=("6.8.0", "6.11.0"), reason="kernel bump")
     assert aggregate([a, b], repo.root, [rule]).cells[0].pooled
+
+
+def test_runners_of_one_label_but_another_size_are_never_pooled_silently(repo: Repo) -> None:
+    """One GitHub-hosted label gives a public repository 4 CPUs and 16 GB and a private one 2 and
+    8, and the manifest names neither; run.json's host does, and no two of these pool."""
+    public = batch(repo, "b1")
+    private = batch(repo, "b2", run_changes={"host": {"cpu_count": 2, "memory_gib": 8}})
+    unrecorded = batch(repo, "b3", run_changes={"host": None})
+    for other, why in ((private, {"host.cpu_count", "host.memory_gib"}), (unrecorded, None)):
+        [cell] = aggregate([public, other], repo.root).cells
+        assert not cell.pooled
+        assert set(cell.not_pooled_because) == (why or {"host.cpu_count", "host.memory_gib"})
+    assert aggregate([public, batch(repo, "b4")], repo.root).cells[0].pooled
+
+
+def test_a_verified_batch_carries_the_host_its_run_json_records(repo: Repo) -> None:
+    verified = verify_batch(batch(repo, "b1"), repo.root)
+    assert verified.host == HOST
+    assert verified.environment["host.cpu_count"] == 4
 
 
 def test_one_unverified_batch_refuses_the_whole_summary(repo: Repo) -> None:

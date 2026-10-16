@@ -317,6 +317,20 @@ def test_new_evidence_must_run_where_the_instrument_ran(tmp_path: Path) -> None:
     assert any("os_release" in p for p in confirm_environment(prereg, auth, other, [rule]))
 
 
+def test_new_evidence_must_run_on_the_instrument_cells_host(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    auth = authorize(repo, "X1", instrument_missing=[])
+    prereg = prereg_model()
+    manifest = manifest_for(auth.run_commit)
+    host = {"cpu_count": 4, "memory_gib": 16}
+    hosted = auth.model_copy(update={"instrument_fingerprint": fingerprint(manifest, host)})
+    assert confirm_environment(prereg, hosted, manifest, [], host) == []
+    smaller = confirm_environment(prereg, hosted, manifest, [], {"cpu_count": 2, "memory_gib": 8})
+    assert "host.cpu_count is 2; the instrument cells ran with 4" in smaller
+    assert "host.memory_gib is 8; the instrument cells ran with 16" in smaller
+    assert any("host.cpu_count is None" in p for p in confirm_environment(prereg, hosted, manifest))
+
+
 def test_the_runner_scenario_loader_is_the_real_one() -> None:
     from crashcourt.spec.scenario import load_scenario, scenario_sha256
 

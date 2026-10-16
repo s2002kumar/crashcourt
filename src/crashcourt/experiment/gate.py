@@ -44,6 +44,7 @@ from crashcourt.experiment import gitproof
 from crashcourt.experiment.fingerprint import (
     RULES_PATH,
     CompatibilityRule,
+    Host,
     fingerprint,
     mismatched,
     parse_rules,
@@ -441,10 +442,11 @@ def confirm_environment(
     authorization: Authorization,
     manifest: Manifest,
     rules: Sequence[CompatibilityRule] = (),
+    host: Host | None = None,
 ) -> list[str]:
     """Why the batch's manifest is not the pre-registered environment; empty when it is. For a
-    new-evidence batch, the manifest must also match the instrument batches' environment in every
-    material field a recorded compatibility rule does not cover."""
+    new-evidence batch, the manifest and the host must also match the instrument batches'
+    environment in every material field a recorded compatibility rule does not cover."""
     problems = [
         f"manifest {key} is {got!r}, the pre-registration requires {want!r}"
         for key, (want, got) in mismatched(manifest, prereg.environment).items()
@@ -460,7 +462,7 @@ def confirm_environment(
             problems.append("a new-evidence batch names no instrument environment")
         else:
             differing = unexplained_between(
-                authorization.instrument_fingerprint, fingerprint(manifest), rules
+                authorization.instrument_fingerprint, fingerprint(manifest, host), rules
             )
             for key, (then, now) in differing.items():
                 problems.append(f"{key} is {now!r}; the instrument cells ran with {then!r}")
@@ -472,11 +474,14 @@ def rules_at(root: Path, commit: str) -> list[CompatibilityRule]:
     return parse_rules(gitproof.blob(root, commit, RULES_PATH))
 
 
-def confirm(authorization: Authorization, manifest: Manifest, root: Path) -> list[str]:
+def confirm(
+    authorization: Authorization, manifest: Manifest, root: Path, host: Host | None = None
+) -> list[str]:
     """`confirm_environment` against the pre-registration as committed and the compatibility rules
-    as recorded at the authorized commit: what the runner calls after doctor."""
+    as recorded at the authorized commit: what the runner calls after doctor, with the host it
+    will record."""
     text = gitproof.blob(root, authorization.preregistration_commit, PREREG)
     if text is None:
         return [f"{PREREG} is not in commit {authorization.preregistration_commit}"]
     rules = rules_at(root, authorization.run_commit)
-    return confirm_environment(parse(text.decode("utf-8")), authorization, manifest, rules)
+    return confirm_environment(parse(text.decode("utf-8")), authorization, manifest, rules, host)

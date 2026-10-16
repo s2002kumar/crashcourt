@@ -154,6 +154,8 @@ def test_a_batch_is_classified_once_and_identically_again(tmp_path: Path) -> Non
         Settings.from_environment(REPO),
         source=path,
     )
+    host = json.loads((summary.directory / "run.json").read_text())["host"]
+    assert all(isinstance(host[k], int) and host[k] > 0 for k in ("cpu_count", "memory_gib"))
     first = classify_batch(summary.directory, REPO)
     assert [c.invalid for c in first] == [None] * TRIALS
     assert [as_predicted("K1a", t) for t in read_trials(summary.directory)] == [[]] * TRIALS

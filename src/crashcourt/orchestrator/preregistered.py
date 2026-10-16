@@ -30,10 +30,12 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
+
+from pydantic import JsonValue
 
 from crashcourt.spec.scenario import Scenario, scenario_sha256
 
@@ -138,12 +140,17 @@ def authorize(
         ) from exc
 
 
-def confirm(authorization: Authorization, manifest: Manifest, root: Path) -> None:
-    """GateRefused unless doctor's manifest is the pre-registered environment at the authorized
-    commit."""
+def confirm(
+    authorization: Authorization,
+    manifest: Manifest,
+    root: Path,
+    host: Mapping[str, JsonValue] | None = None,
+) -> None:
+    """GateRefused unless doctor's manifest and the host the batch records are the
+    pre-registered environment at the authorized commit."""
     from crashcourt.experiment.gate import confirm as confirm_environment
 
-    problems = confirm_environment(authorization, manifest, root)
+    problems = confirm_environment(authorization, manifest, root, host)
     if problems:
         raise GateRefused(
             f"cell {authorization.cell}: the environment is not the pre-registered one: "

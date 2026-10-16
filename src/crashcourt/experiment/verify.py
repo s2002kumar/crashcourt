@@ -41,7 +41,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from pydantic import JsonValue
+
 from crashcourt.experiment import gitproof
+from crashcourt.experiment.fingerprint import fingerprint, host_record
 from crashcourt.experiment.gate import (
     AUTHORIZATION_FILE,
     FROZEN_PATH,
@@ -82,6 +85,13 @@ class VerifiedBatch:
     authorization: Authorization
     prereg: Preregistration
     trials: tuple[TrialFiles, ...]
+    #: The host its run.json records (crashcourt.experiment.fingerprint.host_record).
+    host: dict[str, JsonValue]
+
+    @property
+    def environment(self) -> dict[str, JsonValue]:
+        """The batch's fingerprint: its manifest and its host."""
+        return fingerprint(self.manifest, self.host)
 
 
 class BatchNotVerified(Exception):
@@ -202,7 +212,8 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
     digest = hashlib.sha256((batch_dir / "manifest.json").read_bytes()).hexdigest()
     if digest != batch.manifest_sha256:
         problems.append("batch.json's manifest_sha256 is not the sha256 of manifest.json")
-    problems.extend(confirm_environment(prereg, auth, manifest, rules_at(repo, run)))
+    host = _host(batch_dir)
+    problems.extend(confirm_environment(prereg, auth, manifest, rules_at(repo, run), host))
     problems.extend(_runner_problems(batch_dir, cell, auth))
 
     trials = read_trials(batch_dir)
@@ -212,7 +223,14 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
         problems.extend(_trial_problems(t, batch, auth))
     if problems:
         raise BatchNotVerified(batch_dir, problems)
-    return VerifiedBatch(batch_dir, batch, manifest, auth, prereg, tuple(trials))
+    return VerifiedBatch(batch_dir, batch, manifest, auth, prereg, tuple(trials), host)
+
+
+def _host(batch_dir: Path) -> dict[str, JsonValue]:
+    try:
+        return host_record(_json(batch_dir / "run.json"))
+    except (OSError, ValueError, AttributeError):
+        return host_record({})  # an unreadable run.json is reported by _runner_problems
 
 
 def _trial_problems(t: TrialFiles, batch: BatchRecord, auth: Authorization) -> list[str]:
