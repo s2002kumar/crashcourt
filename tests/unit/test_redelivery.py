@@ -8,7 +8,7 @@ once the op has ended. The client sees one invoke and one terminal event either 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pydantic import BaseModel
@@ -133,6 +133,38 @@ def test_a_held_runs_op_is_taken_over_and_the_stale_run_released_after(tmp_path:
     assert release.data == {"proc": "w1", "hit_seq": 7, "barrier": "A", "step": 2}
     sent = [type(m).__name__ for m in trial.workers["w1"].sent]
     assert sent == ["ArmMessage", "Run", "ReleaseMessage", "Shutdown"]
+
+
+def test_the_preregistered_k3_schedule_takes_over_only_inside_the_hold(tmp_path: Path) -> None:
+    """scenarios/first-matrix/K3.yaml itself, with fake workers. In the orchestrator's own order:
+    turn-1 is sent to A, redelivered to B naming A's hold, answered by B, and only then is A's
+    hold released. A is sent nothing between its run and its release."""
+    from crashcourt.spec.scenario import read_yaml
+
+    path = Path(__file__).resolve().parents[2] / "scenarios" / "first-matrix" / "K3.yaml"
+    data = cast(dict[str, Any], read_yaml(path.read_text(encoding="utf-8")))
+    trial = Trial(tmp_path, data, {"w1": held_then("ok")})
+    report = trial.run()
+    assert report.violations == [] and report.problems == []
+    assert report.fired_steps == [1, 2]
+    steps = [
+        (e.kind, e.data.get("to") or e.data.get("worker") or e.data.get("proc"))
+        for e in trial.events()
+        if e.kind in {"dispatch.send", "dispatch.redeliver", "client.ok", "fp.release"}
+    ]
+    assert steps == [
+        ("dispatch.send", "w1"),
+        ("dispatch.redeliver", "w2"),
+        ("client.ok", "w2"),
+        ("fp.release", "w1"),
+    ]
+    redeliver = next(e for e in trial.events() if e.kind == "dispatch.redeliver")
+    release = next(e for e in trial.events() if e.kind == "fp.release")
+    assert redeliver.data["held"] == [{"proc": "w1", "hit_seq": 7, "barrier": "A"}]
+    assert (release.data["proc"], release.data["hit_seq"]) == ("w1", 7)
+    sent = [type(m).__name__ for m in trial.workers["w1"].sent]
+    assert sent == ["ArmMessage", "Run", "ReleaseMessage", "Shutdown"]
+    assert report.ops["turn-1"].stale == ("w1 answered ok",)
 
 
 def test_a_stale_run_never_released_is_left_held_and_noted(tmp_path: Path) -> None:
