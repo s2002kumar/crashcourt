@@ -191,10 +191,12 @@ My rulings on T-10's readings, applied here before the freeze:
   nothing else is exercised (`*`: NOT_EXERCISED), since by P2 it scores no outcome. K2's I6a stays
   named as variable. The aggregator is unchanged and stays strict, and a test holds every instrument
   cell to full coverage under its rules.
-- **K5 and K5-reject wait on I7c.** The audit found that checker v1 exercises I7c on w1-misuse (its
-  approval effect is charge) and gives NO_ANOMALY_UNSPECIFIED, with approve and with reject, so the
-  named NOT_EXERCISED would differ in every trial. Both cells are `pending` until I rule on it; I7c's
-  prediction is unchanged.
+- **K5 and K5-reject: I7c corrected to NO_ANOMALY_UNSPECIFIED, before either cell ran formally.** The
+  audit found that checker v1 exercises I7c on w1-misuse (its approval effect is charge) and gives
+  NO_ANOMALY_UNSPECIFIED, with approve and with reject: its unit tests on both, and T-10's validation
+  on T-09's fault-free misuse histories (50 of 50). The NOT_EXERCISED of 2026-10-10 would have differed
+  in every trial. I corrected it on the frozen checker's pre-freeze validation and unit tests, not on
+  any batch of these cells: neither has run.
 
 ## Deferred from the first matrix
 
@@ -226,8 +228,8 @@ My rulings on T-10's readings, applied here before the freeze:
 | C3-w1-reject-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
 | C3-w5-sync | instrument | control (C3) | w5 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
 | K2 | instrument | control (C2) | w5 | sync | F06 | 2 | 20 | I5a: GAP; I6a: NO_ANOMALY_UNSPECIFIED or GAP; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | anomaly on I5a: present |  |
-| K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 1 row, attempts [1] | pending |
-| K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 0 rows, attempts [] | pending |
+| K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 1 row, attempts [1] |  |
+| K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 0 rows, attempts [] |  |
 | K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 2 | 20 | I4: GAP; I7a: GAP; I1b: PASS; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger charge: 2 rows, attempts [1, 2] |  |
 | K3 | instrument | replication (langgraph#8796) | w5 | sync | F05 | 2 | 20 | I5a: GAP; I6a: GAP; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | anomaly on I5a: present |  |
 | K4 | instrument | replication (langgraph#8764) | w1 | sync | F01 | 1 | 20 | I1a: NOT_EXERCISED; I1b: NOT_EXERCISED; *: NOT_EXERCISED | checker observation 'accepted run with no durable record: op start-1 ended': 1 |  |
@@ -848,7 +850,7 @@ final, is listed here with its reason and the batches it affects.
           "source": "ledger"
         }
       ],
-      "pending": "a ruling on I7c: checker v1 exercises it on w1-misuse, whose approval effect is charge, and gives NO_ANOMALY_UNSPECIFIED (its unit tests on misuse with approve and with reject; T-10's validation on T-09's fault-free misuse histories, 50 of 50), so NOT_EXERCISED would differ in every trial (completeness audit of 2026-10-16)",
+      "pending": null,
       "phase": "instrument",
       "predicted": [
         {
@@ -860,10 +862,10 @@ final, is listed here with its reason and the batches it affects.
         },
         {
           "expect": [
-            "NOT_EXERCISED"
+            "NO_ANOMALY_UNSPECIFIED"
           ],
           "invariant": "I7c",
-          "note": "precheck is exempt by the effect model, so no executed action is judged"
+          "note": "checker v1 exercises I7c on w1-misuse, whose approval effect is charge; corrected from NOT_EXERCISED on 2026-10-16, before any batch of this cell"
         },
         {
           "expect": [
@@ -913,7 +915,7 @@ final, is listed here with its reason and the batches it affects.
           "source": "ledger"
         }
       ],
-      "pending": "a ruling on I7c: checker v1 exercises it on w1-misuse, whose approval effect is charge, and gives NO_ANOMALY_UNSPECIFIED (its unit tests on misuse with approve and with reject; T-10's validation on T-09's fault-free misuse histories, 50 of 50), so NOT_EXERCISED would differ in every trial (completeness audit of 2026-10-16)",
+      "pending": null,
       "phase": "instrument",
       "predicted": [
         {
@@ -925,10 +927,10 @@ final, is listed here with its reason and the batches it affects.
         },
         {
           "expect": [
-            "NOT_EXERCISED"
+            "NO_ANOMALY_UNSPECIFIED"
           ],
           "invariant": "I7c",
-          "note": "no charge is executed, so no executed action is judged"
+          "note": "checker v1 exercises I7c on w1-misuse, whose approval effect is charge; corrected from NOT_EXERCISED on 2026-10-16, before any batch of this cell"
         },
         {
           "expect": [
@@ -1022,7 +1024,7 @@ final, is listed here with its reason and the batches it affects.
       "fault": "F05",
       "hypothesis": "H3",
       "id": "K3",
-      "master_seed": null,
+      "master_seed": "K3-v1",
       "n": 20,
       "observations": [
         {
@@ -1061,7 +1063,7 @@ final, is listed here with its reason and the batches it affects.
       ],
       "replication_of": "langgraph#8796",
       "scenario": "scenarios/first-matrix/K3.yaml",
-      "scenario_sha256": null,
+      "scenario_sha256": "8d270b489c0f8b411cc42e3c1004e0c648a5310bb48536ca2b423d62953a7db3",
       "trigger": "A held at L-T1 (occurrence 3 of turn-1's put: after respond), put.before; turn-1 redelivered to B; after B's client.ok, A released: a held pause in C2's shape, not SIGSTOP",
       "workers": 2,
       "workload": "w5"

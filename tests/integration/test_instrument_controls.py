@@ -104,6 +104,105 @@ def as_predicted(cell_id: str, trial: TrialFiles) -> list[str]:
     return found
 
 
+def held_takeover(directory: Path, op: str = "turn-1") -> list[str]:
+    """Where a trial departs from K3's schedule, read from its records alone: each process's own
+    seq order, and the records' references to each other, never a clock. The chain, each link a
+    recorded fact or one of crashcourt.history.merge's edges:
+
+    A's hold at L-T1 (w1's fp.hit) precedes the redelivery that names it (`held`); the redelivery
+    precedes B's events on the op (dispatch edge); the B event `client.ok` names precedes it
+    (result edge); `client.ok` precedes the release of A's hold (the orchestrator's seq); the
+    release precedes A's `fp.action` for that hit (barrier edge); and that precedes A's
+    acknowledgment of its held put (w1's seq). A does nothing new while held. B continues from the
+    checkpoint A's held put extends, so A's write, acknowledged after B answered, is stale."""
+
+    def history(proc: str) -> list[Any]:
+        return sorted(read_history(directory / f"{proc}.jsonl").events, key=lambda e: e.seq)
+
+    orch, a, b = history("orchestrator"), history("w1"), history("w2")
+    found: list[str] = []
+    holds = [
+        e
+        for e in a
+        if (e.kind, e.fp, e.op_id) == ("fp.hit", "put.before", op)
+        and (e.data.get("action"), e.data.get("occurrence")) == ("pause", 3)
+    ]
+    if len(holds) != 1:
+        return [f"w1 has {len(holds)} holds at L-T1, not 1"]
+    hold = holds[0]
+    resumed = [e for e in a if e.kind == "fp.action" and e.data.get("hit_seq") == hold.seq]
+    if len(resumed) != 1:
+        return [f"w1 resumed from its hold {len(resumed)} times, not once"]
+    resume = resumed[0]
+    acted = [
+        e.kind
+        for e in a
+        if hold.seq < e.seq < resume.seq
+        and (e.kind.endswith(".call") or e.kind.startswith(("node.", "effect.")))
+    ]
+    if acted:
+        found.append(f"w1 acted while held: {acted}")
+    acked = [
+        e
+        for e in a
+        if (e.kind, e.checkpoint_id, e.status) == ("saver.put.return", hold.checkpoint_id, "ok")
+    ]
+    if len(acked) != 1 or acked[0].seq < resume.seq:
+        found.append("w1's held put was not acknowledged once, after its hold ended")
+
+    def only(kind: str, **data: object) -> Any:
+        hits = [
+            e
+            for e in orch
+            if e.kind == kind
+            and e.op_id in (op, None)
+            and all(e.data.get(k) == v for k, v in data.items())
+        ]
+        if len(hits) != 1:
+            raise AssertionError(f"{len(hits)} {kind} {data} in the orchestrator's history")
+        return hits[0]
+
+    send = only("dispatch.send", to="w1")
+    redeliver = only("dispatch.redeliver", to="w2", **{"from": "w1"})
+    ok = only("client.ok")
+    release = only("fp.release", proc="w1", hit_seq=hold.seq, barrier="A")
+    if redeliver.data.get("held") != [{"proc": "w1", "hit_seq": hold.seq, "barrier": "A"}]:
+        found.append(f"the takeover names {redeliver.data.get('held')}, not w1's hold")
+    if not send.seq < redeliver.seq < ok.seq < release.seq:
+        found.append("the orchestrator did not send, redeliver, answer, then release, in order")
+    if ok.data.get("worker") != "w2":
+        found.append(f"turn-1 was answered by {ok.data.get('worker')}, not w2")
+    if not any(e.seq == ok.data.get("worker_seq") for e in b):
+        found.append("client.ok names no event of w2")
+    reads = [e for e in b if (e.kind, e.op_id) == ("saver.get_tuple.return", op)]
+    puts = [e for e in b if (e.kind, e.op_id) == ("saver.put.call", op)]
+    if not reads or reads[0].checkpoint_id != hold.parent_checkpoint_id:
+        found.append("w2 did not read the checkpoint w1's held put extends")
+    if not puts or puts[0].parent_checkpoint_id != hold.parent_checkpoint_id:
+        found.append("w2's first put does not extend that checkpoint")
+    return found
+
+
+def fork_rows(directory: Path) -> dict[str, Any]:
+    """The checkpoint rows after quiescence that share the parent of w1's held put: the fork."""
+    hold = next(
+        e
+        for e in read_history(directory / "w1.jsonl").events
+        if (e.kind, e.fp) == ("fp.hit", "put.before")
+    )
+    rows = json.loads((directory / "snapshot.json").read_text())["second"]["checkpoints"]
+    children = sorted(
+        r["checkpoint_id"] for r in rows if r["parent_checkpoint_id"] == hold.parent_checkpoint_id
+    )
+    head = max(r["checkpoint_id"] for r in rows)
+    return {
+        "parent": hold.parent_checkpoint_id,
+        "stale": hold.checkpoint_id,
+        "children": children,
+        "head": head,
+    }
+
+
 Check = Callable[[TrialFiles], None]
 
 
@@ -177,3 +276,7 @@ def test_k3_shape_replicates_8796_as_preregistered(tmp_path: Path) -> None:
             e.kind for e in events if e.kind in {"dispatch.redeliver", "client.ok", "fp.release"}
         ]
         assert order == ["dispatch.redeliver", "client.ok", "fp.release"]
+        assert held_takeover(trial.directory) == []
+        # The stale write is durable, and it and w2's first write are two children of one parent.
+        fork = fork_rows(trial.directory)
+        assert fork["stale"] in fork["children"] and len(fork["children"]) == 2
