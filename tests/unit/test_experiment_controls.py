@@ -19,17 +19,21 @@ from crashcourt.experiment.aggregate import authorize
 from crashcourt.experiment.controls import (
     C5_METHOD,
     C5_REQUIREMENT,
+    CheckerUsed,
     ControlReport,
     Threshold,
     judge,
     missing,
     recount,
+    required_sources,
 )
 from crashcourt.experiment.gate import NotAuthorized
 
 from ._experiment import (
+    C1_AS_PREDICTED,
     C5_REPORT,
     C5_SOURCES,
+    C9_DRIVER,
     CHECKER_SHA,
     SCENARIOS,
     SEEDS,
@@ -38,10 +42,12 @@ from ._experiment import (
     N,
     Repo,
     c5_report,
+    c9_report,
     commit,
     make_repo,
     prereg_model,
 )
+from ._factories import make_manifest
 from .test_experiment_aggregate import R1_AS_PREDICTED, batch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -86,6 +92,10 @@ def test_the_methodology_is_three_applicable_mutants_and_two_named_exclusions() 
         assert words in C5_REQUIREMENT
 
 
+def c1_batch(repo: Repo, name: str = "c1") -> Path:
+    return batch(repo, name, [C1_AS_PREDICTED] * N, cell="C1")
+
+
 def test_a_passing_report_allows_new_evidence(tmp_path: Path) -> None:
     repo = make_repo(tmp_path)
     assert c5_reasons(repo) == []
@@ -93,7 +103,7 @@ def test_a_passing_report_allows_new_evidence(tmp_path: Path) -> None:
         repo.root / "scenarios/X1.yaml",
         N,
         repo.root,
-        [batch(repo, "inst")],
+        [batch(repo, "inst"), c1_batch(repo)],
         checker=FakeChecker(),
         scenarios=FakeScenarios(),
     )
@@ -211,7 +221,8 @@ def test_a_draft_c5_without_evidence_is_named(tmp_path: Path) -> None:
         state="draft", instrument_checks=[{"id": "C5", "requirement": C5_REQUIREMENT}]
     )
     assert missing(draft, repo.prereg_commit, repo.root) == [
-        "instrument check C5 records no controls report"
+        "instrument check C5 records no controls report",
+        "the pre-registration has no instrument check C9",
     ]
 
 
@@ -280,14 +291,16 @@ def test_a_report_must_name_every_source_it_ran() -> None:
     trimmed = report.model_copy(update={"sources": sources})
     from crashcourt.experiment.controls import _sources  # pyright: ignore[reportPrivateUsage]
 
-    assert "it names no hash for scenarios/w5-sequential.yaml" in _sources(trimmed, ROOT, "HEAD")
+    assert "it names no hash for scenarios/w5-sequential.yaml" in _sources(
+        trimmed.sources, required_sources(), ROOT, "HEAD"
+    )
 
 
 def c3_prereg() -> Any:
     """R1 and X1 plus C3, a placebo control (failpoints armed with action none, a 0 ms latency
     toxic), predicted to show no anomaly anywhere."""
     data = prereg_model().model_dump(mode="json")
-    r1, x1 = data["cells"]
+    r1, x1, c1 = data["cells"]
     c3 = {
         **r1,
         "id": "C3",
@@ -303,7 +316,7 @@ def c3_prereg() -> Any:
         "observations": [],
         "predicted": [{"invariant": "*", "expect": ["PASS", "NO_ANOMALY_UNSPECIFIED"]}],
     }
-    return prereg_model(cells=[r1, c3, x1])
+    return prereg_model(cells=[r1, c3, x1, c1])
 
 
 def test_a_missing_or_failed_placebo_control_refuses_new_evidence(tmp_path: Path) -> None:
@@ -319,11 +332,81 @@ def test_a_missing_or_failed_placebo_control_refuses_new_evidence(tmp_path: Path
         repo.root / "scenarios/X1.yaml",
         N,
         repo.root,
-        [r1, batch(repo, "c3-quiet", [quiet] * N, cell="C3")],
+        [r1, batch(repo, "c3-quiet", [quiet] * N, cell="C3"), c1_batch(repo)],
         checker=FakeChecker(),
         scenarios=FakeScenarios(),
     )
-    assert auth.instrument_batches == ("c3-quiet", "r1")
+    assert auth.instrument_batches == ("c1", "c3-quiet", "r1")
+
+
+# -- C9, the sequential reference ------------------------------------------------------------------
+
+
+def test_a_passing_reference_report_is_read_from_the_preregistration_commit(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    assert [r for r in missing(prereg_model(), repo.prereg_commit, repo.root) if "C9" in r] == []
+
+
+def test_a_reference_report_with_a_differing_trial_refuses_new_evidence(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, reference=c9_report(equal=N - 1))
+    reasons = refused_new_evidence(repo, [batch(repo, "inst"), c1_batch(repo)])
+    assert f"C1: {N - 1} of {N} trials equal, 1 differing, 0 undecodable" in reasons
+
+
+def test_a_reference_report_must_cover_every_c9_cell_and_only_them() -> None:
+    from crashcourt.experiment.controls import judge_reference
+
+    prereg = prereg_model()
+    other = c9_report().batches[0].model_copy(update={"cell": "C3"})
+    reasons = judge_reference(
+        c9_report(batches=(other,)), prereg.checker, prereg.environment, prereg
+    )
+    assert any("it holds batches for ['C3'], C9 compares ['C1']" in r for r in reasons)
+    short = c9_report().batches[0].model_copy(update={"trials": N - 1, "equal": N - 1})
+    reasons = judge_reference(
+        c9_report(batches=(short,)), prereg.checker, prereg.environment, prereg
+    )
+    assert any(f"has {N - 1} trials, the cell is pre-registered at {N}" in r for r in reasons)
+
+
+def test_a_reference_report_that_claims_a_pass_its_counts_do_not_show_is_refused() -> None:
+    from crashcourt.experiment.controls import judge_reference
+
+    prereg = prereg_model()
+    reasons = judge_reference(
+        c9_report(equal=0, passed=True), prereg.checker, prereg.environment, prereg
+    )
+    assert "it says passed is True, but its counts say otherwise" in reasons
+
+
+def test_a_reference_report_from_another_checker_or_environment_is_refused() -> None:
+    from crashcourt.experiment.controls import judge_reference
+
+    prereg = prereg_model()
+    checker = CheckerUsed(
+        version="v1",
+        checker_sha256="9" * 64,
+        frozen_md_sha256=c9_report().checker.frozen_md_sha256,
+        registry_sha256=c9_report().checker.registry_sha256,
+    )
+    reasons = judge_reference(
+        c9_report(checker=checker), prereg.checker, prereg.environment, prereg
+    )
+    assert any("it ran under checker_sha256 9999" in r for r in reasons)
+    elsewhere = json.loads(make_manifest(git_sha="1" * 40, runner="github-hosted").to_json())
+    reasons = judge_reference(
+        c9_report(manifest=elsewhere), prereg.checker, prereg.environment, prereg
+    )
+    assert "it ran with runner 'github-hosted'; the pre-registration requires 'local'" in reasons
+
+
+def test_the_reference_driver_and_scenarios_that_ran_must_be_the_committed_ones(
+    tmp_path: Path,
+) -> None:
+    repo = make_repo(tmp_path)
+    prereg_commit = commit(repo.root, {C9_DRIVER: "another driver\n"}, "change the driver")
+    reasons = missing(prereg_model(), prereg_commit, repo.root)
+    assert len(reasons) == 1 and f"it ran {C9_DRIVER} at" in reasons[0]
 
 
 def test_the_original_c5_measurement_is_kept_as_it_was_and_the_gate_never_reads_it() -> None:

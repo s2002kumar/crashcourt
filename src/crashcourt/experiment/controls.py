@@ -30,6 +30,14 @@ reads the report as committed in the pre-registration commit and refuses unless:
 
 A missing, malformed, failed, or mismatched report is a reason, never a pass. So is a report in
 the original format: it covered M1 and M2 as if they were measurable.
+
+C9 (sequential reference) runs the same operation sequence as each trial of the tranche's
+single-writer, fault-free cells on InMemorySaver in one process, and compares the final state with
+the Postgres run's: the head checkpoint's channels as the frozen checker's own reader decodes them
+from the trial's snapshot, with the trial's thread id normalized away (specification section 13).
+Its driver (tests/controls/c9.py) writes a report the gate reads the same way: every trial of every
+C9 cell equal, each batch the pre-registered scenario at the cell's N, under the pinned checker,
+in the pre-registered environment, from committed sources.
 """
 
 from __future__ import annotations
@@ -57,7 +65,8 @@ Count = Annotated[int, Field(ge=0, strict=True)]
 C5_CAUGHT = 19
 C5_TRIALS = 20
 #: The instrument checks whose evidence is a controls report the gate reads and judges.
-REPORTED_CHECKS: tuple[str, ...] = ("C5",)
+REPORTED_CHECKS: tuple[str, ...] = ("C5", "C9")
+C9_DRIVER = "tests/controls/c9.py"
 #: How a mutant out of the first matrix's scope is recorded: never PASS, never a count.
 NOT_EXERCISED = "NOT_EXERCISED"
 W1_APPROVE = "scenarios/w1-approve.yaml"
@@ -134,6 +143,26 @@ C5_REQUIREMENT = (
     "as passing: M1's dropped row is read back only after a crash that follows its commit, which "
     "is K1b's new-evidence question, and no first-matrix workload reads a checkpoint by id (M2)."
 )
+
+
+#: The pre-registration's C9 requirement, word for word: the gate refuses any other.
+C9_REQUIREMENT = (
+    "Sequential reference: for each single-writer, fault-free C1 cell of the tranche under sync "
+    "durability (C1-w1-sync and C1-w5-sync in the first discovery tranche), every trial of one "
+    "canonical batch at the cell's N reaches the same final state as the same operation sequence "
+    "run on InMemorySaver in one process: the head checkpoint's channels as the frozen checker's "
+    "reader decodes them from the trial's snapshot (W1: order, plan, resume, decision, executed; "
+    "W5: messages as type, id, and content), with the trial's thread id normalized away."
+)
+
+
+def c9_cells(prereg: Preregistration) -> tuple[str, ...]:
+    """The cells C9 compares: the tranche's C1 controls with one worker under sync durability."""
+    return tuple(
+        c.id
+        for c in prereg.tranche_cells
+        if c.control == "C1" and c.durability == "sync" and c.workers == 1
+    )
 
 
 class _Model(BaseModel):
@@ -214,6 +243,125 @@ class ControlReport(_Model):
         return self.model_dump_json(indent=2) + "\n"
 
 
+class ReferenceBatch(_Model):
+    """One C9 cell's batch: each trial's Postgres final state against the in-process one."""
+
+    cell: Id
+    scenario: Text
+    scenario_sha256: Sha256
+    batch: Id
+    manifest_sha256: Sha256
+    #: Whether the batch ran through the gate (authorization.json): C9 counts only such batches.
+    authorized: bool
+    trials: Count
+    #: Trials whose two final states were equal after normalization.
+    equal: Count
+    #: Each trial that differed, by number, with what differed.
+    differing: dict[str, str] = Field(default_factory=dict[str, str])
+    #: Each trial whose Postgres state could not be decoded, by number, with why.
+    undecodable: dict[str, str] = Field(default_factory=dict[str, str])
+
+
+class ReferenceReport(_Model):
+    v: Literal[1] = 1
+    control: Literal["C9"]
+    requirement: Text
+    checker: CheckerUsed
+    run_commit: Commit
+    #: Repository path -> sha256 of the file as run: the driver and the scenarios.
+    sources: dict[str, Sha256]
+    manifest: dict[str, JsonValue]
+    batches: tuple[ReferenceBatch, ...]
+    #: Whether every trial of every batch was equal; computed from the counts, never trusted alone.
+    passed: bool
+
+    def to_json(self) -> str:
+        return self.model_dump_json(indent=2) + "\n"
+
+
+def recount_reference(report: ReferenceReport, prereg: Preregistration) -> list[str]:
+    """Why the report's batches do not show C9 passing for every C9 cell; empty when they do."""
+    failures: list[str] = []
+    cells = c9_cells(prereg)
+    if not cells:
+        return ["the pre-registration's tranche has no single-writer, fault-free C1 cell for C9"]
+    found = {b.cell: b for b in report.batches}
+    if sorted(found) != sorted(cells) or len(report.batches) != len(cells):
+        failures.append(f"it holds batches for {sorted(found)}, C9 compares {sorted(cells)}")
+    for cell_id in cells:
+        b = found.get(cell_id)
+        if b is None:
+            continue
+        try:
+            cell = prereg.cell(cell_id)
+        except KeyError:
+            failures.append(f"{cell_id} is not pre-registered")
+            continue
+        if not b.authorized:
+            failures.append(f"{cell_id}'s batch did not run through the gate")
+        if cell.scenario != b.scenario or cell.scenario_sha256 != b.scenario_sha256:
+            failures.append(
+                f"{cell_id}'s batch ran {b.scenario} at {b.scenario_sha256}, not the cell's"
+            )
+        if b.trials != cell.n:
+            failures.append(
+                f"{cell_id}'s batch has {b.trials} trials, the cell is pre-registered at {cell.n}"
+            )
+        if b.equal != b.trials or b.differing or b.undecodable:
+            failures.append(
+                f"{cell_id}: {b.equal} of {b.trials} trials equal, {len(b.differing)} differing, "
+                f"{len(b.undecodable)} undecodable; C9 needs every trial equal"
+            )
+    return failures
+
+
+def judge_reference(
+    report: ReferenceReport,
+    pin: CheckerPin | None,
+    required: Mapping[str, JsonValue],
+    prereg: Preregistration,
+) -> list[str]:
+    """Every reason the report does not show C9 passing under this pre-registration."""
+    reasons: list[str] = []
+    if report.requirement != C9_REQUIREMENT:
+        reasons.append("it states a requirement other than the pre-registration's C9")
+    failures = recount_reference(report, prereg)
+    reasons.extend(failures)
+    if report.passed != (not failures):
+        reasons.append(f"it says passed is {report.passed}, but its counts say otherwise")
+    reasons.extend(_checker_problems(report.checker, pin))
+    reasons.extend(_manifest_problems(report.manifest, required))
+    return reasons
+
+
+def _checker_problems(used: CheckerUsed, pin: CheckerPin | None) -> list[str]:
+    if pin is None:
+        return ["the pre-registration names no frozen checker to compare it with"]
+    return [
+        f"it ran under {name} {got}, the pre-registration pins {want}"
+        for name, got, want in (
+            ("checker version", used.version, pin.version),
+            ("checker_sha256", used.checker_sha256, pin.checker_sha256),
+            ("FROZEN.md sha256", used.frozen_md_sha256, pin.frozen_md_sha256),
+            ("registry_sha256", used.registry_sha256, pin.registry_sha256),
+        )
+        if got != want
+    ]
+
+
+def _manifest_problems(
+    raw: Mapping[str, JsonValue], required: Mapping[str, JsonValue]
+) -> list[str]:
+    try:
+        manifest = Manifest.from_json(json.dumps(raw))
+    except ValueError as exc:
+        return [f"its manifest is not one doctor writes: {exc}"]
+    return [
+        f"it ran with {key} {got!r}; the pre-registration requires {want!r}"
+        for key, (want, got) in mismatched(manifest, required).items()
+    ]
+
+
 def recount(report: ControlReport) -> list[str]:
     """Why the report's counts do not show its applicable mutants caught at the threshold; empty
     when every one of them was caught often enough."""
@@ -289,24 +437,8 @@ def judge(
         reasons.append(
             f"it says applicable_passed is {report.applicable_passed}, but its counts say otherwise"
         )
-    if pin is None:
-        reasons.append("the pre-registration names no frozen checker to compare it with")
-    else:
-        for name, got, want in (
-            ("checker version", report.checker.version, pin.version),
-            ("checker_sha256", report.checker.checker_sha256, pin.checker_sha256),
-            ("FROZEN.md sha256", report.checker.frozen_md_sha256, pin.frozen_md_sha256),
-            ("registry_sha256", report.checker.registry_sha256, pin.registry_sha256),
-        ):
-            if got != want:
-                reasons.append(f"it ran under {name} {got}, the pre-registration pins {want}")
-    try:
-        manifest = Manifest.from_json(json.dumps(report.manifest))
-    except ValueError as exc:
-        reasons.append(f"its manifest is not one doctor writes: {exc}")
-    else:
-        for key, (want, got) in mismatched(manifest, required).items():
-            reasons.append(f"it ran with {key} {got!r}; the pre-registration requires {want!r}")
+    reasons.extend(_checker_problems(report.checker, pin))
+    reasons.extend(_manifest_problems(report.manifest, required))
     return reasons
 
 
@@ -321,8 +453,11 @@ def missing(prereg: Preregistration, prereg_commit: str, repo: Path) -> list[str
         if check is None:
             reasons.append(f"the pre-registration has no {where}")
             continue
-        if check.requirement != C5_REQUIREMENT:
-            reasons.append(f"{where}'s requirement is not the C5 methodology the gate enforces")
+        requirement = C5_REQUIREMENT if check_id == "C5" else C9_REQUIREMENT
+        if check.requirement != requirement:
+            reasons.append(
+                f"{where}'s requirement is not the {check_id} methodology the gate enforces"
+            )
         if check.evidence is None:
             reasons.append(f"{where} records no controls report")
             continue
@@ -332,13 +467,21 @@ def missing(prereg: Preregistration, prereg_commit: str, repo: Path) -> list[str
                 f"{where}: {check.evidence} is not a file in the pre-registration commit"
             )
             continue
+        found: list[str]
         try:
-            report = ControlReport.model_validate_json(raw)
+            if check_id == "C5":
+                report = ControlReport.model_validate_json(raw)
+                found = judge(report, prereg.checker, prereg.environment)
+                found.extend(_sources(report.sources, required_sources(), repo, prereg_commit))
+            else:
+                reference = ReferenceReport.model_validate_json(raw)
+                found = judge_reference(reference, prereg.checker, prereg.environment, prereg)
+                found.extend(
+                    _sources(reference.sources, reference_sources(prereg), repo, prereg_commit)
+                )
         except ValueError as exc:
             reasons.append(f"{where}: {check.evidence} is not a controls report: {exc}")
             continue
-        found = judge(report, prereg.checker, prereg.environment)
-        found.extend(_sources(report, repo, prereg_commit))
         reasons.extend(f"{where} ({check.evidence}): {r}" for r in found)
     return reasons
 
@@ -349,11 +492,18 @@ def required_sources(method: Method = C5_METHOD) -> tuple[str, ...]:
     return ("tests/mutants/savers.py", "tests/mutants/c5.py", *shapes)
 
 
-def _sources(report: ControlReport, repo: Path, commit: str) -> list[str]:
-    reasons = [
-        f"it names no hash for {path}" for path in required_sources() if path not in report.sources
-    ]
-    for path, digest in sorted(report.sources.items()):
+def reference_sources(prereg: Preregistration) -> tuple[str, ...]:
+    """The files a C9 report must name: the driver and every C9 cell's scenario."""
+    wanted = set(c9_cells(prereg))
+    scenarios = sorted(c.scenario for c in prereg.cells if c.id in wanted)
+    return (C9_DRIVER, *scenarios)
+
+
+def _sources(
+    sources: Mapping[str, str], required: tuple[str, ...], repo: Path, commit: str
+) -> list[str]:
+    reasons = [f"it names no hash for {path}" for path in required if path not in sources]
+    for path, digest in sorted(sources.items()):
         committed = gitproof.blob_sha256(repo, commit, path)
         if committed != digest:
             held = "does not hold it" if committed is None else f"holds {committed}"
