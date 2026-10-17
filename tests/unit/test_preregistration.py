@@ -31,26 +31,22 @@ def committed() -> str:
     return COMMITTED.read_text(encoding="utf-8")
 
 
-def test_the_committed_preregistration_is_a_valid_draft() -> None:
+def test_the_committed_preregistration_is_final_for_its_tranche() -> None:
     prereg = parse(committed())
-    assert prereg.state == "draft"
-    missing = "\n".join(prereg.missing())
-    assert "no frozen checker is named" not in missing
-    assert "cell K1a: pending" not in missing
+    assert prereg.state == "final"
+    assert prereg.missing() == []
     # A1 is deferred with its pending audit: visible on the cell, not asked for by final.
     assert prereg.cell("A1").pending and prereg.cell("A1").deferred
-    assert "cell A1: pending" not in missing
 
 
 TRANCHE = ("C1-w1-sync", "C1-w5-sync", "C3-w1-sync", "C3-w5-sync", "K2", "K1a", "K3", "K4", "N8")
 
 
-def test_the_draft_can_authorize_the_tranches_instrument_cells_and_never_new_evidence() -> None:
+def test_the_final_preregistration_can_authorize_every_tranche_cell_and_no_other() -> None:
     prereg = parse(committed())
-    assert prereg.runnable() == [c for c in TRANCHE if c != "N8"]
-    assert prereg.refusals(prereg.cell("N8")) == [
-        "the pre-registration is a draft; new-evidence cell N8 needs it final"
-    ]
+    assert prereg.runnable() == list(TRANCHE)
+    assert prereg.refusals(prereg.cell("N8")) == []
+    assert all(prereg.refusals(c) for c in prereg.deferred_cells)
 
 
 def test_the_first_discovery_tranche_is_declared_and_everything_else_deferred() -> None:
@@ -478,6 +474,6 @@ def test_parse_needs_exactly_one_block() -> None:
 def test_cli_check_reports_what_is_missing(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["experiment", "check", "--root", str(ROOT)]) == 0
     out = capsys.readouterr().out
-    assert "draft, 36 cells (18 instrument, 18 new evidence)" in out
+    assert "final, 36 cells (18 instrument, 18 new evidence)" in out
     assert "tranche first-discovery: 9 cells" in out and "27 deferred" in out
-    assert "before it can be final" in out
+    assert "before it can be final" not in out

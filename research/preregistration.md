@@ -1,12 +1,10 @@
 # Pre-registration: the first fault matrix
 
-**Status: DRAFT, for the first discovery tranche.** This file declares a tranche (below, "The first
-discovery tranche"): the cells it is being finalized for. Every other cell is deferred, with its reason,
-and is never authorized. A draft authorizes only an instrument cell that is complete on its own, under
-complete pins, and never new evidence (below, "Instrument cells before the final commit"). `crashcourt
-experiment authorize` refuses every new-evidence batch until `state` is `final`, which needs everything
-under "Before this is final" and my commit; `final` then means final for the tranche, and nothing about
-the deferred cells.
+**Status: FINAL for the first discovery tranche (2026-10-17).** This file declares a tranche (below,
+"The first discovery tranche"): the cells it is final for. Every other cell is deferred, with its reason,
+and is never authorized; `final` says nothing about them. The commit that set this state is the
+pre-registration commit of every batch of the tranche: the instrument cells run again under it before
+N8, and nothing from before it counts.
 
 This file fixes, before any batch of the first matrix runs, what each cell runs, how many trials it gets, and
 what I predict it shows. The commit that last changes it is the pre-registration commit. A batch runs only
@@ -132,7 +130,11 @@ It stays a draft until every one of these holds, for the first discovery tranche
   show them.
 - Every tranche cell predicts every invariant the aggregator can score (the ruling of 2026-10-16).
 
-Then `state` becomes `final` in my commit. The deferred cells stay deferred: their hashes, seeds, pending
+Every one of these held on 2026-10-17, and `state` became `final` in this commit. C5's report is
+research/evidence/first-discovery/c5.json (Actions run 39035489063, M3 20 of 20, M4 20 of 20, M5 20 of 20)
+and C9's is research/evidence/first-discovery/c9.json (run 39035500894, C1-w1-sync and C1-w5-sync, every
+trial equal), both from the canonical runner at commit 871f773, whose sources this commit still holds.
+The deferred cells stay deferred: their hashes, seeds, pending
 entries, and evidence are a later tranche's, and this file's being final says nothing about them.
 
 T-09's fault-free histories, the current set and the final one after the restack, are inputs to the instrument
@@ -1927,47 +1929,47 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
   },
   "instrument_checks": [
     {
-      "evidence": null,
+      "evidence": "research/evidence/t-10/validation-t09-final.json (AM1-AM6, AM8, and AM10 each giving their specified outcome on real W1 approve trials, AM2 and AM4 on a real W5 concurrent trial, at the freeze) and tests/unit/test_checker_mutants.py (every mutant, AM7 and AM9 on synthetic fault trials), which ci.yml's unit job runs at every commit; checker v1 is byte-identical to the freeze (checker_sha256 pinned here)",
       "id": "AM1-AM10",
       "requirement": "the ten artifact mutants give exactly their specified outcomes (10 of 10) at the freeze commit"
     },
     {
-      "evidence": null,
+      "evidence": "research/evidence/first-discovery/c5.json",
       "id": "C5",
       "requirement": "Saver mutants, as revised before finalization after the original measurement failed (M1 0 of 20, M2 0 of 20, M5 on W1 INVALID by the I3 alarm; research/evidence/t-11/c5-original.json): M3 on W1 approve caught by I5a, M4 on W1 approve caught by I1b, and M5 on W5 sequential caught by I6b, each in at least 19 of 20 trials. M1 and M2 are NOT EXERCISED by the first matrix's workloads, out of scope for its instrument validation, and never counted or shown as passing: M1's dropped row is read back only after a crash that follows its commit, which is K1b's new-evidence question, and no first-matrix workload reads a checkpoint by id (M2)."
     },
     {
-      "evidence": null,
+      "evidence": "tests/unit/test_checker_engine.py::test_output_is_byte_identical_across_runs_and_history_order and tests/integration/test_run_evidence.py::test_the_checker_gives_the_same_bytes_twice (ci.yml, every commit); classify --compare byte-identical in 20 of 20 trials of K1a-gh38964246590-1 (Actions run 38964246590) and K3-gh38976681097-1 (run 38976681097), and in every batch tranche.yml runs (classify-again.txt in its artifact)",
       "id": "determinism",
       "requirement": "the checker run twice on 20 trials gives byte-identical output"
     },
     {
-      "evidence": null,
+      "evidence": "research/evidence/t-06/conformance.md (langgraph-checkpoint-conformance 0.0.2 identical raw and through the failpoint wrapper, at the package pins uv.lock holds now: langgraph 1.2.12, langgraph-checkpoint 4.2.0, langgraph-checkpoint-postgres 3.1.2), and tests/unit/test_failpoint_transparency.py with tests/integration/test_failpoint_postgres.py in ci.yml at every commit",
       "id": "C4",
       "requirement": "disarmed transparency at the pinned versions: identical conformance results and normalized state hashes"
     },
     {
-      "evidence": null,
+      "evidence": "research/evidence/first-discovery/c9.json",
       "id": "C9",
       "requirement": "Sequential reference: for each single-writer, fault-free C1 cell of the tranche under sync durability (C1-w1-sync and C1-w5-sync in the first discovery tranche), every trial of one canonical batch at the cell's N reaches the same final state as the same operation sequence run on InMemorySaver in one process: the head checkpoint's channels as the frozen checker's reader decodes them from the trial's snapshot (W1: order, plan, resume, decision, executed; W5: messages as type, id, and content), with the trial's thread id normalized away."
     },
     {
-      "evidence": null,
+      "evidence": "crashcourt clauses check in ci.yml's unit job at every commit and in every tranche.yml and experiment.yml run (clauses-check.txt in the artifact)",
       "id": "C6",
       "requirement": "the clause registry validates offline at the run commit (crashcourt clauses check)"
     },
     {
-      "evidence": null,
+      "evidence": "crashcourt.experiment.fingerprint: every material manifest field and the host's CPU count and memory are compared, and only a rule in research/compatibility.json, absent, could excuse a difference (tests/unit/test_fingerprint.py); applied by the aggregator and by the gate's instrument check and environment confirmation",
       "id": "C7",
       "requirement": "batches pool only across identical environments: the fingerprint rule, with every exception recorded in research/compatibility.json"
     },
     {
-      "evidence": null,
+      "evidence": "crashcourt faults selftest --trials 20 in ci.yml's doctor job and in every tranche.yml and experiment.yml run (fault-selftest.md in the artifact): 20 of 20 in K1a's run 38964246590 and K3's run 38976681097",
       "id": "fault-selftest",
       "requirement": "every fault primitive passes its self-test (crashcourt faults selftest) in the environment the batches run in"
     },
     {
-      "evidence": null,
+      "evidence": "doctor's checks in every batch: the sink reports no test hooks and the manifest's source hash, run.json records the direct oracle DSN beside each worker's Toxiproxy route, and the runner refuses a worker route that is not a plain path (crashcourt.orchestrator.topology); recorded in every batch's manifest.json and run.json",
       "id": "oracle-independence",
       "requirement": "doctor shows the effect sink and the oracle connection are not behind Toxiproxy, and the sink reports no test hooks and the manifest's source hash"
     }
@@ -1978,7 +1980,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     "derivation": "sha256(json([master_seed, cell, trial]))",
     "master_seed_in": "scenario"
   },
-  "state": "draft",
+  "state": "final",
   "tranche": {
     "name": "first-discovery",
     "note": "The smallest tranche that answers one new-evidence question, N8, under the controls and replications its mechanisms rest on: C1 and C3 on both workloads under sync durability, K1a (redelivery with uncommitted writes and a duplicate effect) and K3 (a held takeover and a stale write), and K2 and K4, which the methodology requires before any new claim (C2, C11). Declared 2026-10-17, before any batch of the tranche."
