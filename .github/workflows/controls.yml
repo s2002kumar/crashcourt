@@ -1,0 +1,75 @@
+# One reported instrument check on the canonical runner (GitHub-hosted Ubuntu 24.04): C5, the
+# saver mutants (tests/mutants/c5.py), or C9, the sequential reference (tests/controls/c9.py) over
+# canonical batches of the tranche's C1 cells, which the draft can authorize. Started by hand,
+# from main only. The report is uploaded whatever its result; it becomes the check's evidence only
+# when committed into research/evidence/ and named by the pre-registration.
+name: controls
+on:
+  workflow_dispatch:
+    inputs:
+      check:
+        description: which reported check to run
+        required: true
+        type: choice
+        options: [c5, c9]
+permissions:
+  contents: read
+concurrency:
+  group: experiment
+  cancel-in-progress: false
+env:
+  UV_VERSION: "0.12.1"  # the uv that wrote uv.lock
+  CHECK: ${{ inputs.check }}
+defaults:
+  run:
+    shell: bash  # runs with -eo pipefail
+jobs:
+  report:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --locked --group dev
+      - run: |
+          out="$RUNNER_TEMP/controls"
+          mkdir -p "$out/runs"
+          echo "OUT=$out" >> "$GITHUB_ENV"
+          echo "STAMP=gh$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+      - run: docker compose up -d --wait
+      - if: ${{ env.CHECK == 'c5' }}
+        run: >-
+          uv run python -m tests.mutants.c5 --trials 20 --out "$OUT/runs" --report "$OUT/c5.json"
+          | tee "$OUT/c5.txt"
+      - if: ${{ env.CHECK == 'c9' }}
+        name: The C9 cells as canonical batches through the gate, then the reference comparison
+        run: |
+          uv run python -c '
+          from pathlib import Path
+          from crashcourt.experiment.controls import c9_cells
+          from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, parse
+          p = parse(Path(PREREGISTRATION_PATH).read_text("utf-8"))
+          for cid in c9_cells(p):
+              c = p.cell(cid)
+              print(c.id, c.scenario, c.n)' > "$OUT/cells.txt"
+          cat "$OUT/cells.txt"
+          while read -r cell scenario trials; do
+            uv run crashcourt experiment authorize "$scenario" --trials "$trials" > "$OUT/gate-$cell.txt"
+            uv run crashcourt run "$scenario" --trials "$trials" --canonical \
+              --out "$OUT/runs" --batch "$cell-$STAMP" | tail -n 2
+          done < "$OUT/cells.txt"
+          uv run python -m tests.controls.c9 --batches "$OUT"/runs/* --report "$OUT/c9.json" \
+            | tee "$OUT/c9.txt"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: controls-${{ env.CHECK }}-${{ env.STAMP || github.run_id }}
+          path: ${{ runner.temp }}/controls
+          if-no-files-found: error
+          retention-days: 90
