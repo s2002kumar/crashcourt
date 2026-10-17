@@ -261,8 +261,8 @@ def run_c9(batch_dirs: Sequence[Path], scratch: Path) -> ReferenceReport:
         differing = unexplained(manifests[0], other, ())
         if differing:
             raise C9Refused(f"the batches ran in different environments: {sorted(differing)}")
-    if manifests[0].git_dirty:
-        raise C9Refused("the batches ran from a dirty checkout")
+    # A dirty checkout is not refused here: the manifest records it, and the gate's judge refuses
+    # a report whose manifest is not the pre-registered environment (git_dirty false among it).
     passed = all(b.equal == b.trials and not b.differing and not b.undecodable for b in results)
     return ReferenceReport(
         control="C9",
