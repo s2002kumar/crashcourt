@@ -51,7 +51,7 @@ def judged(
     replication_of: str | None = None,
 ) -> tuple[BatchSummary, list[TrialFiles]]:
     """A batch of the shape, every trial valid, judged by the frozen checker (outputs written)."""
-    path = SHAPES / f"t11-{name}.yaml"
+    path = SHAPES / f"{name}.yaml"
     summary = run_batch(
         load_scenario(path),
         RunOptions(trials=TRIALS, out=tmp),
@@ -206,12 +206,14 @@ def fork_rows(directory: Path) -> dict[str, Any]:
 Check = Callable[[TrialFiles], None]
 
 
-@pytest.mark.parametrize(("name", "cell"), [("c3-w1", "C3-w1-sync"), ("c3-w5", "C3-w5-sync")])
+@pytest.mark.parametrize(
+    ("name", "cell"), [("t11-c3-w1", "C3-w1-sync"), ("t11-c3-w5", "C3-w5-sync")]
+)
 def test_the_placebo_changes_nothing_and_every_inert_arm_is_hit(
     tmp_path: Path, name: str, cell: str
 ) -> None:
     summary, trials = judged(tmp_path, name)
-    scenario = load_scenario(SHAPES / f"t11-{name}.yaml")
+    scenario = load_scenario(SHAPES / f"{name}.yaml")
     for trial in trials:
         assert as_predicted(cell, trial) == []
         record: dict[str, Any] = json.loads((trial.directory / "trial.json").read_text())
@@ -228,7 +230,7 @@ def test_the_placebo_changes_nothing_and_every_inert_arm_is_hit(
 
 
 def test_k1a_shape_replicates_8039_as_preregistered(tmp_path: Path) -> None:
-    _, trials = judged(tmp_path, "k1a-shape", "replication", "langgraph#8039")
+    _, trials = judged(tmp_path, "t11-k1a-shape", "replication", "langgraph#8039")
     for trial in trials:
         assert as_predicted("K1a", trial) == []
         events = read_history(trial.directory / "orchestrator.jsonl").events
@@ -282,7 +284,7 @@ def test_k4_shape_replicates_8764_as_preregistered(tmp_path: Path) -> None:
 
 
 def test_k3_shape_replicates_8796_as_preregistered(tmp_path: Path) -> None:
-    _, trials = judged(tmp_path, "k3-shape", "replication", "langgraph#8796")
+    _, trials = judged(tmp_path, "t11-k3-shape", "replication", "langgraph#8796")
     for trial in trials:
         assert as_predicted("K3", trial) == []
         record: dict[str, Any] = json.loads((trial.directory / "trial.json").read_text())
