@@ -90,7 +90,11 @@ def test_n8_is_preregistered_with_its_two_holds_and_complete_predictions() -> No
     assert [_expect(n8, i) for i in ("I4", "I5a", "I7a", "I6a")] == [("GAP",)] * 4
     assert _expect(n8, "I2") == ("NOT_EXERCISED",)
     assert _expect(n8, "*") == ("PASS", "NO_ANOMALY_UNSPECIFIED", "NOT_EXERCISED")
-    assert n8.workers == 2 and n8.fault == "F05" and n8.observations == ()
+    assert n8.workers == 2 and n8.fault == "F05"
+    # The founder's correction before dispatch: the ledger's own record of the two charges.
+    assert [o.label() for o in n8.observations] == ["ledger charge: 2 rows, attempts [1, 2]"]
+    deviations = committed()[committed().index("## Deviations") :]
+    assert "N8: the ledger observation" in deviations and "No N8 batch had run" in deviations
     scenario = load_scenario(ROOT / n8.scenario)
     arms = [
         (s.on.fp, s.on.occurrence, s.landmark)
