@@ -298,7 +298,7 @@ My rulings on T-10's readings, applied here before the freeze:
 | N5 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP; I7a: GAP; I7c: GAP; I8: GAP | - | deferred |
 | N6 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP | - | deferred |
 | N7 | new-evidence | new-evidence | w1 | sync | F07 | 1 | 20 | I4: GAP | - | unknown, deferred |
-| N8 | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP; I2: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| N8 | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP; I2: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger charge: 2 rows, attempts [1, 2] |  |
 | N9 | new-evidence | new-evidence | w1 | sync | F13 | 1 | 20 | I1b: PASS | - | deferred |
 | N10 | new-evidence | new-evidence | w1 | sync | F12 | 1 | 20 | I1a: PASS; I1b: PASS; I11: PASS; I4: NO_ANOMALY_UNSPECIFIED | - | deferred |
 | N11 | new-evidence | new-evidence | w1 | sync | F01 | 2 | 20 | I7c: PASS or NO_ANOMALY_UNSPECIFIED | - | unknown, deferred |
@@ -323,6 +323,15 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
   NOT_EXERCISED (no anomaly beyond K1a's predicted behavior) was added only after that batch exposed
   the gap. The batch stays archived as it ran, under the pre-registration it ran under, as the run
   that found the defect; it is never counted as a passing replication. K1a runs again as a new batch.
+- **N8: the ledger observation, added 2026-10-17, before any N8 batch.** The final pre-registration
+  (6e9cb1e) predicted N8's I4 as GAP with the note "two charge rows, attempts 1 and 2", but N8's
+  machine-readable `observations` were empty, so the two charge rows would have been read only through
+  the checker's I4 and not from the effect ledger on its own. My review of the gate report required an
+  explicit observation before dispatch: `ledger charge: 2 rows, attempts [1, 2]`, the same form as K1a's,
+  matched in every valid trial independently of any outcome. No N8 batch had run; nothing else in N8
+  changes (scenario, invariant predictions, N). This amendment is the pre-registration commit for every
+  batch of the tranche from now on: the eight instrument cells run again under it, and the batches of
+  6e9cb1e's tranche run (39052757550) stay archived as they ran and are not reused as qualifying batches.
 
 ## Pre-registration data
 
@@ -1503,7 +1512,18 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
       "id": "N8",
       "master_seed": "N8-v1",
       "n": 20,
-      "observations": [],
+      "observations": [
+        {
+          "attempts": [
+            1,
+            2
+          ],
+          "effect": "charge",
+          "note": "the effect ledger's own record, independent of the checker: A's charge (attempt 1) before the holds, B's (attempt 2) after the takeover; added 2026-10-17 before any N8 batch (Deviations)",
+          "rows": 2,
+          "source": "ledger"
+        }
+      ],
       "pending": null,
       "phase": "new-evidence",
       "predicted": [
