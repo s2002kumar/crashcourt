@@ -1,0 +1,13 @@
+# C1-w1-sync: the negative control on W1 approve under sync durability, an instrument cell.
+# One worker, two sequential operations, no fault and no arm: T-09's w1-approve, which T-10
+# audited the landmarks on (research/evidence/t-09/, t-10/), under the cell's own name and seed.
+v: 1
+name: C1-w1-sync
+cell: C1-w1-sync
+seed: C1-w1-sync-v1
+workload: w1
+target: {saver: postgres, driver: async, durability: sync}
+workers: [w1]
+ops:
+  - {id: start-1, worker: w1, thread: t1, after: start, input: {order: order-17}}
+  - {id: resume-1, worker: w1, thread: t1, after: start-1, resume: approve}

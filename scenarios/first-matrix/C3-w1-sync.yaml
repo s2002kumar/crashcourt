@@ -1,0 +1,36 @@
+# C3-w1-sync: the placebo control on W1 approve, an instrument cell. Every failpoint the
+# new-evidence cells arm on this workload is armed with action none, at its audited landmark,
+# and a latency toxic of 0 ms and 0 jitter sits on the worker's proxy for the whole trial:
+# T-11's C3 shape (research/evidence/t-11/shapes.json) under the cell's own name and seed.
+v: 1
+name: C3-w1-sync
+cell: C3-w1-sync
+seed: C3-w1-sync-v1
+workload: w1
+target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
+workers: [w1]
+toxics:
+  - {worker: w1, type: latency, stream: downstream, latency_ms: 0, jitter_ms: 0}
+ops:
+  - {id: start-1, worker: w1, thread: t1, after: start, input: {order: order-17}}
+  - {id: resume-1, worker: w1, thread: t1, after: start-1, resume: approve}
+schedule:
+  - on: {fp: get_tuple.after, worker: w1, op: resume-1, occurrence: 1}
+    do: {none: true}
+    landmark: L-GET
+  - on: {fp: put_writes.before, worker: w1, op: resume-1, occurrence: 2}
+    do: {none: true}
+    landmark: L-RES
+  - on: {fp: put_writes.after, worker: w1, op: resume-1, occurrence: 2}
+    do: {none: true}
+    landmark: L-RES
+  - on: {fp: put_writes.before, worker: w1, op: resume-1, occurrence: 3}
+    do: {none: true}
+    landmark: L-EXW
+  - on: {fp: put_writes.after, worker: w1, op: resume-1, occurrence: 3}
+    do: {none: true}
+    landmark: L-EXW
+  - on: {fp: put.before, worker: w1, op: resume-1, occurrence: 2}
+    do: {none: true}
+    landmark: L-EXC

@@ -100,6 +100,14 @@ def test_later_commits_that_leave_the_preregistration_alone_still_run(tmp_path: 
     assert (auth.run_commit, auth.preregistration_commit) == (later, repo.prereg_commit)
 
 
+def test_a_deferred_cell_is_never_authorized(tmp_path: Path) -> None:
+    cells = prereg_model().model_dump(mode="json")["cells"]
+    cells[0]["deferred"] = "a later tranche"  # R1, an instrument cell, under a final file
+    tranche = {"name": "t", "note": "X1 and C1"}
+    repo = make_repo(tmp_path, prereg_model(tranche=tranche, cells=cells))
+    assert "cell R1 is deferred from t: a later tranche" in refused(authorize, repo)
+
+
 def test_a_final_preregistration_records_its_state(tmp_path: Path) -> None:
     assert authorize(make_repo(tmp_path)).preregistration_state == "final"
 

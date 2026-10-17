@@ -76,6 +76,12 @@ def _check(args: argparse.Namespace) -> int:
         f"{path}: {prereg.state}, {len(prereg.cells)} cells "
         f"({phases['instrument']} instrument, {phases['new-evidence']} new evidence)"
     )
+    if prereg.tranche is not None:
+        names = ", ".join(c.id for c in prereg.tranche_cells)
+        print(
+            f"tranche {prereg.tranche.name}: {len(prereg.tranche_cells)} cells ({names}); "
+            f"{len(prereg.deferred_cells)} deferred"
+        )
     if prereg.state == "draft":
         runnable = prereg.runnable()
         print(f"the draft can authorize: {', '.join(runnable) or 'no cell'}")

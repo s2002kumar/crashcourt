@@ -388,7 +388,8 @@ def aggregate(
 
 
 def instrument_ready(repo: Path, rules: Sequence[CompatibilityRule] = ()) -> InstrumentCheck:
-    """The gate's instrument check: every instrument cell of the pre-registration has one pooled
+    """The gate's instrument check: every instrument cell of the pre-registration's tranche (every
+    instrument cell, without one) has one pooled
     group, from batches under the same pre-registration commit, that came out as predicted, and
     every instrument cell ran in one environment, which new evidence must then match. Every
     instrument check whose evidence is a controls report (C5) must pass as committed in the
@@ -399,7 +400,7 @@ def instrument_ready(repo: Path, rules: Sequence[CompatibilityRule] = ()) -> Ins
     ) -> InstrumentEvidence:
         reported = controls.missing(prereg, prereg_commit, repo)
         if not dirs:
-            ids = [c.id for c in prereg.cells if c.phase == "instrument"]
+            ids = [c.id for c in prereg.tranche_cells if c.phase == "instrument"]
             cells = [f"instrument cell {i} has no batch" for i in ids]
             return InstrumentEvidence([*cells, *reported], [], None)
         try:
@@ -411,7 +412,7 @@ def instrument_ready(repo: Path, rules: Sequence[CompatibilityRule] = ()) -> Ins
         if report.preregistration_commit != prereg_commit:
             missing.append("the instrument batches ran under another pre-registration")
         found = {c.cell: c for c in report.cells}
-        for cell in prereg.cells:
+        for cell in prereg.tranche_cells:
             if cell.phase != "instrument":
                 continue
             summary = found.get(cell.id)

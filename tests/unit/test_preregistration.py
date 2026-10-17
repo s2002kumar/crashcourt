@@ -37,17 +37,78 @@ def test_the_committed_preregistration_is_a_valid_draft() -> None:
     missing = "\n".join(prereg.missing())
     assert "no frozen checker is named" not in missing
     assert "cell K1a: pending" not in missing
-    assert "cell A1: pending" in missing  # no fault-free async histories audited yet
+    # A1 is deferred with its pending audit: visible on the cell, not asked for by final.
+    assert prereg.cell("A1").pending and prereg.cell("A1").deferred
+    assert "cell A1: pending" not in missing
 
 
-def test_the_draft_can_authorize_k1a_and_never_new_evidence() -> None:
+TRANCHE = ("C1-w1-sync", "C1-w5-sync", "C3-w1-sync", "C3-w5-sync", "K2", "K1a", "K3", "K4", "N8")
+
+
+def test_the_draft_can_authorize_the_tranches_instrument_cells_and_never_new_evidence() -> None:
     prereg = parse(committed())
-    assert prereg.runnable() == ["K1a", "K3"]
-    for c in prereg.cells:
-        if c.phase == "new-evidence":
-            assert prereg.refusals(c) == [
-                f"the pre-registration is a draft; new-evidence cell {c.id} needs it final"
-            ]
+    assert prereg.runnable() == [c for c in TRANCHE if c != "N8"]
+    assert prereg.refusals(prereg.cell("N8")) == [
+        "the pre-registration is a draft; new-evidence cell N8 needs it final"
+    ]
+
+
+def test_the_first_discovery_tranche_is_declared_and_everything_else_deferred() -> None:
+    """The founder's tranche of 2026-10-17: its members, every other cell deferred with a reason,
+    the deferred cells' predictions kept, and `final` asking only for the tranche."""
+    prereg = parse(committed())
+    assert prereg.tranche is not None and prereg.tranche.name == "first-discovery"
+    assert tuple(c.id for c in prereg.tranche_cells) == TRANCHE
+    assert [c.id for c in prereg.cells if c.phase == "new-evidence" and c.deferred is None] == [
+        "N8"
+    ]
+    for c in prereg.deferred_cells:
+        assert c.deferred and len(c.deferred) > 20, c.id
+        assert prereg.refusals(c) == [f"cell {c.id} is deferred from first-discovery: {c.deferred}"]
+        assert c.predicted  # kept, visible
+    assert prereg.cell("K1b").deferred is not None  # not in the first tranche, by ruling
+    missing = prereg.missing()
+    assert not any(m.startswith("cell ") for m in missing), missing
+    assert all(m.startswith("instrument check ") for m in missing), missing
+    # C9 compares exactly the tranche's single-writer, fault-free C1 cells.
+    from crashcourt.experiment.controls import c9_cells
+
+    assert c9_cells(prereg) == ("C1-w1-sync", "C1-w5-sync")
+
+
+def test_n8_is_preregistered_with_its_two_holds_and_complete_predictions() -> None:
+    """N8's schedule (the ruling of 2026-10-17) and its predictions: I2 NOT_EXERCISED by checker
+    v1's definition of an interruption, and no other anomaly."""
+    from crashcourt.spec.scenario import (
+        AllPausedTrigger,
+        EndedTrigger,
+        FailpointStep,
+        FailpointTrigger,
+        Redeliver,
+        Release,
+        load_scenario,
+    )
+
+    prereg = parse(committed())
+    n8 = prereg.cell("N8")
+    assert [_expect(n8, i) for i in ("I4", "I5a", "I7a", "I6a")] == [("GAP",)] * 4
+    assert _expect(n8, "I2") == ("NOT_EXERCISED",)
+    assert _expect(n8, "*") == ("PASS", "NO_ANOMALY_UNSPECIFIED", "NOT_EXERCISED")
+    assert n8.workers == 2 and n8.fault == "F05" and n8.observations == ()
+    scenario = load_scenario(ROOT / n8.scenario)
+    arms = [
+        (s.on.fp, s.on.occurrence, s.landmark)
+        for s in scenario.schedule
+        if isinstance(s, FailpointStep) and isinstance(s.on, FailpointTrigger)
+    ]
+    assert arms == [("put_writes.before", 3, "L-EXW"), ("put.before", 2, "L-EXC")]
+    [takeover] = [s for s in scenario.schedule if isinstance(s.on, AllPausedTrigger)]
+    assert isinstance(takeover.on, AllPausedTrigger) and isinstance(takeover.do, Redeliver)
+    assert sorted(takeover.on.all_paused) == ["A-put", "A-writes"]
+    assert (takeover.do.redeliver.op, takeover.do.redeliver.to) == ("resume-1", "w2")
+    [release] = [s for s in scenario.schedule if isinstance(s.on, EndedTrigger)]
+    assert isinstance(release.on, EndedTrigger) and isinstance(release.do, Release)
+    assert release.on.ended == "resume-1" and sorted(release.do.release) == ["A-put", "A-writes"]
 
 
 def test_every_written_scenario_is_its_cells() -> None:
@@ -63,7 +124,7 @@ def test_every_written_scenario_is_its_cells() -> None:
     frozen_md = (ROOT / FROZEN_PATH).read_text(encoding="utf-8")
     registry = registry_sha256(ROOT / "clauses")
     written = [c for c in prereg.cells if (ROOT / c.scenario).is_file()]
-    assert [c.id for c in written] == ["K1a", "K3"]
+    assert [c.id for c in written] == [c.id for c in prereg.tranche_cells]
     for c in prereg.cells:
         assert (c.scenario_sha256 is None) == (c not in written), c.id
     for c in written:
@@ -75,10 +136,22 @@ def test_every_written_scenario_is_its_cells() -> None:
         )
         assert len(scenario.workers) == c.workers
         table = freeze.verify_scenario(frozen_md, registry, ROOT / c.scenario)
-        assert table in prereg.checker.landmark_tables.values()
+        if scenario.landmarks is None:  # a fault-free cell with no arm names no table
+            assert table is None and c.fault is None and not scenario.schedule
+        else:
+            assert table in prereg.checker.landmark_tables.values()
 
 
-@pytest.mark.parametrize(("cell", "shape"), [("K1a", "t11-k1a-shape"), ("K3", "t11-k3-shape")])
+@pytest.mark.parametrize(
+    ("cell", "shape"),
+    [
+        ("K1a", "t11-k1a-shape"),
+        ("K3", "t11-k3-shape"),
+        ("K4", "k4-shape"),
+        ("C3-w1-sync", "t11-c3-w1"),
+        ("C3-w5-sync", "t11-c3-w5"),
+    ],
+)
 def test_a_replication_runs_the_shape_t11_validated(cell: str, shape: str) -> None:
     """K1a's and K3's scenarios are T-11's shapes (research/evidence/t-11/shapes.json) under the
     cell's own name, cell id, and master seed: nothing else differs."""
@@ -176,9 +249,11 @@ def test_every_instrument_cell_predicts_every_invariant_the_aggregator_can_score
     from crashcourt.experiment.aggregate import summarize_invariant
     from crashcourt.experiment.verify import TrialFiles
 
-    instrument = [c for c in parse(committed()).cells if c.phase == "instrument"]
+    prereg = parse(committed())
+    instrument = [c for c in prereg.cells if c.phase == "instrument"]
     assert {"K1a", "K2", "K3", "K4", "K5", "K5-reject"} <= {c.id for c in instrument}
-    for cell in instrument:
+    # Every tranche cell, the new-evidence one included, is held to the same completeness.
+    for cell in [*instrument, *(c for c in prereg.tranche_cells if c.phase == "new-evidence")]:
         for invariant in INVARIANTS:
             outcome = {"invariant": invariant, "outcome": "NO_ANOMALY_UNSPECIFIED"}
             trial = TrialFiles(1, ROOT, {"not_exercised": []}, {"results": [outcome]})
@@ -294,6 +369,23 @@ def test_the_block_round_trips() -> None:
     assert parse(block(prereg)) == prereg
 
 
+def test_a_tranche_defers_the_rest_and_final_asks_only_for_the_tranche() -> None:
+    cells = _cells_with()
+    cells[1]["deferred"] = "later"  # X1
+    with pytest.raises(ValidationError, match="declares no tranche"):
+        prereg_model(cells=cells)
+    tranche = {"name": "t", "note": "the first cell only"}
+    with pytest.raises(ValidationError, match="holds no cell"):
+        prereg_model(tranche=tranche, cells=[{**c, "deferred": "later"} for c in cells])
+    cells[1]["scenario_sha256"] = None  # a deferred cell needs no hash to be final
+    prereg = prereg_model(tranche=tranche, cells=cells)
+    assert [c.id for c in prereg.tranche_cells] == ["R1", "C1"]
+    assert prereg.refusals(prereg.cell("X1")) == ["cell X1 is deferred from t: later"]
+    assert prereg.runnable() == ["R1", "C1"]
+    with pytest.raises(ValidationError, match="cell R1: no scenario hash"):
+        prereg_model(tranche=tranche, cells=[{**cells[0], "scenario_sha256": None}, *cells[1:]])
+
+
 def test_a_final_preregistration_must_be_complete() -> None:
     assert prereg_model().state == "final"
     with pytest.raises(ValidationError, match="no frozen checker"):
@@ -387,5 +479,5 @@ def test_cli_check_reports_what_is_missing(capsys: pytest.CaptureFixture[str]) -
     assert main(["experiment", "check", "--root", str(ROOT)]) == 0
     out = capsys.readouterr().out
     assert "draft, 36 cells (18 instrument, 18 new evidence)" in out
-    assert "the draft can authorize: K1a, K3\n" in out
+    assert "tranche first-discovery: 9 cells" in out and "27 deferred" in out
     assert "before it can be final" in out

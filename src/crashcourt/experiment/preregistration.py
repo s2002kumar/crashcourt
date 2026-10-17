@@ -26,6 +26,14 @@ Phases. `instrument` cells (controls and published replications) run first; `new
 are refused until every instrument cell of the same pre-registration, checker, and environment has
 come out as predicted.
 
+Tranches. A pre-registration may declare a `tranche`: the cells it is being finalized for. Every
+other cell is `deferred`, with a reason, and stays listed with its predictions: it is never
+authorized, under a draft or a final, and it needs no scenario hash or seed for the file to be
+final. `final` then means final for the tranche and nothing else. The instrument cells that gate
+new evidence are the tranche's. Widening the tranche is a change to this file, so a new
+pre-registration commit, under which the instrument cells run again; batches of different
+commits never pool.
+
 Observations. Besides its outcomes, a cell may predict what it observes: effect ledger rows, a
 record in checker.json that is not an outcome, or whether an invariant showed an anomaly at all.
 Each is matched in every valid trial, independently of how the anomaly was classified, so a
@@ -198,6 +206,9 @@ class Cell(_Model):
     escalate_if: Text
     #: What this cell's prediction still waits on, if anything; a final pre-registration has none.
     pending: Text | None = None
+    #: Why the cell is outside the pre-registration's tranche. A deferred cell keeps its entry
+    #: and its predictions, needs no scenario hash or seed, and is never authorized.
+    deferred: Text | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
@@ -280,10 +291,20 @@ class SeedRule(_Model):
     master_seed_in: Literal["scenario"] = "scenario"
 
 
+class Tranche(_Model):
+    """The cells this pre-registration is finalized for, by name; the rest are deferred."""
+
+    name: Id
+    #: Why these cells and no others, before any of them runs.
+    note: Text
+
+
 class Preregistration(_Model):
     v: Literal[1]
     name: Id
     state: Literal["draft", "final"]
+    #: The tranche `final` is final for; None finalizes the whole matrix at once.
+    tranche: Tranche | None = None
     #: The checker this matrix runs under; null only in a draft.
     checker: CheckerPin | None = None
     #: The TrialScenario builder the checker's input comes from; null only in a draft.
@@ -307,11 +328,27 @@ class Preregistration(_Model):
             if repeated:
                 # A scenario names exactly one cell, so the gate cannot authorize the wrong one.
                 raise ValueError(f"{name} repeat: {repeated}")
+        if self.tranche is None and any(c.deferred for c in self.cells):
+            raise ValueError("a cell is deferred, but the pre-registration declares no tranche")
+        if self.tranche is not None and not any(c.deferred is None for c in self.cells):
+            raise ValueError(f"tranche {self.tranche.name} holds no cell")
         if self.state == "final":
             missing = self.missing()
             if missing:
                 raise ValueError("a final pre-registration is complete: " + "; ".join(missing))
         return self
+
+    def in_tranche(self, cell: Cell) -> bool:
+        """Whether the cell is one this pre-registration is finalized for."""
+        return cell.deferred is None
+
+    @property
+    def tranche_cells(self) -> tuple[Cell, ...]:
+        return tuple(c for c in self.cells if c.deferred is None)
+
+    @property
+    def deferred_cells(self) -> tuple[Cell, ...]:
+        return tuple(c for c in self.cells if c.deferred is not None)
 
     def _pins_missing(self) -> list[str]:
         found: list[str] = []
@@ -336,9 +373,10 @@ class Preregistration(_Model):
         return found
 
     def missing(self) -> list[str]:
-        """What a draft still lacks before it can be final."""
+        """What a draft still lacks before it can be final: for the tranche's cells, when one
+        is declared, and for every cell otherwise."""
         found = self._pins_missing()
-        for c in self.cells:
+        for c in self.tranche_cells:
             found.extend(self._cell_missing(c))
         for check in self.instrument_checks:
             if check.evidence is None:
@@ -347,8 +385,12 @@ class Preregistration(_Model):
 
     def refusals(self, cell: Cell) -> list[str]:
         """Why this pre-registration, as it stands, cannot authorize a batch of `cell`; empty
-        when it can. A final one can authorize every cell. A draft can authorize an instrument
-        cell that is complete under complete pins, and nothing else."""
+        when it can. A deferred cell is never authorized. A final one can authorize every cell
+        of its tranche. A draft can authorize an instrument cell that is complete under complete
+        pins, and nothing else."""
+        if cell.deferred is not None:
+            name = self.tranche.name if self.tranche is not None else "the tranche"
+            return [f"cell {cell.id} is deferred from {name}: {cell.deferred}"]
         if self.state == "final":
             return []
         if cell.phase != "instrument":
@@ -419,7 +461,13 @@ def render_table(prereg: Preregistration) -> str:
         elif c.control:
             evidence += f" ({c.control})"
         flags = [
-            f for f, on in (("unknown", c.confidence == "unknown"), ("pending", c.pending)) if on
+            f
+            for f, on in (
+                ("unknown", c.confidence == "unknown"),
+                ("pending", c.pending),
+                ("deferred", c.deferred),
+            )
+            if on
         ]
         rows.append(
             f"| {c.id} | {c.phase} | {evidence} | {c.workload} | {c.durability} | {c.fault or '-'} "

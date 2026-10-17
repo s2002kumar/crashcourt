@@ -1,9 +1,12 @@
 # Pre-registration: the first fault matrix
 
-**Status: DRAFT.** A draft authorizes only an instrument cell that is complete on its own, under complete
-pins, and never new evidence (below, "Instrument cells before the final commit"). `crashcourt experiment
-authorize` refuses every new-evidence batch until `state` is `final`, which needs everything under "Before
-this is final" and my commit.
+**Status: DRAFT, for the first discovery tranche.** This file declares a tranche (below, "The first
+discovery tranche"): the cells it is being finalized for. Every other cell is deferred, with its reason,
+and is never authorized. A draft authorizes only an instrument cell that is complete on its own, under
+complete pins, and never new evidence (below, "Instrument cells before the final commit"). `crashcourt
+experiment authorize` refuses every new-evidence batch until `state` is `final`, which needs everything
+under "Before this is final" and my commit; `final` then means final for the tranche, and nothing about
+the deferred cells.
 
 This file fixes, before any batch of the first matrix runs, what each cell runs, how many trials it gets, and
 what I predict it shows. The commit that last changes it is the pre-registration commit. A batch runs only
@@ -28,6 +31,12 @@ The JSON block at the end is the binding part; the prose and the table explain i
   (`landmark:`), which must be in the table the scenario names (`landmarks:`) at the step's method and
   occurrence; loading refuses a missing, unknown, or mismatched one, and the name is part of the
   scenario's hash.
+- **The tranche.** `tranche` names the cells this file is finalized for; every other cell carries
+  `deferred`, the reason it is outside the tranche. A deferred cell keeps its entry and its predictions,
+  needs no scenario hash or seed for the file to be final, and is refused by the gate and by verification
+  whatever the file's state. The instrument cells that gate new evidence are the tranche's. Widening the
+  tranche changes this file, so it is a new pre-registration commit, under which every instrument cell
+  runs again; batches of different commits never pool.
 - **The cells.** Each cell names its scenario file and that scenario's content hash, its master seed, N, its
   phase, the number of worker processes its scenario declares (`workers`, a replacement that takes a
   redelivered op over included), and its predicted outcome per invariant. One prediction value is firm;
@@ -74,10 +83,10 @@ The JSON block at the end is the binding part; the prose and the table explain i
 
 ## Run order
 
-The instrument runs first. Every `instrument` cell (C1, C3, C2, the misuse controls, and the three published
-replications, langgraph#8039, #8796, and #8764) must come out as predicted, in its outcomes and its
-observations, under this commit, the frozen checker, and the same environment before any `new-evidence` cell
-is authorized. A replication that disagrees with its published observation opens a harness investigation; it
+The instrument runs first. Every `instrument` cell of the tranche (C1 and C3 on both workloads, C2 as K2,
+and the three published replications, langgraph#8039 as K1a, #8796 as K3, and #8764 as K4) must come out
+as predicted, in its outcomes and its observations, under this commit, the frozen checker, and the same
+environment before any `new-evidence` cell is authorized. A replication that disagrees with its published observation opens a harness investigation; it
 is never a finding. The specification's C11 bar is 19 of 20; these cells are deterministic, so the gate asks
 for every valid trial, and a split marks the cell UNSTABLE before it can count as a replication.
 
@@ -108,25 +117,23 @@ a new batch.
 
 ## Before this is final
 
-It stays a draft until every one of these holds:
+It stays a draft until every one of these holds, for the first discovery tranche:
 
-- T-09 (#22) is merged and the final scenario hashes are known: every cell's scenario file exists, and its hash
-  and master seed are copied into the cell.
+- Every tranche cell's scenario file exists, and its hash and master seed are copied into the cell. Done
+  (2026-10-17): C1-w1-sync, C3-w1-sync, C1-w5-sync, C3-w5-sync, K2, K4, K1a, K3, and N8.
 - T-10 has audited the real fault-free histories: the landmarks are derived from them, not from reading the
-  source.
-- T-10's FROZEN.md exists, and `checker` pins its hashes: the checker files, FROZEN.md itself, the clause
-  registry, every effect model, and every landmark table. Done: checker v1, freeze commit 2802584; a test
-  checks the pins against FROZEN.md and the checker files.
-- Every `pending` entry is resolved. What remains: the landmark occurrences under async (A1-A4), which
-  need fault-free async histories audited as T-09's sync corpus was.
-- Every checker record a cell observes (K4's) is worded as the frozen checker writes it. Done: a test reads
-  the frozen checker's wording.
-- The environment and runner fingerprint is fixed under `environment`. Done (2026-10-15): the runner is
-  GitHub-hosted (decision 17 in tasks/T-13.md), and the lockfile and specification hashes are pinned; a test
-  holds the lockfile pin to uv.lock, so a dependency change moves the pin in the same commit.
-- Every instrument requirement is represented, as a cell or as an instrument check with its evidence recorded.
+  source. Done for sync; the async occurrences (A1-A4) are deferred with their cells.
+- T-10's FROZEN.md exists, and `checker` pins its hashes. Done: checker v1, freeze commit 2802584.
+- Every `pending` entry of a tranche cell is resolved. Done: none is pending.
+- Every checker record a cell observes (K4's) is worded as the frozen checker writes it. Done.
+- The environment and runner fingerprint is fixed under `environment`. Done (2026-10-15).
+- Every instrument check has its evidence recorded: C5 and C9 as controls reports the gate reads, produced
+  on the canonical runner from committed sources; the rest as the tests, CI jobs, and recorded evidence that
+  show them.
+- Every tranche cell predicts every invariant the aggregator can score (the ruling of 2026-10-16).
 
-Then `state` becomes `final` in my commit.
+Then `state` becomes `final` in my commit. The deferred cells stay deferred: their hashes, seeds, pending
+entries, and evidence are a later tranche's, and this file's being final says nothing about them.
 
 T-09's fault-free histories, the current set and the final one after the restack, are inputs to the instrument
 and to the landmark derivation before the freeze. Neither is evidence about any cell here.
@@ -144,6 +151,54 @@ as predicted under the same pre-registration commit as the new-evidence cell, so
 again under the final commit and the batches run under a draft never count toward new evidence. Each
 batch's authorization.json records the state it ran under, and verification checks it. Once a cell has an
 authorized batch, any change to its entry is listed under Deviations with the batches it affects.
+
+## The first discovery tranche (2026-10-17)
+
+Declared before any batch of it ran. The matrix is not finalized at once: finishing every cell first would
+need the fault mechanisms the new-evidence cells wait on (a client retry, toxics at a failpoint, a database
+restart), the async landmark audit, and 27 more scenarios before the first question could be asked. The
+tranche is the smallest set that asks one question legitimately.
+
+- **Members.** C1-w1-sync, C3-w1-sync, C1-w5-sync, C3-w5-sync (the negative and placebo controls on both
+  workloads under sync durability), K1a and K3 (the mechanisms N8 composes, each a published replication),
+  K2 and K4 (control C2 and the third published replication, which the methodology requires before any new
+  claim: C11), and N8, the only new-evidence cell.
+- **Deferred.** Every other cell, each with its reason in `deferred`: the controls for workload variants no
+  tranche cell runs, the misuse controls and K5, K1b (so N8 does not rest on its answer), the cells that
+  need mechanisms the scenario model lacks, N7 and N11, and the async cells (A1-A4), whose landmark audit is
+  pending. Their predictions stay as written, visible, and unchanged by this declaration.
+- **Prior knowledge.** Once a new-evidence batch of the tranche exists, any change to a deferred cell's
+  prediction is a Deviations entry that names that batch as prior knowledge. Predictions are never changed
+  after their own cell's evidence is observed.
+- **Widening.** Adding a cell is a new pre-registration commit. The instrument cells run again under it
+  before its new evidence; batches of different commits never pool (the aggregator's rule), so nothing from
+  this tranche is carried over as a qualifying batch.
+- **Controls before N8.** C1-w1-sync, C3-w1-sync, C1-w5-sync, C3-w5-sync, K1a, K3, K2, and K4 as batches
+  under the final commit, each as predicted, in one environment; C5 and C9 as controls reports from the
+  canonical runner; AM1-AM10, determinism, C4, C6, C7, the fault self-test, and the oracle's independence as
+  recorded. The combined case, concurrent writers and an effect in one real history, is not itself observed
+  before N8: K1a validates the effect side and K3 the fork side, each on its own, and a control that
+  observed both together would be N8.
+
+## Rulings applied (2026-10-17)
+
+- **N8 asks about a stale owner with uncommitted execute writes.** The schedule in the draft until now held
+  A at L-EXC alone, after execute, with the charge fired. In every trial of K1a's passing batch
+  (K1a-gh38964246590-1), the replacement's `put` at L-EXC returned before execute's `put_writes` returned:
+  under sync durability LangGraph awaits a checkpoint put and not a task's writes, which commit in the
+  background. A hold at L-EXC alone would therefore race B's read against A's writes committing, and the
+  cell could not be deterministic. N8 now holds A twice, at L-EXW (`put_writes.before`, so the writes cannot
+  commit) and at L-EXC (`put.before`, so the loop cannot go on; the first hold alone would not hold it, by
+  the same histories), redelivers resume-1 only once both are held, and releases both only after B's
+  `client.ok`. Every link is a recorded reference or a per-process order, never a clock. The question K1b
+  asks, the committed-writes form, is deferred and N8 does not rest on its answer.
+- **N8's I2 is NOT_EXERCISED, and `*` is no other anomaly.** Checker v1 exercises I2 only for a task whose
+  committed writes were followed by an interruption: a stop of its worker, or its op ending in `client.fail`
+  or `client.info` (`facts.interruption`, frozen). N8 has neither: A is held and released, never stopped, and
+  both ops end in `client.ok`. K3's real histories, the same held takeover, show I2 absent in 20 of 20
+  trials; K1a's show I2 exercised only through its kill. Narrower than NO_ANOMALY_UNSPECIFIED or
+  NOT_EXERCISED, and justified without any N8-like run. `*`: PASS or NO_ANOMALY_UNSPECIFIED or
+  NOT_EXERCISED, the same default every instrument cell carries.
 
 ## Rulings applied (2026-10-10)
 
@@ -216,46 +271,47 @@ My rulings on T-10's readings, applied here before the freeze:
 | Cell | Phase | Evidence | Workload | Durability | Fault | Workers | N | Predicted | Observed | |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | C1-w1-sync | instrument | control (C1) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w1-async | instrument | control (C1) | w1 | async | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w1-exit | instrument | control (C1) | w1 | exit | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w1-reject-sync | instrument | control (C1) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w1-reject-async | instrument | control (C1) | w1 | async | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w1-misuse-sync | instrument | control (C1) | w1-misuse | sync | - | 1 | 50 | I4: EXPECTED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w1-misuse-async | instrument | control (C1) | w1-misuse | async | - | 1 | 50 | I4: EXPECTED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w1-async | instrument | control (C1) | w1 | async | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | deferred |
+| C1-w1-exit | instrument | control (C1) | w1 | exit | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | deferred |
+| C1-w1-reject-sync | instrument | control (C1) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | deferred |
+| C1-w1-reject-async | instrument | control (C1) | w1 | async | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | deferred |
+| C1-w1-misuse-sync | instrument | control (C1) | w1-misuse | sync | - | 1 | 50 | I4: EXPECTED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | deferred |
+| C1-w1-misuse-async | instrument | control (C1) | w1-misuse | async | - | 1 | 50 | I4: EXPECTED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | deferred |
 | C1-w5-sync | instrument | control (C1) | w5 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C1-w5-async | instrument | control (C1) | w5 | async | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C1-w5-async | instrument | control (C1) | w5 | async | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | deferred |
 | C3-w1-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
-| C3-w1-reject-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| C3-w1-reject-sync | instrument | control (C3) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | deferred |
 | C3-w5-sync | instrument | control (C3) | w5 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
 | K2 | instrument | control (C2) | w5 | sync | F06 | 2 | 20 | I5a: GAP; I6a: NO_ANOMALY_UNSPECIFIED or GAP; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | anomaly on I5a: present |  |
-| K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 1 row, attempts [1] |  |
-| K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 0 rows, attempts [] |  |
+| K5 | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 1 row, attempts [1] | deferred |
+| K5-reject | instrument | control (misuse) | w1-misuse | sync | - | 1 | 20 | I4: EXPECTED; I7c: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger precheck: 2 rows, attempts [1, 2]; ledger charge: 0 rows, attempts [] | deferred |
 | K1a | instrument | replication (langgraph#8039) | w1 | sync | F01 | 2 | 20 | I4: GAP; I7a: GAP; I1b: PASS; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger charge: 2 rows, attempts [1, 2] |  |
 | K3 | instrument | replication (langgraph#8796) | w5 | sync | F05 | 2 | 20 | I5a: GAP; I6a: GAP; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | anomaly on I5a: present |  |
 | K4 | instrument | replication (langgraph#8764) | w1 | sync | F01 | 1 | 20 | I1a: NOT_EXERCISED; I1b: NOT_EXERCISED; *: NOT_EXERCISED | checker observation 'accepted run with no durable record: op start-1 ended': 1 |  |
-| K1b | new-evidence | new-evidence | w1 | sync | F01 | 2 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - |  |
-| N1 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: GAP; I7a: GAP | - | unknown |
-| N2 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown |
-| N3 | new-evidence | new-evidence | w1 | sync | F10 | 1 | 20 | I4: GAP | - |  |
-| N4 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | unknown |
-| N5 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP; I7a: GAP; I7c: GAP; I8: GAP | - |  |
-| N6 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP | - |  |
-| N7 | new-evidence | new-evidence | w1 | sync | F07 | 1 | 20 | I4: GAP | - | unknown |
-| N8 | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP | - |  |
-| N9 | new-evidence | new-evidence | w1 | sync | F13 | 1 | 20 | I1b: PASS | - |  |
-| N10 | new-evidence | new-evidence | w1 | sync | F12 | 1 | 20 | I1a: PASS; I1b: PASS; I11: PASS; I4: NO_ANOMALY_UNSPECIFIED | - |  |
-| N11 | new-evidence | new-evidence | w1 | sync | F01 | 2 | 20 | I7c: PASS or NO_ANOMALY_UNSPECIFIED | - | unknown |
-| N12 | new-evidence | new-evidence | w5 | sync | F11 | 1 | 20 | I5: NO_ANOMALY_UNSPECIFIED | - | unknown |
-| N12b | new-evidence | new-evidence | w5 | sync | F10 | 1 | 20 | I5b: GAP | - |  |
-| A1 | new-evidence | new-evidence | w1 | async | F01 | 2 | 20 | I4: GAP; I7a: GAP; I1b: NOT_EXERCISED or EXPECTED | - | pending |
-| A2 | new-evidence | new-evidence | w1 | async | F01 | 2 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | pending |
-| A3 | new-evidence | new-evidence | w1 | async | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown, pending |
-| A4 | new-evidence | new-evidence | w1 | async | F12 | 1 | 20 | I4: NO_ANOMALY_UNSPECIFIED; *: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | pending |
+| K1b | new-evidence | new-evidence | w1 | sync | F01 | 2 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | deferred |
+| N1 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: GAP; I7a: GAP | - | unknown, deferred |
+| N2 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I4: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown, deferred |
+| N3 | new-evidence | new-evidence | w1 | sync | F10 | 1 | 20 | I4: GAP | - | deferred |
+| N4 | new-evidence | new-evidence | w1 | sync | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | unknown, deferred |
+| N5 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP; I7a: GAP; I7c: GAP; I8: GAP | - | deferred |
+| N6 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP | - | deferred |
+| N7 | new-evidence | new-evidence | w1 | sync | F07 | 1 | 20 | I4: GAP | - | unknown, deferred |
+| N8 | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP; I2: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - |  |
+| N9 | new-evidence | new-evidence | w1 | sync | F13 | 1 | 20 | I1b: PASS | - | deferred |
+| N10 | new-evidence | new-evidence | w1 | sync | F12 | 1 | 20 | I1a: PASS; I1b: PASS; I11: PASS; I4: NO_ANOMALY_UNSPECIFIED | - | deferred |
+| N11 | new-evidence | new-evidence | w1 | sync | F01 | 2 | 20 | I7c: PASS or NO_ANOMALY_UNSPECIFIED | - | unknown, deferred |
+| N12 | new-evidence | new-evidence | w5 | sync | F11 | 1 | 20 | I5: NO_ANOMALY_UNSPECIFIED | - | unknown, deferred |
+| N12b | new-evidence | new-evidence | w5 | sync | F10 | 1 | 20 | I5b: GAP | - | deferred |
+| A1 | new-evidence | new-evidence | w1 | async | F01 | 2 | 20 | I4: GAP; I7a: GAP; I1b: NOT_EXERCISED or EXPECTED | - | pending, deferred |
+| A2 | new-evidence | new-evidence | w1 | async | F01 | 2 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | pending, deferred |
+| A3 | new-evidence | new-evidence | w1 | async | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown, pending, deferred |
+| A4 | new-evidence | new-evidence | w1 | async | F12 | 1 | 20 | I4: NO_ANOMALY_UNSPECIFIED; *: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | pending, deferred |
 
 ## Deviations
 
 Any change to a cell's entry after it has an authorized batch, and any change to this file after it is
-final, is listed here with its reason and the batches it affects.
+final, is listed here with its reason and the batches it affects. A change to a deferred cell's prediction
+after a new-evidence batch of the tranche exists names that batch as prior knowledge.
 
 - **K1a: the `*` prediction, added 2026-10-16, after a batch.** Batch K1a-gh38926456031-1 (run
   commit f4ca5f9, pre-registration 68704ff, Actions run 38926456031) came out as predicted on I4,
@@ -278,6 +334,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C1",
+      "deferred": null,
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any anomaly outside the effect model, or more than 2% INVALID",
@@ -285,7 +342,7 @@ final, is listed here with its reason and the batches it affects.
       "fault": null,
       "hypothesis": null,
       "id": "C1-w1-sync",
-      "master_seed": null,
+      "master_seed": "C1-w1-sync-v1",
       "n": 50,
       "observations": [],
       "pending": null,
@@ -310,7 +367,7 @@ final, is listed here with its reason and the batches it affects.
       ],
       "replication_of": null,
       "scenario": "scenarios/first-matrix/C1-w1-sync.yaml",
-      "scenario_sha256": null,
+      "scenario_sha256": "6da274e0f9b03561422d2a966c11fe62253191aa2eda4ea2adc85a94fe32d271",
       "trigger": "one worker, sequential operations, no faults and no arms",
       "workers": 1,
       "workload": "w1"
@@ -318,6 +375,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C1",
+      "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
       "durability": "async",
       "escalate_if": "any anomaly outside the effect model, or more than 2% INVALID",
@@ -358,6 +416,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C1",
+      "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
       "durability": "exit",
       "escalate_if": "any anomaly outside the effect model, or more than 2% INVALID",
@@ -399,6 +458,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C1",
+      "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any anomaly outside the effect model, or more than 2% INVALID",
@@ -440,6 +500,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C1",
+      "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
       "durability": "async",
       "escalate_if": "any anomaly outside the effect model, or more than 2% INVALID",
@@ -481,6 +542,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C1",
+      "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any anomaly outside the effect model, or more than 2% INVALID",
@@ -521,6 +583,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C1",
+      "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
       "durability": "async",
       "escalate_if": "any anomaly outside the effect model, or more than 2% INVALID",
@@ -561,6 +624,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C1",
+      "deferred": null,
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any anomaly outside the effect model, or more than 2% INVALID",
@@ -568,7 +632,7 @@ final, is listed here with its reason and the batches it affects.
       "fault": null,
       "hypothesis": null,
       "id": "C1-w5-sync",
-      "master_seed": null,
+      "master_seed": "C1-w5-sync-v1",
       "n": 50,
       "observations": [],
       "pending": null,
@@ -594,7 +658,7 @@ final, is listed here with its reason and the batches it affects.
       ],
       "replication_of": null,
       "scenario": "scenarios/first-matrix/C1-w5-sync.yaml",
-      "scenario_sha256": null,
+      "scenario_sha256": "00b91f086eca8dcef9f23f52f7d0847072336d6a57ebb8a73c46f3bfc9f8ede2",
       "trigger": "one worker, sequential operations, no faults and no arms",
       "workers": 1,
       "workload": "w5"
@@ -602,6 +666,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C1",
+      "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
       "durability": "async",
       "escalate_if": "any anomaly outside the effect model, or more than 2% INVALID",
@@ -643,6 +708,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C3",
+      "deferred": null,
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any anomaly, or a missing fp.hit for an arm",
@@ -650,7 +716,7 @@ final, is listed here with its reason and the batches it affects.
       "fault": null,
       "hypothesis": null,
       "id": "C3-w1-sync",
-      "master_seed": null,
+      "master_seed": "C3-w1-sync-v1",
       "n": 50,
       "observations": [],
       "pending": null,
@@ -675,7 +741,7 @@ final, is listed here with its reason and the batches it affects.
       ],
       "replication_of": null,
       "scenario": "scenarios/first-matrix/C3-w1-sync.yaml",
-      "scenario_sha256": null,
+      "scenario_sha256": "1fa27050bb16d28bef997d115feacd66d5a7359260e69f51c8f7173c0b57323b",
       "trigger": "every failpoint the new-evidence cells arm on this workload, at the same landmarks and audited occurrences, armed with action none; a latency toxic of 0 ms and 0 jitter on each worker's proxy for the whole trial",
       "workers": 1,
       "workload": "w1"
@@ -683,6 +749,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C3",
+      "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any anomaly, or a missing fp.hit for an arm",
@@ -724,6 +791,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C3",
+      "deferred": null,
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any anomaly, or a missing fp.hit for an arm",
@@ -731,7 +799,7 @@ final, is listed here with its reason and the batches it affects.
       "fault": null,
       "hypothesis": null,
       "id": "C3-w5-sync",
-      "master_seed": null,
+      "master_seed": "C3-w5-sync-v1",
       "n": 50,
       "observations": [],
       "pending": null,
@@ -757,7 +825,7 @@ final, is listed here with its reason and the batches it affects.
       ],
       "replication_of": null,
       "scenario": "scenarios/first-matrix/C3-w5-sync.yaml",
-      "scenario_sha256": null,
+      "scenario_sha256": "539cde9bcbed9cae37e875180dc6d863efb2b5262afc99fc9f0e02738c2ac11c",
       "trigger": "every failpoint the new-evidence cells arm on this workload, at the same landmarks and audited occurrences, armed with action none; a latency toxic of 0 ms and 0 jitter on each worker's proxy for the whole trial",
       "workers": 1,
       "workload": "w5"
@@ -765,6 +833,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C2",
+      "deferred": null,
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any trial without a fork",
@@ -772,7 +841,7 @@ final, is listed here with its reason and the batches it affects.
       "fault": "F06",
       "hypothesis": "H1",
       "id": "K2",
-      "master_seed": null,
+      "master_seed": "K2-v1",
       "n": 20,
       "observations": [
         {
@@ -812,7 +881,7 @@ final, is listed here with its reason and the batches it affects.
       ],
       "replication_of": null,
       "scenario": "scenarios/first-matrix/K2.yaml",
-      "scenario_sha256": null,
+      "scenario_sha256": "428c387ed96d79d88ad394f028d3393973c6d36798a066df52b3ad2cffe1c4b2",
       "trigger": "both workers held at L-GET (occurrence 1, get_tuple.after) for their turn ops, released together",
       "workers": 2,
       "workload": "w5"
@@ -820,6 +889,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "misuse",
+      "deferred": "the misuse controls gate no cell of the first discovery tranche; deferred with the misuse workload",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any non-EXPECTED I4",
@@ -887,6 +957,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "misuse",
+      "deferred": "the misuse controls gate no cell of the first discovery tranche; deferred with the misuse workload",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any non-EXPECTED I4, or any charge row",
@@ -952,6 +1023,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C11",
+      "deferred": null,
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "the observation in fewer than 20 of 20 valid trials, or any outcome other than predicted: a harness investigation, never a finding",
@@ -1017,6 +1089,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C11",
+      "deferred": null,
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "the fork in fewer than 20 of 20 valid trials: a harness investigation, never a finding",
@@ -1071,6 +1144,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": "C11",
+      "deferred": null,
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "the observation in fewer than 20 of 20 valid trials, or any row for the thread: a harness investigation, never a finding",
@@ -1078,7 +1152,7 @@ final, is listed here with its reason and the batches it affects.
       "fault": "F01",
       "hypothesis": null,
       "id": "K4",
-      "master_seed": null,
+      "master_seed": "K4-v1",
       "n": 20,
       "observations": [
         {
@@ -1115,7 +1189,7 @@ final, is listed here with its reason and the batches it affects.
       ],
       "replication_of": "langgraph#8764",
       "scenario": "scenarios/first-matrix/K4.yaml",
-      "scenario_sha256": null,
+      "scenario_sha256": "d0395f1ef44a79e929aadce39b6403cb9cb8d3cdef6359387876bb41b2abde4d",
       "trigger": "SIGKILL at L-IN (occurrence 1 of start-1's put), put.before",
       "workers": 1,
       "workload": "w1"
@@ -1123,6 +1197,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": null,
+      "deferred": "the committed-writes form of the stale-owner question; deferred so that N8, which holds the writes uncommitted, does not rest on its answer",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any re-run",
@@ -1155,6 +1230,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "unknown",
       "control": null,
+      "deferred": "needs a client retry after client.fail, a schedule step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "VIOLATION_CANDIDATE on any invariant",
@@ -1193,6 +1269,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "unknown",
       "control": null,
+      "deferred": "needs a client retry after client.fail, a schedule step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "a duplicate or a fork",
@@ -1232,6 +1309,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": null,
+      "deferred": "needs a client retry after client.fail, a schedule step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "not 20 of 20 GAP",
@@ -1263,6 +1341,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "unknown",
       "control": null,
+      "deferred": "needs a client retry after client.fail, a schedule step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any re-run",
@@ -1295,6 +1374,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": null,
+      "deferred": "needs a release triggered by a put_writes.return, a step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "UNSTABLE (1 to 19 of 20)",
@@ -1347,6 +1427,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": null,
+      "deferred": "needs a release triggered by a put_writes.return, a step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "UNSTABLE",
@@ -1378,6 +1459,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "unknown",
       "control": null,
+      "deferred": "a second resume to the same worker after client.ok (F07): outside the first discovery tranche, which asks one question",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "UNSTABLE",
@@ -1409,14 +1491,15 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": null,
+      "deferred": null,
       "deterministic": true,
       "durability": "sync",
-      "escalate_if": "UNSTABLE",
+      "escalate_if": "UNSTABLE, or any anomaly beyond the predicted ones",
       "evidence": "new-evidence",
       "fault": "F05",
       "hypothesis": "H3",
       "id": "N8",
-      "master_seed": null,
+      "master_seed": "N8-v1",
       "n": 20,
       "observations": [],
       "pending": null,
@@ -1449,18 +1532,35 @@ final, is listed here with its reason and the batches it affects.
           ],
           "invariant": "I6a",
           "note": "head by clock"
+        },
+        {
+          "expect": [
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I2",
+          "note": "checker v1 exercises I2 only after a stop of the worker or an op ending in client.fail or client.info (facts.interruption); N8 has neither: A is held, not stopped, and both ops end in client.ok. K3's real histories (a held takeover) show I2 absent in 20 of 20; K1a's show it exercised only through the kill"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": "no anomaly beyond N8's predicted behavior"
         }
       ],
       "replication_of": null,
       "scenario": "scenarios/first-matrix/N8.yaml",
-      "scenario_sha256": null,
-      "trigger": "A held at L-EXC (occurrence 2 of resume-1's put), put.before, with the charge already fired; resume-1 redelivered to B; after B's client.ok, A released: a held pause in C2's shape, not SIGSTOP",
+      "scenario_sha256": "66c9981eda147a69a74f556be4822f2ca06aba346523b07ee35e0837ad8410dc",
+      "trigger": "A held twice at the calls after execute, with the charge already fired: at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before, so execute's writes cannot commit, and at L-EXC (occurrence 2 of resume-1's put), put.before, so A's loop cannot go on; with both held, resume-1 redelivered to B; after B's client.ok, both released: a held pause in C2's shape, not SIGSTOP",
       "workers": 2,
       "workload": "w1"
     },
     {
       "confidence": "predicted",
       "control": null,
+      "deferred": "needs a database restart at a failpoint and a client retry, steps the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any acknowledged checkpoint missing",
@@ -1492,6 +1592,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": null,
+      "deferred": "needs a toxic injected and healed at a failpoint (F12), a step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any anomaly (VIOLATION_CANDIDATE by the F12 rule)",
@@ -1544,6 +1645,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "unknown",
       "control": null,
+      "deferred": "a kill with committed resume writes under reject (F01 on W1 reject): outside the first discovery tranche, which asks one question",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "any charge row",
@@ -1576,6 +1678,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "unknown",
       "control": null,
+      "deferred": "needs a toxic injected and healed at a failpoint (F11), a step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "a dangling parent or a fork",
@@ -1607,6 +1710,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": null,
+      "deferred": "needs a toxic injected at a failpoint (F10), a step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "n/a: recorded",
@@ -1638,6 +1742,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": null,
+      "deferred": "the landmark occurrences under async are not audited (pending); no async cell is in the first discovery tranche",
       "deterministic": true,
       "durability": "async",
       "escalate_if": "not as predicted",
@@ -1684,6 +1789,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": null,
+      "deferred": "the landmark occurrences under async are not audited (pending); no async cell is in the first discovery tranche",
       "deterministic": true,
       "durability": "async",
       "escalate_if": "any re-run",
@@ -1716,6 +1822,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "unknown",
       "control": null,
+      "deferred": "the landmark occurrences under async are not audited (pending); no async cell is in the first discovery tranche",
       "deterministic": true,
       "durability": "async",
       "escalate_if": "any re-run",
@@ -1755,6 +1862,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "confidence": "predicted",
       "control": null,
+      "deferred": "the landmark occurrences under async are not audited (pending); no async cell is in the first discovery tranche",
       "deterministic": true,
       "durability": "async",
       "escalate_if": "any anomaly",
@@ -1841,7 +1949,7 @@ final, is listed here with its reason and the batches it affects.
     {
       "evidence": null,
       "id": "C9",
-      "requirement": "sequential reference: InMemorySaver final state equals Postgres for single-writer fault-free runs"
+      "requirement": "Sequential reference: for each single-writer, fault-free C1 cell of the tranche under sync durability (C1-w1-sync and C1-w5-sync in the first discovery tranche), every trial of one canonical batch at the cell's N reaches the same final state as the same operation sequence run on InMemorySaver in one process: the head checkpoint's channels as the frozen checker's reader decodes them from the trial's snapshot (W1: order, plan, resume, decision, executed; W5: messages as type, id, and content), with the trial's thread id normalized away."
     },
     {
       "evidence": null,
@@ -1871,6 +1979,10 @@ final, is listed here with its reason and the batches it affects.
     "master_seed_in": "scenario"
   },
   "state": "draft",
+  "tranche": {
+    "name": "first-discovery",
+    "note": "The smallest tranche that answers one new-evidence question, N8, under the controls and replications its mechanisms rest on: C1 and C3 on both workloads under sync durability, K1a (redelivery with uncommitted writes and a duplicate effect) and K3 (a held takeover and a stale write), and K2 and K4, which the methodology requires before any new claim (C2, C11). Declared 2026-10-17, before any batch of the tranche."
+  },
   "v": 1
 }
 ```
