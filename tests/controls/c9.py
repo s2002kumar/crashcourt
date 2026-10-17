@@ -133,6 +133,7 @@ def reference_state(
     scenario: Scenario, thread_id: str, identity: RunIdentity, scratch: Path
 ) -> dict[str, Any]:
     """The same operations on InMemorySaver in this process: the head's channel values."""
+    scratch.mkdir(parents=True, exist_ok=True)
     history = HistoryWriter(scratch / "reference.jsonl", run=identity, proc="w1")
     ledger = Ledger(
         scratch / "reference.sqlite",
