@@ -1,0 +1,96 @@
+{
+  "v": 1,
+  "control": "C9",
+  "requirement": "Sequential reference: for each single-writer, fault-free C1 cell of the tranche under sync durability (C1-w1-sync and C1-w5-sync in the first discovery tranche), every trial of one canonical batch at the cell's N reaches the same final state as the same operation sequence run on InMemorySaver in one process: the head checkpoint's channels as the frozen checker's reader decodes them from the trial's snapshot (W1: order, plan, resume, decision, executed; W5: messages as type, id, and content), with the trial's thread id normalized away.",
+  "checker": {
+    "version": "v1",
+    "checker_sha256": "d80951681c2b8656a08647d3ba60ee3b9b025e1ff118d83796ccdb433f111097",
+    "frozen_md_sha256": "ddff87d4d487ef211d385279951eaa2be37c71394956fcc0c4ff541667338e12",
+    "registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5"
+  },
+  "run_commit": "871f77372acc57ca3783b11c1ed066a49c8d1252",
+  "sources": {
+    "tests/controls/c9.py": "4bb3f38a697ca6a4befa7b12e1b96d60ab49594d475d7b5beb8e9fbed8880a93",
+    "scenarios/first-matrix/C1-w1-sync.yaml": "96876ab567a400fec8b36f00e07840b5dcc94bc8ea99df8a9e1e9bb1e4271008",
+    "scenarios/first-matrix/C1-w5-sync.yaml": "ca47b2d1efb178d0e4e754d37416ed0b532ea4762b4362feaece70183cb2a818"
+  },
+  "manifest": {
+    "clause_registry_sha256": "0c25b2d96620a0751580e3d904cba8d81040d8d2b4cb007826ae2ceab46eb5c5",
+    "compose_version": "2.38.2",
+    "docker_kernel": "6.17.0-1022-azure",
+    "docker_version": "28.0.4",
+    "generated_at": "2026-10-17T13:14:53+00:00",
+    "git_dirty": false,
+    "git_sha": "871f77372acc57ca3783b11c1ed066a49c8d1252",
+    "image_ids": {
+      "postgres": "sha256:662db3da228c2ea2649b3ae04db4b4479e85fea5979f6a917a7f6d5cb1e7ec39",
+      "toxiproxy": "sha256:3edf5d14625b9aa8ad71d5dd084da1f8a0eb46ee749457549ae91d29d96546aa"
+    },
+    "images": {
+      "postgres": "postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722",
+      "toxiproxy": "ghcr.io/shopify/toxiproxy:2.12.0@sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e"
+    },
+    "libpq_build_version": "18.6",
+    "libpq_version": "18.6",
+    "lockfile_sha256": "19a0dd0df75a86126dec1b617422001fedb30ac18978c7fe31585ce52a92702e",
+    "machine": "x86_64",
+    "os_release": "6.17.0-1022-azure",
+    "os_system": "Linux",
+    "packages": {
+      "langgraph": "1.2.12",
+      "langgraph-checkpoint": "4.2.0",
+      "langgraph-checkpoint-conformance": "0.0.2",
+      "langgraph-checkpoint-postgres": "3.1.2",
+      "langgraph-checkpoint-sqlite": "3.1.1",
+      "langgraph-prebuilt": "1.1.0",
+      "langgraph-sdk": "0.4.5",
+      "psycopg": "3.3.6",
+      "psycopg-binary": "3.3.6",
+      "psycopg-pool": "3.3.3"
+    },
+    "postgres": {
+      "default_transaction_isolation": "read committed",
+      "fsync": "on",
+      "max_connections": "100",
+      "server_version": "18.6 (Debian 18.6-1.pgdg13+2)",
+      "synchronous_commit": "on",
+      "track_commit_timestamp": "on"
+    },
+    "psycopg_impl": "binary",
+    "psycopg_wheel": "cp312-cp312-manylinux2014_x86_64,cp312-cp312-manylinux_2_17_x86_64",
+    "python_implementation": "CPython",
+    "python_version": "3.12.13",
+    "runner": "github-hosted",
+    "schema_version": 1,
+    "sink_clock_offset_ns": 208720,
+    "spec_sha256": "c6560f855c0bf80d9d1b18cd1407157dd619d84bc7e2b14dd7e1591f3cb45258",
+    "toxiproxy_version": "2.12.0"
+  },
+  "batches": [
+    {
+      "cell": "C1-w1-sync",
+      "scenario": "scenarios/first-matrix/C1-w1-sync.yaml",
+      "scenario_sha256": "6da274e0f9b03561422d2a966c11fe62253191aa2eda4ea2adc85a94fe32d271",
+      "batch": "C1-w1-sync-gh39035500894-1",
+      "manifest_sha256": "adfdd6906af86944560a85b63fe162afc7d32011dddc0cf127fecd2bb0a1129f",
+      "authorized": true,
+      "trials": 50,
+      "equal": 50,
+      "differing": {},
+      "undecodable": {}
+    },
+    {
+      "cell": "C1-w5-sync",
+      "scenario": "scenarios/first-matrix/C1-w5-sync.yaml",
+      "scenario_sha256": "00b91f086eca8dcef9f23f52f7d0847072336d6a57ebb8a73c46f3bfc9f8ede2",
+      "batch": "C1-w5-sync-gh39035500894-1",
+      "manifest_sha256": "cb4038e3eb5e4dce4678f345313d09bffda41ca66997cfa2948c332ba0d2233b",
+      "authorized": true,
+      "trials": 50,
+      "equal": 50,
+      "differing": {},
+      "undecodable": {}
+    }
+  ],
+  "passed": true
+}

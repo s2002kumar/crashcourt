@@ -427,6 +427,17 @@ def test_the_original_c5_measurement_is_kept_as_it_was_and_the_gate_never_reads_
         ControlReport.model_validate(original)  # the original format is a record, not evidence
 
 
+def test_the_committed_c5_and_c9_reports_pass_the_gate_at_head() -> None:
+    """The reports the final pre-registration names, judged as the gate judges them, against the
+    pre-registration and the sources as committed at HEAD."""
+    from crashcourt.experiment import gitproof
+    from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, parse
+
+    prereg = parse((ROOT / PREREGISTRATION_PATH).read_text(encoding="utf-8"))
+    assert prereg.state == "final"
+    assert missing(prereg, gitproof.head(ROOT), ROOT) == []
+
+
 def test_the_recorded_revised_report_passes_with_its_exclusions_and_matches_the_sources() -> None:
     from crashcourt.experiment import gitproof
     from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, parse
