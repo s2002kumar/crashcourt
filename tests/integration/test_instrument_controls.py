@@ -264,6 +264,23 @@ def test_a_batch_is_classified_once_and_identically_again(tmp_path: Path) -> Non
         classify_batch(summary.directory, REPO)
 
 
+def test_k4_shape_replicates_8764_as_preregistered(tmp_path: Path) -> None:
+    """A kill at L-IN before the first put commits: no row, client.info, no invariant exercised,
+    and the checker's record of an accepted run with no durable record."""
+    _, trials = judged(tmp_path, "k4-shape", "replication", "langgraph#8764")
+    for trial in trials:
+        assert as_predicted("K4", trial) == []
+        assert trial.result is None
+        assert trial.checker["not_exercised"]  # every invariant, listed with why
+        events = read_history(trial.directory / "orchestrator.jsonl").events
+        terminals = [
+            e.kind for e in events if e.kind.startswith("client.") and e.op_id == "start-1"
+        ]
+        assert terminals == ["client.invoke", "client.info"]
+        snapshot = json.loads((trial.directory / "snapshot.json").read_text())
+        assert snapshot["second"]["checkpoints"] == []
+
+
 def test_k3_shape_replicates_8796_as_preregistered(tmp_path: Path) -> None:
     _, trials = judged(tmp_path, "k3-shape", "replication", "langgraph#8796")
     for trial in trials:
