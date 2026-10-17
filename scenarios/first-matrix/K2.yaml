@@ -1,0 +1,37 @@
+# K2: control C2, the forced fork, an instrument cell. Two workers take one turn each on one
+# thread, both held at L-GET (their turn's first read) and released together, so both write
+# children of one parent: T-09's w5-concurrent, whose fork T-10 audited (I5a GAP, I6a GAP in
+# 50 of 50), under the cell's own name and seed.
+v: 1
+name: K2
+cell: K2
+seed: K2-v1
+workload: w5
+target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
+workers: [w1, w2]
+ops:
+  - id: turn-1
+    worker: w1
+    thread: t1
+    after: start
+    input: {messages: [{role: user, content: First request., id: human-1}]}
+  - id: turn-2
+    worker: w1
+    thread: t1
+    after: turn-1
+    input: {messages: [{role: user, content: Second request., id: human-2}]}
+  - id: turn-3
+    worker: w2
+    thread: t1
+    after: turn-1
+    input: {messages: [{role: user, content: Third request., id: human-3}]}
+schedule:
+  - on: {fp: get_tuple.after, worker: w1, op: turn-2}
+    do: {pause: B1}
+    landmark: L-GET
+  - on: {fp: get_tuple.after, worker: w2, op: turn-3}
+    do: {pause: B2}
+    landmark: L-GET
+  - on: {all_paused: [B1, B2]}
+    do: {release: [B1, B2]}

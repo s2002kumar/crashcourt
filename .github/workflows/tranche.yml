@@ -1,0 +1,97 @@
+# The pre-registration's tranche: every instrument cell it declares, as pre-registered batches in
+# ONE job on the canonical runner (GitHub-hosted Ubuntu 24.04, decision 17 in tasks/T-13.md), so
+# the host, kernel, images, and packages are identical across them by construction. Started by
+# hand, from main only. Each cell goes through the gate, the canonical run, classify, classify
+# --compare, and verify; the batches are then aggregated together, and C9 is run again over the
+# C1 batches as a consistency check (its gate evidence is the committed report). Everything is
+# uploaded whatever happened; a cell that failed any step is named in failures.txt and fails the
+# job after the rest have run.
+name: tranche
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: experiment
+  cancel-in-progress: false
+env:
+  UV_VERSION: "0.12.1"  # the uv that wrote uv.lock
+defaults:
+  run:
+    shell: bash  # runs with -eo pipefail
+jobs:
+  instrument:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # the gate and verification read the history of both pins
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --locked --group dev
+      - name: The tranche's instrument cells, in pre-registration order
+        run: |
+          out="$RUNNER_TEMP/tranche"
+          mkdir -p "$out/runs"
+          uv run python -c '
+          from pathlib import Path
+          from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, parse
+          p = parse(Path(PREREGISTRATION_PATH).read_text("utf-8"))
+          for c in p.tranche_cells:
+              if c.phase == "instrument":
+                  print(c.id, c.scenario, c.n)' > "$out/cells.txt"
+          cat "$out/cells.txt"
+          {
+            echo "OUT=$out"
+            echo "STAMP=gh$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_ENV"
+      - run: docker compose up -d --wait
+      - run: uv run crashcourt clauses check | tee "$OUT/clauses-check.txt"  # control C6
+      # Every fault primitive behaves as the fault model assumes, in this environment.
+      - run: uv run crashcourt faults selftest --trials 20 --report "$OUT/fault-selftest.md"
+      - run: docker compose up -d --wait postgres  # the self-test restarts it
+      - name: Every cell through the gate, the run, classify, classify --compare, and verify
+        run: |
+          while read -r cell scenario trials; do
+            batch="$cell-$STAMP"
+            dir="$OUT/runs/$batch"
+            log="$OUT/$cell"
+            mkdir -p "$log"
+            {
+              uv run crashcourt experiment authorize "$scenario" --trials "$trials" > "$log/gate.txt" \
+              && uv run crashcourt run "$scenario" --trials "$trials" --canonical \
+                   --out "$OUT/runs" --batch "$batch" > "$log/run.txt" \
+              && uv run crashcourt experiment classify "$dir" > "$log/classify.txt" \
+              && uv run crashcourt experiment classify --compare "$dir" > "$log/classify-again.txt" \
+              && uv run crashcourt experiment verify "$dir" > "$log/verify.txt"
+            } || echo "$cell" >> "$OUT/failures.txt"
+            tail -n 1 "$log/run.txt" "$log/classify-again.txt" "$log/verify.txt" 2>/dev/null || true
+          done < "$OUT/cells.txt"
+      - name: Aggregate every batch of the tranche
+        if: ${{ !cancelled() }}
+        run: >-
+          uv run crashcourt experiment aggregate "$OUT"/runs/* --out "$OUT/cells.json"
+          | tee "$OUT/aggregate.txt"
+      - name: C9 over the C1 batches, as a consistency check beside the committed report
+        if: ${{ !cancelled() }}
+        run: >-
+          uv run python -m tests.controls.c9 --batches "$OUT"/runs/C1-* --report "$OUT/c9.json"
+          | tee "$OUT/c9.txt"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: tranche-${{ env.STAMP || github.run_id }}
+          path: ${{ runner.temp }}/tranche
+          if-no-files-found: error
+          retention-days: 90
+      - name: A cell that failed a step fails the job
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -f "$OUT/failures.txt" ]; then
+            echo "::error::cells that failed a step: $(tr '\n' ' ' < "$OUT/failures.txt")"
+            exit 1
+          fi

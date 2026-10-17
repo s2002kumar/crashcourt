@@ -18,10 +18,14 @@ from crashcourt.experiment.controls import (
     C5_METHOD,
     C5_REQUIREMENT,
     C5_TRIALS,
+    C9_DRIVER,
+    C9_REQUIREMENT,
     CheckerUsed,
     ControlReport,
     Exclusion,
     MutantResult,
+    ReferenceBatch,
+    ReferenceReport,
     Threshold,
 )
 from crashcourt.experiment.gate import (
@@ -52,9 +56,9 @@ FROZEN_MD_SHA = hashlib.sha256(FROZEN_MD.encode()).hexdigest()
 EFFECT_MODELS = {"w1": "a" * 64, "w5": "b" * 64}
 LANDMARK_TABLES = {"langgraph-v1": LANDMARK_SHA}
 #: C3 is a placebo control some tests add to the matrix; the default pre-registration has R1 and X1.
-SEEDS = {"R1": "seed-r1", "X1": "seed-x1", "C3": "seed-c3"}
+SEEDS = {"R1": "seed-r1", "X1": "seed-x1", "C3": "seed-c3", "C1": "seed-c1"}
 #: The workers each cell's scenario declares: R1's replacement takes a redelivered op over.
-WORKERS = {"R1": ["w1", "w2"], "X1": ["w1", "w2"], "C3": ["w1"]}
+WORKERS = {"R1": ["w1", "w2"], "X1": ["w1", "w2"], "C3": ["w1"], "C1": ["w1"]}
 #: Each cell's scenario in canonical form, as the runner writes scenario.json, and its hash.
 SCENARIO_JSON = {
     c: json.dumps({"cell": c, "seed": s, "workers": WORKERS[c]}, separators=(",", ":"))
@@ -67,6 +71,11 @@ HOST = {"cpu_count": 4, "memory_gib": 16}
 #: The TrialScenario builder as the fixture repository commits it, and its pinned hash.
 BUILDER_TEXT = '"""The TrialScenario builder, as pre-registered."""\n'
 BUILDER_SHA = hashlib.sha256(BUILDER_TEXT.encode()).hexdigest()
+#: The C9 reference report the C9 instrument check names, and the driver it ran.
+C9_REPORT = "research/evidence/c9.json"
+C9_SOURCES = {C9_DRIVER: "reference driver\n"}
+#: C1's trials, as the negative control predicts them.
+C1_AS_PREDICTED: list[tuple[str, str]] = [("I4", "NO_ANOMALY_UNSPECIFIED"), ("I1b", "PASS")]
 #: The C5 controls report the pre-registration's C5 instrument check names, and the files it ran.
 C5_REPORT = "research/evidence/c5.json"
 C5_SOURCES = {
@@ -134,6 +143,7 @@ def prereg_model(**changes: Any) -> Preregistration:
         "instrument_checks": [
             {"id": "AM", "requirement": "mutants", "evidence": "ci run 1"},
             {"id": "C5", "requirement": C5_REQUIREMENT, "evidence": C5_REPORT},
+            {"id": "C9", "requirement": C9_REQUIREMENT, "evidence": C9_REPORT},
         ],
         "cells": [
             {
@@ -177,10 +187,71 @@ def prereg_model(**changes: Any) -> Preregistration:
                 "predicted": [{"invariant": "I5a", "expect": ["GAP"]}],
                 "escalate_if": "UNSTABLE",
             },
+            {
+                "id": "C1",
+                "phase": "instrument",
+                "evidence": "control",
+                "control": "C1",
+                "workload": "w1",
+                "durability": "sync",
+                "fault": None,
+                "workers": 1,
+                "trigger": "one worker, no fault and no arm",
+                "scenario": "scenarios/C1.yaml",
+                "scenario_sha256": SCENARIOS["C1"],
+                "master_seed": SEEDS["C1"],
+                "n": N,
+                "confidence": "predicted",
+                "predicted": [
+                    {"invariant": "I4", "expect": ["NO_ANOMALY_UNSPECIFIED"]},
+                    {
+                        "invariant": "*",
+                        "expect": ["PASS", "NO_ANOMALY_UNSPECIFIED", "NOT_EXERCISED"],
+                    },
+                ],
+                "escalate_if": "any anomaly",
+            },
         ],
     }
     data.update(changes)
     return Preregistration.model_validate(data)
+
+
+def c9_report(equal: int = N, **changes: Any) -> ReferenceReport:
+    """A C9 report under the test checker: C1's batch with every trial equal unless `equal`
+    says otherwise."""
+    data: dict[str, Any] = {
+        "control": "C9",
+        "requirement": C9_REQUIREMENT,
+        "checker": CheckerUsed(
+            version="v1",
+            checker_sha256=CHECKER_SHA,
+            frozen_md_sha256=FROZEN_MD_SHA,
+            registry_sha256=REGISTRY_SHA,
+        ),
+        "run_commit": "1" * 40,
+        "sources": {
+            C9_DRIVER: hashlib.sha256(C9_SOURCES[C9_DRIVER].encode()).hexdigest(),
+            "scenarios/C1.yaml": hashlib.sha256(b"cell: C1\n").hexdigest(),
+        },
+        "manifest": json.loads(make_manifest(git_sha="1" * 40).to_json()),
+        "batches": (
+            ReferenceBatch(
+                cell="C1",
+                scenario="scenarios/C1.yaml",
+                scenario_sha256=SCENARIOS["C1"],
+                batch="c9-c1",
+                manifest_sha256="6" * 64,
+                authorized=True,
+                trials=N,
+                equal=equal,
+                differing={str(n): "plan differs" for n in range(equal + 1, N + 1)},
+            ),
+        ),
+        "passed": equal == N,
+    }
+    data.update(changes)
+    return ReferenceReport.model_validate(data)
 
 
 def c5_report(caught: dict[str, int] | None = None, **changes: Any) -> ControlReport:
@@ -250,7 +321,10 @@ class Repo:
 
 
 def make_repo(
-    tmp: Path, prereg: Preregistration | None = None, report: ControlReport | None = None
+    tmp: Path,
+    prereg: Preregistration | None = None,
+    report: ControlReport | None = None,
+    reference: ReferenceReport | None = None,
 ) -> Repo:
     root = tmp / "repo"
     root.mkdir()
@@ -262,6 +336,8 @@ def make_repo(
     files[str(PREREGISTRATION_PATH)] = prereg_text(prereg or prereg_model())
     files[C5_REPORT] = (report or c5_report()).to_json()
     files.update(C5_SOURCES)
+    files[C9_REPORT] = (reference or c9_report()).to_json()
+    files.update(C9_SOURCES)
     prereg_commit = commit(root, files, "pre-register the matrix")
     return Repo(root, freeze, prereg_commit)
 

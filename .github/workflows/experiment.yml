@@ -1,8 +1,10 @@
 # One pre-registered batch on the canonical runner, GitHub-hosted Ubuntu 24.04 (decision 17 in
 # tasks/T-13.md). Started by hand, from main only, so the run commit stays in main's history and the
 # batch can be re-proved from any clone. The gate refuses whatever the pre-registration does not
-# authorize at this commit. The batch, its controls, and the checks after it are uploaded whatever
-# happened, a refused or failed batch included.
+# authorize at this commit. A new-evidence cell names the tranche run (tranche.yml) whose
+# instrument batches it rests on; they are downloaded and handed to the gate, which checks them
+# under the same pre-registration commit and environment. The batch, its controls, and the checks
+# after it are uploaded whatever happened, a refused or failed batch included.
 name: experiment
 on:
   workflow_dispatch:
@@ -11,14 +13,22 @@ on:
         description: the pre-registered scenario file, e.g. scenarios/first-matrix/K1a.yaml
         required: true
         type: string
+      instrument_run:
+        description: for a new-evidence cell, the tranche.yml run id whose batches it rests on
+        required: false
+        type: string
+        default: ""
 permissions:
   contents: read
+  actions: read  # to download the tranche run's artifact
 concurrency:
   group: experiment
   cancel-in-progress: false
 env:
   UV_VERSION: "0.12.1"  # the uv that wrote uv.lock
   SCENARIO: ${{ inputs.scenario }}
+  INSTRUMENT_RUN: ${{ inputs.instrument_run }}
+  GH_TOKEN: ${{ github.token }}
 defaults:
   run:
     shell: bash  # runs with -eo pipefail, so a command piped into tee still fails its step
@@ -52,9 +62,22 @@ jobs:
             echo "BATCH=$cell-gh$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
             echo "OUT=$out"
           } >> "$GITHUB_ENV"
+      - name: The instrument batches a new-evidence cell rests on
+        if: ${{ env.INSTRUMENT_RUN != '' }}
+        run: |
+          gh run download "$INSTRUMENT_RUN" --repo "$GITHUB_REPOSITORY" --dir "$OUT/instrument"
+          ls -d "$OUT"/instrument/*/runs/* | tee "$OUT/instrument-batches.txt"
+          {
+            echo "INSTRUMENT_ARGS<<EOF"
+            printf -- '--instrument'
+            while read -r d; do printf ' %q' "$d"; done < "$OUT/instrument-batches.txt"
+            echo
+            echo "EOF"
+          } >> "$GITHUB_ENV"
       # The gate before anything starts: it prints the authorization or every reason it refuses.
       - run: >-
-          uv run crashcourt experiment authorize "$SCENARIO" --trials "$TRIALS"
+          eval set -- $INSTRUMENT_ARGS;
+          uv run crashcourt experiment authorize "$SCENARIO" --trials "$TRIALS" "$@"
           | tee "$OUT/gate.txt"
       - run: docker compose up -d --wait
       - run: uv run crashcourt clauses check | tee "$OUT/clauses-check.txt"  # control C6
@@ -63,8 +86,9 @@ jobs:
       - run: docker compose up -d --wait postgres  # the self-test restarts it
       - id: run
         run: >-
+          eval set -- $INSTRUMENT_ARGS;
           uv run crashcourt run "$SCENARIO" --trials "$TRIALS" --canonical
-          --out "$OUT/runs" --batch "$BATCH" | tee "$OUT/run.txt"
+          --out "$OUT/runs" --batch "$BATCH" "$@" | tee "$OUT/run.txt"
       # A batch with an invalid trial is still classified, verified, and kept.
       - if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
         run: uv run crashcourt experiment classify "$OUT/runs/$BATCH" | tee "$OUT/classify.txt"

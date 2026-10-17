@@ -21,6 +21,7 @@ from crashcourt.experiment.verify import BatchNotVerified, verify_batch
 from ._experiment import (
     BUILDER_SHA,
     BUILDER_TEXT,
+    C1_AS_PREDICTED,
     HOST,
     LEDGER,
     SEEDS,
@@ -34,6 +35,7 @@ from ._experiment import (
     make_repo,
     manifest_for,
     prereg_model,
+    prereg_text,
 )
 
 R1_AS_PREDICTED = [("I4", "EXPECTED"), ("I1b", "PASS")]
@@ -251,20 +253,56 @@ def test_a_trial_with_nothing_exercised_counts_as_not_exercised(repo: Repo) -> N
 def test_the_gate_reads_the_instrument_results(repo: Repo) -> None:
     check = instrument_ready(repo.root)
     prereg = prereg_model()
-    assert check(prereg, repo.prereg_commit, []).missing == ["instrument cell R1 has no batch"]
+    assert check(prereg, repo.prereg_commit, []).missing == [
+        "instrument cell R1 has no batch",
+        "instrument cell C1 has no batch",
+    ]
     good = batch(repo, "inst")
-    evidence = check(prereg, repo.prereg_commit, [good])
-    assert (evidence.missing, evidence.batches) == ([], ["inst"])
+    c1 = batch(repo, "c1", [C1_AS_PREDICTED] * N, cell="C1")
+    evidence = check(prereg, repo.prereg_commit, [good, c1])
+    assert (evidence.missing, evidence.batches) == ([], ["c1", "inst"])
     assert evidence.fingerprint is not None and evidence.fingerprint["runner"] == "local"
     bad = batch(repo, "inst2", [[("I4", "GAP"), ("I1b", "PASS")]] * N)
-    assert check(prereg, repo.prereg_commit, [bad]).missing == [
+    assert check(prereg, repo.prereg_commit, [bad, c1]).missing == [
         "instrument cell R1 is differs, not as predicted"
     ]
     elsewhere = batch(repo, "inst3", manifest={"os_release": "6.11.0"})
-    assert check(prereg, repo.prereg_commit, [good, elsewhere]).missing == [
+    assert check(prereg, repo.prereg_commit, [good, elsewhere, c1]).missing == [
         "instrument cell R1 ran in more than one environment",
         "the instrument cells ran in different environments (os_release)",
     ]
+
+
+def test_the_instrument_check_asks_only_the_tranches_cells(tmp_path: Path) -> None:
+    """A deferred instrument cell needs no batch; the tranche's do."""
+    cells = prereg_model().model_dump(mode="json")["cells"]
+    cells[0]["deferred"] = "a later tranche"  # R1
+    prereg = prereg_model(tranche={"name": "t", "note": "X1 and C1"}, cells=cells)
+    repo = make_repo(tmp_path, prereg)
+    check = instrument_ready(repo.root)
+    assert check(prereg, repo.prereg_commit, []).missing == ["instrument cell C1 has no batch"]
+    c1 = batch(repo, "c1", [C1_AS_PREDICTED] * N, cell="C1")
+    assert check(prereg, repo.prereg_commit, [c1]).missing == []
+
+
+def test_verification_applies_the_deferral_at_the_preregistration_commit(repo: Repo) -> None:
+    """A batch whose authorization names a pre-registration commit under which its cell is
+    deferred is refused, whatever the authorization says."""
+    from crashcourt.experiment.gitproof import blob_sha256
+
+    d = batch(repo, "b1")  # R1, authorized while R1 was in the tranche
+    cells = prereg_model().model_dump(mode="json")["cells"]
+    cells[0]["deferred"] = "moved out"
+    deferred = prereg_model(tranche={"name": "t", "note": "X1 and C1"}, cells=cells)
+    new_head = commit(repo.root, {str(PREREGISTRATION_PATH): prereg_text(deferred)}, "defer R1")
+    auth = json.loads((d / "authorization.json").read_text(encoding="utf-8"))
+    auth["run_commit"] = auth["preregistration_commit"] = new_head
+    auth["preregistration_sha256"] = blob_sha256(repo.root, new_head, str(PREREGISTRATION_PATH))
+    (d / "authorization.json").write_text(json.dumps(auth), encoding="utf-8")
+    (d / "manifest.json").write_bytes(manifest_for(new_head).to_json().encode())
+    assert "at the pre-registration commit, cell R1 is deferred from t: moved out" in problems(
+        repo, d
+    )
 
 
 def test_cli_verify_and_aggregate(repo: Repo, capsys: pytest.CaptureFixture[str]) -> None:
@@ -356,8 +394,9 @@ def test_the_runner_entry_point_authorizes_new_evidence_from_instrument_batches(
     with pytest.raises(NotAuthorized, match="instrument cell R1 has no batch"):
         authorize(x1, N, repo.root, checker=FakeChecker(), scenarios=FakeScenarios())
     inst = batch(repo, "inst")
-    auth = authorize(x1, N, repo.root, [inst], checker=FakeChecker(), scenarios=FakeScenarios())
-    assert auth.instrument_batches == ("inst",)
+    c1 = batch(repo, "c1", [C1_AS_PREDICTED] * N, cell="C1")
+    auth = authorize(x1, N, repo.root, [inst, c1], checker=FakeChecker(), scenarios=FakeScenarios())
+    assert auth.instrument_batches == ("c1", "inst")
     assert auth.instrument_fingerprint is not None
     assert auth.instrument_fingerprint["git_sha"] == auth.run_commit
 
@@ -407,8 +446,11 @@ def test_a_replication_is_scored_on_its_observation_when_the_outcome_is_gap(
     assert group.invariants[0].status == "as-predicted"  # the outcome alone matched
     assert group.status == "differs"
     check = instrument_ready(repo.root)
+    c1 = batch(repo, "c1", [C1_AS_PREDICTED] * N, cell="C1")
     assert check(
-        r1_prereg(predicted=[{"invariant": "I4", "expect": ["GAP"]}]), repo.prereg_commit, [shown]
+        r1_prereg(predicted=[{"invariant": "I4", "expect": ["GAP"]}]),
+        repo.prereg_commit,
+        [shown, c1],
     ).missing == ["instrument cell R1 is differs, not as predicted"]
 
 

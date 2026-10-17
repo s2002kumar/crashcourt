@@ -1,0 +1,35 @@
+# N8: a stale owner with uncommitted execute writes, the first new-evidence cell. W1 approve on
+# one thread. w1 (A) starts the run and resumes it with approve: execute runs and charges once
+# (attempt 1). A is then held twice, at the two calls that follow execute: its put_writes for
+# execute's task at L-EXW, before the inner call (the writes cannot commit), and its next put at
+# L-EXC, before the inner call (the loop cannot go on; LangGraph awaits puts under sync durability
+# but not task writes, so the first hold alone would not hold the loop). With both held, resume-1
+# is redelivered to w2 (B), which reads the last committed checkpoint, the one execute ran on,
+# with no writes of execute's committed, and completes the turn. Once resume-1 has ended, both of
+# A's holds are released: A's writes and its next checkpoint land after B's, from a stale run.
+# K1a validated the dead-owner form of this (redelivery, uncommitted writes, a duplicate
+# effect) and K3 the live-owner form (a held takeover, a stale checkpoint); N8 asks what the
+# two do together on W1's effect path. What it is predicted to show is
+# research/preregistration.md's cell N8.
+v: 1
+name: N8
+cell: N8
+seed: N8-v1
+workload: w1
+target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
+workers: [w1, w2]
+ops:
+  - {id: start-1, worker: w1, thread: t1, after: start, input: {order: order-17}}
+  - {id: resume-1, worker: w1, thread: t1, after: start-1, resume: approve}
+schedule:
+  - on: {fp: put_writes.before, worker: w1, op: resume-1, occurrence: 3}
+    do: {pause: A-writes}
+    landmark: L-EXW
+  - on: {fp: put.before, worker: w1, op: resume-1, occurrence: 2}
+    do: {pause: A-put}
+    landmark: L-EXC
+  - on: {all_paused: [A-writes, A-put]}
+    do: {redeliver: {op: resume-1, to: w2}}
+  - on: {ended: resume-1}
+    do: {release: [A-writes, A-put]}

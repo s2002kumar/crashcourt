@@ -167,6 +167,77 @@ def test_the_preregistered_k3_schedule_takes_over_only_inside_the_hold(tmp_path:
     assert report.ops["turn-1"].stale == ("w1 answered ok",)
 
 
+def held_twice_then(on_release: str | None = "ok") -> Any:
+    """N8's owner: parks resume-1 at put_writes.before occurrence 3 (its writes task) and then at
+    put.before occurrence 2 (its loop), as LangGraph does under sync durability, where a put is
+    awaited and task writes are not; once both are released, answers with `on_release`."""
+
+    async def behave(worker: FakeWorker, message: BaseModel) -> None:
+        if isinstance(message, Run) and message.op_id == "resume-1":
+            worker.answer(Hit(hit_seq=12, fp="put_writes.before", op_id="resume-1", occurrence=3))
+            worker.answer(Hit(hit_seq=13, fp="put.before", op_id="resume-1", occurrence=2))
+        elif isinstance(message, Run):
+            worker.answer(Result(op_id=message.op_id, status="ok", output={"n": 1}, worker_seq=5))
+        elif isinstance(message, ReleaseMessage):
+            if message.hit_seq == 13 and on_release is not None:  # the loop's hold is the last
+                worker.answer(Result(op_id="resume-1", status="ok", worker_seq=30))
+        elif isinstance(message, Shutdown):
+            worker.die(0)
+
+    return behave
+
+
+def test_the_preregistered_n8_schedule_takes_over_only_inside_both_holds(tmp_path: Path) -> None:
+    """scenarios/first-matrix/N8.yaml itself, with fake workers. In the orchestrator's own order:
+    start-1 and resume-1 go to A; A is held at its writes and at its loop; the redelivery names
+    both holds; B answers; only then are both holds released, together. A is sent nothing between
+    its run and its two releases."""
+    from crashcourt.spec.scenario import read_yaml
+
+    path = Path(__file__).resolve().parents[2] / "scenarios" / "first-matrix" / "N8.yaml"
+    data = cast(dict[str, Any], read_yaml(path.read_text(encoding="utf-8")))
+    trial = Trial(tmp_path, data, {"w1": held_twice_then("ok")})
+    report = trial.run()
+    assert report.violations == [] and report.problems == []
+    assert report.fired_steps == [2, 3] and report.unfired_steps == []
+    events = trial.events()
+    assert terminal_counts(events) == {"start-1": 1, "resume-1": 1}
+    steps = [
+        (e.kind, e.op_id, e.data.get("to") or e.data.get("worker") or e.data.get("barrier"))
+        for e in events
+        if e.kind in {"dispatch.send", "dispatch.redeliver", "client.ok", "fp.release"}
+    ]
+    assert steps == [
+        ("dispatch.send", "start-1", "w1"),
+        ("client.ok", "start-1", "w1"),
+        ("dispatch.send", "resume-1", "w1"),
+        ("dispatch.redeliver", "resume-1", "w2"),
+        ("client.ok", "resume-1", "w2"),
+        ("fp.release", None, "A-writes"),
+        ("fp.release", None, "A-put"),
+    ]
+    redeliver = next(e for e in events if e.kind == "dispatch.redeliver")
+    assert redeliver.data["held"] == [
+        {"proc": "w1", "hit_seq": 13, "barrier": "A-put"},
+        {"proc": "w1", "hit_seq": 12, "barrier": "A-writes"},
+    ]
+    releases = [e for e in events if e.kind == "fp.release"]
+    assert {(e.data["proc"], e.data["hit_seq"]) for e in releases} == {("w1", 12), ("w1", 13)}
+    sent = [type(m).__name__ for m in trial.workers["w1"].sent]
+    assert sent == [  # one arm per armed step, then the two runs, the two releases
+        "ArmMessage",
+        "ArmMessage",
+        "Run",
+        "Run",
+        "ReleaseMessage",
+        "ReleaseMessage",
+        "Shutdown",
+    ]
+    assert report.ops["resume-1"].stale == ("w1 answered ok",)
+    [run] = [m for m in trial.workers["w2"].sent if isinstance(m, Run)]
+    assert (run.op_id, run.resume) == ("resume-1", "approve")
+
+
 def test_a_stale_run_never_released_is_left_held_and_noted(tmp_path: Path) -> None:
     trial = Trial(tmp_path, k3([HOLD, TAKE_OVER]), {"w1": held_then("ok")})
     report = trial.run()
