@@ -1,0 +1,18 @@
+# A single writer at a time under the ownership fence: two workers alternate on two threads, each
+# op sent once the one before it has ended, so every run claims its thread's next epoch and no
+# write is ever stale. The fence must change nothing here.
+v: 1
+name: fenced-sequential
+cell: fenced-sequential
+seed: fenced-sequential-v1
+workload: smoke
+target: {saver: postgres, driver: async, durability: sync}
+workers: [w1, w2]
+variant: {fence: enforce}
+ops:
+  - {id: op-1, worker: w1, thread: t1, after: start}
+  - {id: op-2, worker: w2, thread: t1, after: op-1}
+  - {id: op-3, worker: w1, thread: t2, after: op-2}
+  - {id: op-4, worker: w2, thread: t1, after: op-3}
+  - {id: op-5, worker: w1, thread: t2, after: op-4}
+  - {id: op-6, worker: w2, thread: t2, after: op-5}

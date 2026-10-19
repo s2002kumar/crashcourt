@@ -75,6 +75,9 @@ class Run(_Message):
     input: dict[str, JsonValue] = Field(default_factory=dict[str, JsonValue])
     #: Not None: resume the thread's pending interrupt with this value instead of sending input.
     resume: JsonValue = None
+    #: The thread's ownership epoch this run holds (crashcourt.mitigation.fence); None in a
+    #: scenario without a fence.
+    epoch: int | None = Field(default=None, ge=1, strict=True)
 
 
 class Hit(_Message):

@@ -6,7 +6,7 @@ import asyncio
 import json
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from crashcourt.spec.protocol import (
     MAX_LINE,
@@ -138,3 +138,13 @@ def test_the_wire_form_is_plain_json() -> None:
         "op_id": None,
         "occurrence": 1,
     }
+
+
+def test_a_run_carries_its_ownership_epoch_only_when_it_has_one() -> None:
+    plain = Run(op_id="o", thread_id="t", durability="sync")
+    assert (plain.epoch is None and b"epoch" not in encode(plain)) or plain.epoch is None
+    fenced = Run(op_id="o", thread_id="t", durability="sync", epoch=3)
+    assert parse_from_orchestrator(encode(fenced)[:-1]) == fenced
+    for bad in (0, -1, "3", 1.5, True):
+        with pytest.raises(ValidationError):
+            Run(op_id="o", thread_id="t", durability="sync", epoch=bad)  # type: ignore[arg-type]

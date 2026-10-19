@@ -311,3 +311,60 @@ def test_a_result_from_a_worker_that_never_had_the_op_is_still_a_violation(tmp_p
     trial = Trial(tmp_path, k1a(), {"w1": dies_at("resume-1"), "w2": answers_twice})
     report = trial.run()
     assert report.violations == ["w2 sent a result for start-1, never sent to it"]
+
+
+def test_with_a_fence_every_dispatch_and_redelivery_issues_the_threads_next_epoch(
+    tmp_path: Path,
+) -> None:
+    """N8's shape with `variant: {fence: enforce}`: start-1 owns t1 under epoch 1, resume-1 under
+    2, and B's takeover under 3; each run carries its epoch and each dispatch event records it."""
+    from crashcourt.spec.scenario import read_yaml
+
+    path = Path(__file__).resolve().parents[2] / "scenarios" / "first-matrix" / "N8.yaml"
+    data = cast(dict[str, Any], read_yaml(path.read_text(encoding="utf-8")))
+    data["variant"] = {"fence": "enforce"}
+    trial = Trial(tmp_path, data, {"w1": held_twice_then("ok")})
+    report = trial.run()
+    assert report.violations == [] and report.problems == []
+    events = trial.events()
+    dispatched = [
+        (e.kind, e.op_id, e.data["to"], e.data["epoch"])
+        for e in events
+        if e.kind in {"dispatch.send", "dispatch.redeliver"}
+    ]
+    assert dispatched == [
+        ("dispatch.send", "start-1", "w1", 1),
+        ("dispatch.send", "resume-1", "w1", 2),
+        ("dispatch.redeliver", "resume-1", "w2", 3),
+    ]
+    runs_a = [(m.op_id, m.epoch) for m in trial.workers["w1"].sent if isinstance(m, Run)]
+    runs_b = [(m.op_id, m.epoch) for m in trial.workers["w2"].sent if isinstance(m, Run)]
+    assert runs_a == [("start-1", 1), ("resume-1", 2)] and runs_b == [("resume-1", 3)]
+
+
+def test_without_a_fence_no_epoch_is_issued(tmp_path: Path) -> None:
+    trial = Trial(tmp_path, k3(), {"w1": held_then("ok")})
+    report = trial.run()
+    assert report.violations == [] and report.problems == []
+    assert all(
+        "epoch" not in e.data
+        for e in trial.events()
+        if e.kind in {"dispatch.send", "dispatch.redeliver"}
+    )
+    sent = [m for w in trial.workers.values() for m in w.sent if isinstance(m, Run)]
+    assert sent and all(m.epoch is None for m in sent)
+
+
+def test_epochs_are_per_thread(tmp_path: Path) -> None:
+    data = {**BASE, "variant": {"fence": "placebo"}}
+    trial = Trial(tmp_path, data, {})
+    report = trial.run()
+    assert report.violations == [] and report.problems == []
+    sends = [
+        (e.op_id, e.thread_id, e.data["epoch"]) for e in trial.events() if e.kind == "dispatch.send"
+    ]
+    assert sends == [
+        ("op-1", "b-test/cell/1/t1", 1),
+        ("op-2", "b-test/cell/1/t2", 1),
+        ("op-3", "b-test/cell/1/t1", 2),
+    ]

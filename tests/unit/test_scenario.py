@@ -566,3 +566,42 @@ def test_trial_seed_is_sha256_of_the_json_triple() -> None:
 
     expected = hashlib.sha256(b'["smoke-v1","smoke",1]').hexdigest()
     assert trial_seed("smoke-v1", "smoke", 1) == expected
+
+
+# -- the mitigation variant ---------------------------------------------------------------------
+
+
+def test_a_scenario_without_a_variant_hashes_as_before_the_key_existed() -> None:
+    plain = parse_scenario(scenario())
+    assert plain.variant is None and plain.fence is None and not plain.idempotent_effects
+    assert '"variant"' not in canonical_json(plain)
+    assert scenario_sha256(plain) == scenario_sha256(parse_scenario(scenario(variant=None)))
+
+
+@pytest.mark.parametrize(
+    ("variant", "fence", "idempotent"),
+    [
+        ({"fence": "enforce"}, "enforce", False),
+        ({"fence": "placebo"}, "placebo", False),
+        ({"idempotent_effects": True}, None, True),
+        ({"fence": "enforce", "idempotent_effects": True}, "enforce", True),
+    ],
+)
+def test_a_variant_names_the_fence_and_the_sink_mode_and_enters_the_hash(
+    variant: dict[str, Any], fence: str | None, idempotent: bool
+) -> None:
+    loaded = parse_scenario(scenario(variant=variant))
+    assert (loaded.fence, loaded.idempotent_effects) == (fence, idempotent)
+    assert '"variant":{' in canonical_json(loaded)
+    assert scenario_sha256(loaded) != scenario_sha256(parse_scenario(scenario()))
+    other = {"fence": "placebo"} if fence == "enforce" else {"fence": "enforce"}
+    assert scenario_sha256(loaded) != scenario_sha256(parse_scenario(scenario(variant=other)))
+
+
+@pytest.mark.parametrize(
+    "variant", [{}, {"fence": None}, {"fence": "none"}, {"fence": "enforce", "lease": 1}]
+)
+def test_a_variant_that_names_nothing_or_something_unknown_is_refused(
+    variant: dict[str, Any],
+) -> None:
+    refused(scenario(variant=variant))

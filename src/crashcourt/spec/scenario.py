@@ -39,6 +39,13 @@ Toxics. `toxics:` lists toxics installed on a worker's Toxiproxy route for the w
 any worker starts, and removed once every worker has exited. Only the placebo is supported, a
 `latency` toxic of 0 ms with 0 jitter (C3); network fault schedules are not.
 
+Variant. `variant:` names a mitigation the harness applies around the unchanged saver (the N8
+mitigation study): `fence: enforce` installs the storage-checked ownership fence
+(crashcourt.mitigation.fence) and `fence: placebo` its disarmed twin, which decides and rejects
+nothing; `idempotent_effects: true` makes the effect sink apply at most one effect per logical
+op. Either way the dispatcher issues an ownership epoch per thread with every dispatch and
+redelivery when a fence is named. A scenario without `variant:` runs as before.
+
 Loading refuses anything that could not run as declared, before any process starts: an unknown
 failpoint, worker, op, or barrier; a failpoint step on a worker its op is not sent to; two steps
 that could fire on one call; a barrier released twice; barriers that must be held together whose
@@ -50,7 +57,7 @@ redelivery whose op is not certain to be in flight on its worker when it fires.
 The content hash (crashcourt.spec.content) is taken over the validated model, so it names the
 scenario's meaning, not its formatting. `v` versions the format and enters the hash. An empty
 `toxics` list is left out of the hashed form, so a scenario without toxics hashes as it did before
-the key existed.
+the key existed; so is an absent `variant`.
 
 Scenario files read booleans as YAML 1.2 does: only true and false. YAML 1.1, which PyYAML
 follows, also reads on, off, yes, and no as booleans, and would turn every step's `on:` key
@@ -189,6 +196,22 @@ class PlaceboToxic(_Frozen):
     jitter_ms: int = Field(ge=0, le=0, strict=True)
 
 
+class Variant(_Frozen):
+    """A mitigation under test, applied by the harness around the unchanged saver."""
+
+    #: enforce: PostgreSQL rejects a stale run's checkpoint and task writes; placebo: the same
+    #: epochs, claims, bindings, and trigger, which decides and then rejects nothing.
+    fence: Literal["enforce", "placebo"] | None = None
+    #: The sink applies at most one effect per logical op and records the rest as duplicates.
+    idempotent_effects: bool = False
+
+    @model_validator(mode="after")
+    def _names_something(self) -> Self:
+        if self.fence is None and not self.idempotent_effects:
+            raise ValueError("a variant names a fence, idempotent effects, or both")
+        return self
+
+
 def _key_of(*names: str) -> Any:
     def pick(value: object) -> str | None:
         data = value.model_dump() if isinstance(value, BaseModel) else value
@@ -294,10 +317,21 @@ class Scenario(_Frozen):
     #: its freeze.
     landmarks: PathName | None = None
     toxics: tuple[PlaceboToxic, ...] = ()
+    #: The mitigation under test, if any (the N8 mitigation study).
+    variant: Variant | None = None
 
     #: Keys left out of the hashed form while empty (crashcourt.spec.content): added after
     #: scenarios were first hashed, so a scenario that does not use them keeps its hash.
-    OMIT_WHEN_EMPTY: ClassVar[tuple[str, ...]] = ("toxics",)
+    OMIT_WHEN_EMPTY: ClassVar[tuple[str, ...]] = ("toxics", "variant")
+
+    @property
+    def fence(self) -> Literal["enforce", "placebo"] | None:
+        """The fence the batch installs and the dispatcher issues epochs for, if any."""
+        return self.variant.fence if self.variant is not None else None
+
+    @property
+    def idempotent_effects(self) -> bool:
+        return self.variant is not None and self.variant.idempotent_effects
 
     @model_validator(mode="after")
     def _runs_as_declared(self, info: ValidationInfo) -> Self:

@@ -197,6 +197,8 @@ class OpRecord:
     former: list[str] = field(default_factory=list[str])
     #: What each stale run did: `<worker> answered <status>`, or why it gave no result.
     stale: list[str] = field(default_factory=list[str])
+    #: The thread's ownership epoch the op's current run holds, when the scenario has a fence.
+    epoch: int | None = None
     state: OpState = "pending"
     outcome: Outcome | None = None
     reason: str | None = None
@@ -287,6 +289,8 @@ class TrialEngine:
         self._fired: list[int] = []
         #: Stale runs not yet answered, by (worker, op): the timer bounding one once released.
         self._stale: dict[tuple[str, str], asyncio.TimerHandle | None] = {}
+        #: The last ownership epoch issued per thread (crashcourt.mitigation.fence).
+        self._epochs: dict[str, int] = {}
 
     async def run(self) -> EngineReport:
         try:
@@ -426,6 +430,7 @@ class TrialEngine:
             data["held"] = [
                 {"proc": h.worker, "hit_seq": h.hit_seq, "barrier": h.barrier} for h in held
             ]
+        self._issue(record, data)
         self.history.emit(
             "dispatch.redeliver", op_id=record.op.id, thread_id=record.thread_id, data=data
         )
@@ -670,9 +675,9 @@ class TrialEngine:
             thread_id=record.thread_id,
             data=invoke_data(op),
         )
-        self.history.emit(
-            "dispatch.send", op_id=op.id, thread_id=record.thread_id, data={"to": op.worker}
-        )
+        data: dict[str, JsonValue] = {"to": op.worker}
+        self._issue(record, data)
+        self.history.emit("dispatch.send", op_id=op.id, thread_id=record.thread_id, data=data)
         record.state = "sent"
         self._start_deadline(record)
         # If the send fails, the worker's death ends the op as info.
@@ -686,7 +691,18 @@ class TrialEngine:
             durability=self.scenario.target.durability,
             input=op.input,
             resume=op.resume,
+            epoch=record.epoch,
         )
+
+    def _issue(self, record: OpRecord, data: dict[str, JsonValue]) -> None:
+        """With a fence, every dispatch and redelivery is a new ownership of the op's thread:
+        the next epoch, carried by the run and recorded on the dispatch event."""
+        if self.scenario.fence is None:
+            return
+        epoch = self._epochs.get(record.thread_id, 0) + 1
+        self._epochs[record.thread_id] = epoch
+        record.epoch = epoch
+        data["epoch"] = epoch
 
     def _start_deadline(self, record: OpRecord) -> None:
         if record.timer is not None:
