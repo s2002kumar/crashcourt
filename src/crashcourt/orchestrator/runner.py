@@ -307,7 +307,9 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
 
     prefix = f"{ctx.batch}/{scenario.cell}/{number}"
     try:
-        opened = await asyncio.to_thread(ctx.sink.open_trial, trial)
+        opened = await asyncio.to_thread(
+            ctx.sink.open_trial, trial, apply_once=scenario.idempotent_effects
+        )
     except SinkError as exc:
         reasons.append(f"the sink did not open the trial: {exc}")
     else:
@@ -671,6 +673,7 @@ def _trial_record(
         **({"toxics": toxics} if ctx.scenario.toxics else {}),
         **({"saver_mutant": ctx.saver_mutant} if ctx.saver_mutant is not None else {}),
         **({"fence": ctx.scenario.fence} if ctx.scenario.fence is not None else {}),
+        **({"idempotent_effects": True} if ctx.scenario.idempotent_effects else {}),
     }
 
 
@@ -809,8 +812,9 @@ def run_batch(
             "phase": authorization.phase if authorization else None,
             "own_database": options.own_database,
             "host": host,
-            # Written only for a fenced batch, so other batches' records keep their form.
+            # Written only for a mitigation batch, so other batches' records keep their form.
             **({"fence": scenario.fence} if scenario.fence is not None else {}),
+            **({"idempotent_effects": True} if scenario.idempotent_effects else {}),
             "started": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
             "trials": options.trials,
             "scenario": {

@@ -204,3 +204,128 @@ def test_a_file_for_another_seed_is_refused(tmp_path: Path) -> None:
     Ledger(path, TRIAL).close()
     with pytest.raises(LedgerConflict, match="another trial"):
         Ledger(path, TrialId(TRIAL.batch, TRIAL.cell, TRIAL.trial, "s2"))
+
+
+# -- apply_once: the idempotent ledger ----------------------------------------------------------
+
+
+@pytest.fixture
+def once(tmp_path: Path) -> Any:
+    led = Ledger(TRIAL.path(tmp_path), TRIAL, apply_once=True)
+    yield led
+    led.close()
+
+
+def test_apply_once_applies_the_first_request_per_logical_op_and_records_the_rest(
+    once: Ledger,
+) -> None:
+    first = once.append(effect(attempt=1, worker="worker-1"))
+    second = once.append(effect(attempt=2, worker="worker-2"))
+    other = once.append(effect(logical_op="refund:t3:i1", effect_key="refund:order-17"))
+    assert (first["status"], first["applied"], first["duplicate_of"]) == ("applied", True, None)
+    assert (second["status"], second["applied"], second["duplicate_of"]) == ("duplicate", False, 1)
+    assert (other["status"], other["applied"], other["duplicate_of"]) == ("applied", True, None)
+    rows = once.rows()
+    assert [(r["sink_seq"], r["attempt"], r["status"]) for r in rows] == [
+        (1, 1, "applied"),
+        (2, 2, "duplicate"),
+        (3, 1, "applied"),
+    ]
+    assert once.verify().ok
+    # Both attempts are in the chain; nothing was deduplicated away.
+    assert [r["worker"] for r in rows[:2]] == ["worker-1", "worker-2"]
+
+
+def test_a_duplicates_status_is_hashed_so_editing_it_breaks_the_chain(once: Ledger) -> None:
+    once.append(effect(attempt=1))
+    once.append(effect(attempt=2))
+    with sqlite3.connect(once.path) as conn:
+        conn.execute("UPDATE effects SET status = 'duplicate' WHERE sink_seq = 1")
+    verified = once.verify()
+    assert not verified.ok and verified.first_bad == 1
+
+
+def test_the_unique_index_is_the_backstop_for_a_second_applied_row(once: Ledger) -> None:
+    once.append(effect(attempt=1))
+    with sqlite3.connect(once.path) as conn, pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO effects SELECT 9, received_mono_ns, received_wall_ns, effect_key, "
+            "logical_op, op_id, 2, worker, pid, thread_id, node, checkpoint_id_seen, "
+            "payload_hash, 'applied', prev_hash, row_hash FROM effects WHERE sink_seq = 1"
+        )
+
+
+def test_apply_once_is_decided_under_the_exclusive_lock(once: Ledger) -> None:
+    """Many threads request the same logical op at once: exactly one row is applied."""
+    results: list[dict[str, Any]] = []
+    lock = threading.Lock()
+
+    def post(n: int) -> None:
+        row = once.append(effect(attempt=n))
+        with lock:
+            results.append(row)
+
+    threads = [threading.Thread(target=post, args=(n,)) for n in range(1, 17)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    applied = [r for r in results if r["applied"]]
+    assert len(applied) == 1 and applied[0]["sink_seq"] == 1
+    assert sorted(r["duplicate_of"] for r in results if not r["applied"]) == [1] * 15
+    assert once.verify().ok and once.verify().rows == 16
+
+
+def test_apply_once_persists_in_the_file_and_the_other_mode_is_refused(tmp_path: Path) -> None:
+    from crashcourt.sink.ledger import LedgerConflict
+
+    path = TRIAL.path(tmp_path)
+    led = Ledger(path, TRIAL, apply_once=True)
+    led.append(effect(attempt=1))
+    led.close()
+    with pytest.raises(LedgerConflict, match="was opened with apply_once; this opener asks"):
+        Ledger(path, TRIAL)
+    reopened = Ledger(path, TRIAL, apply_once=True)
+    assert reopened.append(effect(attempt=2))["status"] == "duplicate"
+    reopened.close()
+    with sqlite3.connect(path) as conn:
+        meta = dict(conn.execute("SELECT key, value FROM meta").fetchall())
+        indexes = [
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
+        ]
+    assert meta["apply_once"] == "1" and "effects_applied_once" in indexes
+    plain = TrialId(batch="DEMO-b", cell="DEMO-c", trial=4, seed="s")
+    Ledger(plain.path(tmp_path), plain).close()
+    with pytest.raises(LedgerConflict, match="was opened without apply_once; this opener asks"):
+        Ledger(plain.path(tmp_path), plain, apply_once=True)
+
+
+def test_a_plain_ledger_is_unchanged_by_the_apply_once_code(ledger: Ledger) -> None:
+    """The baseline: no index, no mode in meta, every row applied, and the answer says so."""
+    rows = [ledger.append(effect(attempt=n)) for n in (1, 2, 2)]
+    assert [(r["status"], r["applied"], r["duplicate_of"]) for r in rows] == [
+        ("applied", True, None)
+    ] * 3
+    with sqlite3.connect(ledger.path) as conn:
+        meta = dict(conn.execute("SELECT key, value FROM meta").fetchall())
+        schema = [
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL"
+            ).fetchall()
+        ]
+    assert "apply_once" not in meta and schema == []
+    assert ledger.apply_once is False
+
+
+def test_only_a_duplicate_row_names_its_status_in_the_sink_history(once: Ledger) -> None:
+    from crashcourt.history.writer import RunIdentity
+
+    once.append(effect(attempt=1))
+    once.append(effect(attempt=2))
+    run = RunIdentity(TRIAL.batch, TRIAL.cell, TRIAL.trial, TRIAL.seed)
+    events = ledger_events(once.rows(), run, pid=99)
+    assert [e.kind for e in events] == ["sink.append", "sink.append"]
+    assert "status" not in events[0].data
+    assert events[1].data["status"] == "duplicate"

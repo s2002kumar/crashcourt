@@ -54,7 +54,11 @@ def test_effects_need_an_open_trial(client: TestClient) -> None:
 
 
 def test_effects_are_appended_and_never_deduplicated(client: TestClient) -> None:
-    assert client.post("/trials", json=TRIAL).json() == {"trial": TRIAL, "rows": 0}
+    assert client.post("/trials", json=TRIAL).json() == {
+        "trial": TRIAL,
+        "rows": 0,
+        "apply_once": False,
+    }
     seqs = [client.post("/effects", json=post(effect())).json()["sink_seq"] for _ in range(3)]
     assert seqs == [1, 2, 3]
     rows = client.get("/ledger", params=TRIAL).json()["rows"]
@@ -301,3 +305,86 @@ def test_the_client_ignores_proxy_settings(monkeypatch: pytest.MonkeyPatch) -> N
 def test_batch_and_cell_ids_cannot_leave_the_data_directory(client: TestClient, name: str) -> None:
     assert client.post("/trials", json={**TRIAL, "batch": name}).status_code == 422
     assert client.post("/trials", json={**TRIAL, "cell": name}).status_code == 422
+
+
+# -- apply_once through the API ----------------------------------------------------------------
+
+
+def test_an_idempotent_trial_answers_which_requests_were_applied(client: TestClient) -> None:
+    opened = client.post("/trials", json={**TRIAL, "apply_once": True}).json()
+    assert opened == {"trial": TRIAL, "rows": 0, "apply_once": True}
+    assert client.get("/health").json()["apply_once"] is True
+    first = client.post("/effects", json=post(effect(attempt=1))).json()
+    second = client.post("/effects", json=post(effect(attempt=2))).json()
+    assert (first["sink_seq"], first["status"], first["applied"], first["duplicate_of"]) == (
+        1,
+        "applied",
+        True,
+        None,
+    )
+    assert (second["sink_seq"], second["status"], second["applied"], second["duplicate_of"]) == (
+        2,
+        "duplicate",
+        False,
+        1,
+    )
+    rows = client.get("/ledger", params=TRIAL).json()["rows"]
+    assert [r["status"] for r in rows] == ["applied", "duplicate"]
+    assert client.get("/ledger/verify", params=TRIAL).json()["ok"] is True
+
+
+def test_a_plain_trial_answers_applied_for_every_request(client: TestClient) -> None:
+    assert client.post("/trials", json=TRIAL).json() == {
+        "trial": TRIAL,
+        "rows": 0,
+        "apply_once": False,
+    }
+    assert client.get("/health").json()["apply_once"] is False
+    answers = [client.post("/effects", json=post(effect())).json() for _ in range(2)]
+    assert [(a["status"], a["applied"], a["duplicate_of"]) for a in answers] == [
+        ("applied", True, None)
+    ] * 2
+
+
+def test_the_open_trials_mode_cannot_be_changed_by_reopening(client: TestClient) -> None:
+    client.post("/trials", json={**TRIAL, "apply_once": True})
+    refused = client.post("/trials", json=TRIAL)
+    assert refused.status_code == 409 and "is open with apply_once" in refused.json()["detail"]
+    assert client.get("/health").json()["trial"] == TRIAL
+    # Another trial, then back: the file keeps the mode it was created with.
+    client.post("/trials", json={**TRIAL, "trial": 2})
+    refused = client.post("/trials", json=TRIAL)
+    assert refused.status_code == 409 and "was opened with apply_once" in refused.json()["detail"]
+    assert client.post("/trials", json={**TRIAL, "apply_once": True}).json()["apply_once"] is True
+
+
+def test_a_restarted_sink_resumes_an_idempotent_trial_in_the_same_mode(tmp_path: Path) -> None:
+    first = TestClient(create_app(tmp_path))
+    first.post("/trials", json={**TRIAL, "apply_once": True})
+    first.post("/effects", json=post(effect(attempt=1)))
+    second = TestClient(create_app(tmp_path))
+    health = second.get("/health").json()
+    assert health["trial"] == TRIAL and health["apply_once"] is True
+    assert second.post("/effects", json=post(effect(attempt=2))).json()["status"] == "duplicate"
+
+
+class Deduplicating:
+    """A sink client whose sink recorded the request as a duplicate of row 1."""
+
+    def post_effect(self, trial: Any, effect: Any) -> dict[str, Any]:
+        return {"sink_seq": 2, "status": "duplicate", "applied": False, "duplicate_of": 1}
+
+
+def test_a_duplicate_answer_is_ok_and_named_in_the_response_event(tmp_path: Path) -> None:
+    from crashcourt.history.reader import read_history
+    from crashcourt.history.writer import HistoryWriter, RunIdentity
+    from crashcourt.sink.client import record_effect
+    from crashcourt.sink.ledger import EffectRequest
+
+    run = RunIdentity("DEMO-b", "DEMO-c", 1, "s")
+    path = tmp_path / "w.jsonl"
+    with HistoryWriter(path, run=run, proc="worker-1", pid=4242) as history:
+        assert record_effect(history, Deduplicating(), EffectRequest(**effect())) == 2
+    response = read_history(path).events[-1]
+    assert response.kind == "effect.response" and response.status == "ok"
+    assert response.data == {"sink_seq": 2, "status": "duplicate", "duplicate_of": 1}

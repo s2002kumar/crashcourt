@@ -1,0 +1,21 @@
+# K1a's shape (a kill at L-EXW, then the replacement takes the resume over) with the idempotent
+# effect sink: the replacement's charge is requested again, and the sink records it as a
+# duplicate of the first instead of applying it. Never a pre-registered cell.
+v: 1
+name: k1a-shape-idempotent
+cell: k1a-shape-idempotent
+seed: k1a-shape-idempotent-v1
+workload: w1
+target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
+workers: [w1, w2]
+variant: {idempotent_effects: true}
+ops:
+  - {id: start-1, worker: w1, thread: t1, after: start, input: {order: order-17}}
+  - {id: resume-1, worker: w1, thread: t1, after: start-1, resume: approve}
+schedule:
+  - on: {fp: put_writes.before, worker: w1, op: resume-1, occurrence: 3}
+    do: {signal: SIGKILL}
+    landmark: L-EXW
+  - on: {exited: w1}
+    do: {redeliver: {op: resume-1, to: w2}}

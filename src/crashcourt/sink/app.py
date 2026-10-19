@@ -5,8 +5,8 @@
 | Endpoint | Does |
 | --- | --- |
 | GET /health | liveness, version, source hash, pid, clock, open trial, and any test hook |
-| POST /trials | open, or reopen after a restart, the ledger for one trial |
-| POST /effects | append one effect (never deduplicated); answers only after the commit |
+| POST /trials | open, or reopen after a restart, one trial's ledger (`apply_once`: idempotent) |
+| POST /effects | append one effect; answers only after the commit, saying whether it was applied |
 | POST /attempts/next | increment and return an attempt counter |
 | GET /ledger | every row of the trial's ledger |
 | GET /ledger/verify | recompute the trial's hash chain |
@@ -62,6 +62,14 @@ class TrialRequest(BaseModel):
     seed: str
 
 
+class OpenRequest(TrialRequest):
+    """POST /trials: the trial, and whether its ledger applies at most one effect per logical
+    op (crashcourt.sink.ledger); a trial reopened after a restart keeps the mode it was opened
+    with, and asking for the other is refused."""
+
+    apply_once: bool = False
+
+
 class AttemptRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -111,21 +119,31 @@ class SinkState:
         current = root / "current.json"
         if current.exists():
             try:
-                self.open(TrialId(**json.loads(current.read_text(encoding="utf-8"))))
+                recorded = json.loads(current.read_text(encoding="utf-8"))
+                apply_once = bool(recorded.pop("apply_once", False))
+                self.open(TrialId(**recorded), apply_once=apply_once)
             except HTTPException as exc:  # a file from another ledger version or trial
                 self.resume_error = str(exc.detail)
 
-    def open(self, trial: TrialId) -> Ledger:
+    def open(self, trial: TrialId, *, apply_once: bool = False) -> Ledger:
         with self._lock:
             if self.ledger is not None and self.ledger.trial == trial:
+                if self.ledger.apply_once != apply_once:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"trial {trial.__dict__} is open "
+                        f"{'with' if self.ledger.apply_once else 'without'} apply_once",
+                    )
                 return self.ledger
             # Open the new ledger before closing the old one, so a refused file leaves the open
             # trial working.
             try:
-                ledger = Ledger(trial.path(self.root), trial)
+                ledger = Ledger(trial.path(self.root), trial, apply_once=apply_once)
             except LedgerConflict as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
-            data = json.dumps(trial.__dict__, sort_keys=True).encode("utf-8")
+            data = json.dumps(
+                {**trial.__dict__, **({"apply_once": True} if apply_once else {})}, sort_keys=True
+            ).encode("utf-8")
             try:
                 _write_atomically(self.root / "current.json", data)
             except BaseException:
@@ -170,14 +188,21 @@ def create_app(
             "mono_ns": host_monotonic_ns(),
             "ledger_version": LEDGER_VERSION,
             "trial": trial,
+            "apply_once": state.ledger.apply_once if state.ledger is not None else None,
             "resume_error": state.resume_error,
             "test_hooks": state.exit_after_commit is not None,
         }
 
     @app.post("/trials")
-    def open_trial(request: TrialRequest) -> dict[str, Any]:
-        ledger = state.open(TrialId(**request.model_dump()))
-        return {"trial": ledger.trial.__dict__, "rows": len(ledger.rows())}
+    def open_trial(request: OpenRequest) -> dict[str, Any]:
+        ledger = state.open(
+            TrialId(**request.model_dump(exclude={"apply_once"})), apply_once=request.apply_once
+        )
+        return {
+            "trial": ledger.trial.__dict__,
+            "rows": len(ledger.rows()),
+            "apply_once": ledger.apply_once,
+        }
 
     @app.post("/effects")
     def append_effect(request: EffectPost) -> dict[str, Any]:
@@ -189,6 +214,9 @@ def create_app(
             "sink_seq": row["sink_seq"],
             "received_mono_ns": row["received_mono_ns"],
             "row_hash": row["row_hash"],
+            "status": row["status"],
+            "applied": row["applied"],
+            "duplicate_of": row["duplicate_of"],
         }
 
     @app.post("/attempts/next")

@@ -6,6 +6,14 @@ hash of the previous row and its own hash over its fields, so editing, deleting,
 any row breaks verification from that row on.
 
 Attempt counters live in the same file: a worker that is killed and replaced cannot reset them.
+
+Idempotent effects (the N8 mitigation study's provider-side idempotency key). A ledger opened with
+`apply_once` applies at most one effect per logical op: the first request for a logical op is
+appended with status `applied`, every later one with status `duplicate`, decided and committed in
+the same exclusive transaction as the row, with a unique partial index over the applied rows as
+the backstop. Every attempt is still a row in the chain, so the evidence of what each worker
+requested is complete, and the status is hashed with the rest. A ledger opened without it is the
+file it always was: the same schema, meta, and rows.
 """
 
 from __future__ import annotations
@@ -49,6 +57,12 @@ CREATE TABLE IF NOT EXISTS effects (
     row_hash TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS attempts (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+"""
+
+#: Only in a ledger opened with apply_once: at most one applied row per logical op.
+APPLY_ONCE_INDEX = """
+CREATE UNIQUE INDEX IF NOT EXISTS effects_applied_once ON effects (logical_op)
+    WHERE status = 'applied'
 """
 
 #: The row fields covered by row_hash, in order.
@@ -119,10 +133,12 @@ def row_hash(prev_hash: str, row: dict[str, Any]) -> str:
 class Ledger:
     """One trial's ledger. Thread-safe; every write is committed before the method returns."""
 
-    def __init__(self, path: Path, trial: TrialId) -> None:
+    def __init__(self, path: Path, trial: TrialId, *, apply_once: bool = False) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.trial = trial
+        #: Apply at most one effect per logical op; the rest are recorded as duplicates.
+        self.apply_once = apply_once
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
         try:
@@ -140,6 +156,8 @@ class Ledger:
         wanted = {
             "ledger_version": str(LEDGER_VERSION),
             **{k: str(v) for k, v in asdict(trial).items()},
+            # Only an idempotent ledger records its mode, so a plain one keeps its meta.
+            **({"apply_once": "1"} if self.apply_once else {}),
         }
         # Read and write meta in one transaction, so a crash cannot leave it half written and
         # two openers cannot both decide it is empty. The tables are created only for a new file:
@@ -155,6 +173,8 @@ class Ledger:
             if not meta:
                 for statement in filter(str.strip, SCHEMA.split(";")):
                     self._conn.execute(statement)
+                if self.apply_once:
+                    self._conn.execute(APPLY_ONCE_INDEX)
                 self._conn.executemany("INSERT INTO meta VALUES (?, ?)", wanted.items())
             self._conn.execute("COMMIT")
         except BaseException:
@@ -166,6 +186,13 @@ class Ledger:
                 f"this sink writes version {LEDGER_VERSION}"
             )
         if meta and meta != wanted:
+            if {k: v for k, v in meta.items() if k != "apply_once"} == {
+                k: v for k, v in wanted.items() if k != "apply_once"
+            }:
+                raise LedgerConflict(
+                    f"{path} was opened {'with' if 'apply_once' in meta else 'without'} "
+                    f"apply_once; this opener asks for the opposite"
+                )
             raise LedgerConflict(f"{path} belongs to another trial: {meta}")
 
     def close(self) -> None:
@@ -173,7 +200,9 @@ class Ledger:
             self._conn.close()
 
     def append(self, effect: EffectRequest) -> dict[str, Any]:
-        """Record one effect. Never deduplicates: every call is a new row, committed on return."""
+        """Record one effect: every call is a new row, committed on return. With apply_once, a
+        logical op that already has an applied row gets a `duplicate` row instead, decided in
+        the same exclusive transaction; the answer says which (`applied`, `duplicate_of`)."""
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
@@ -181,12 +210,20 @@ class Ledger:
                     "SELECT sink_seq, row_hash FROM effects ORDER BY sink_seq DESC LIMIT 1"
                 ).fetchone()
                 seq, prev = (last[0] + 1, last[1]) if last else (1, GENESIS)
+                duplicate_of: int | None = None
+                if self.apply_once:
+                    first = self._conn.execute(
+                        "SELECT sink_seq FROM effects WHERE logical_op = ? AND status = 'applied' "
+                        "ORDER BY sink_seq LIMIT 1",
+                        (effect.logical_op,),
+                    ).fetchone()
+                    duplicate_of = int(first[0]) if first else None
                 row: dict[str, Any] = {
                     "sink_seq": seq,
                     "received_mono_ns": host_monotonic_ns(),
                     "received_wall_ns": time.time_ns(),
                     **effect.model_dump(),
-                    "status": "applied",
+                    "status": "applied" if duplicate_of is None else "duplicate",
                 }
                 digest = row_hash(prev, row)
                 columns = [*HASHED_FIELDS, "prev_hash", "row_hash"]
@@ -200,7 +237,13 @@ class Ledger:
             except BaseException:
                 self._conn.execute("ROLLBACK")
                 raise
-        return {**row, "prev_hash": prev, "row_hash": digest}
+        return {
+            **row,
+            "prev_hash": prev,
+            "row_hash": digest,
+            "applied": duplicate_of is None,
+            "duplicate_of": duplicate_of,
+        }
 
     def next_attempt(self, key: str) -> int:
         """Increment and return the counter for `key` (1 on first use), committed on return."""
@@ -268,6 +311,9 @@ def ledger_events(rows: list[dict[str, Any]], run: RunIdentity, pid: int) -> lis
                 "worker": row["worker"],
                 "sink_seq": int(row["sink_seq"]),
                 "row_hash": row["row_hash"],
+                # Only a row that was not applied names its status, so plain ledgers' histories
+                # keep their form.
+                **({"status": row["status"]} if row["status"] != "applied" else {}),
             },
         )
         for row in sorted(rows, key=lambda r: int(r["sink_seq"]))
