@@ -29,7 +29,7 @@ The JSON block at the end is the binding part; the prose and the table explain i
 - **The mitigation pin.** `mitigation` pins the N8 mitigation study's contract
   (`src/crashcourt/mitigation/contract.py`), the fence (`src/crashcourt/mitigation/fence.py`), and the
   sink's ledger (`src/crashcourt/sink/ledger.py`) by the sha256 of their bytes, and names the contract
-  (`n8-mitigation-v1`). A cell that predicts the contract (`contract`) is refused, by the gate and by
+  (`n8-mitigation-v1.1`). A cell that predicts the contract (`contract`) is refused, by the gate and by
   verification, unless its pre-registration and run commits hold exactly these files. Checker v1 is not
   among them: it is unchanged, frozen, and reads every trial of the study as before.
 - **Landmarks in the scenarios.** Every scenario step that arms a failpoint names its audited landmark
@@ -225,7 +225,7 @@ and it claims no novelty for either mechanism (fencing tokens and idempotency ke
   or `duplicate`), so the evidence of what each worker requested is complete and the worker's recorded
   answer is never the evidence. A ledger opened without it is the file it always was (tests prove the
   schema, meta, and rows unchanged).
-- **The contract** (`crashcourt.mitigation.contract`, `n8-mitigation-v1`, pinned under `mitigation`). Read
+- **The contract** (`crashcourt.mitigation.contract`, `n8-mitigation-v1.1`, pinned under `mitigation`). Read
   from the snapshot, the ledger's export, the histories, and the fence's owner record, independently of the
   checker: the fork; the head (the largest checkpoint id, the saver's "latest") and whether the acknowledged
   run wrote it; the stale run's writes after it resumed (causally: the redelivery before the releases, the
@@ -442,6 +442,19 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
   predictions for I5a, I6a, and I7a are derived from K1a's and N8's readings (above), not observed, and
   are predicted firmly rather than `unknown`, so that a disagreement is flagged and investigated as a
   reading of v1; it changes neither v1 nor the contract's judgement.
+
+- **The contract's op selection, corrected 2026-10-19 after the tranche's first run, before any
+  variant.** The first run of the mitigation tranche (Actions run 39218496515, commit 3e775a9) came out
+  as predicted on every invariant and observation of all ten instrument cells, on N8-placebo's contract
+  (20 of 20), and on C9; C1-w1-sync-fenced's contract differed on `acknowledged_is_head` and
+  `fence_consistent` in 50 of 50 trials while its EXACTLY_ONCE, CONSISTENT, and zero fenced writes were
+  as predicted. The records showed the evaluator had taken the op under test of a trial without a
+  redelivery from trial.json's key order, which is alphabetical (`resume-1` before `start-1`), so it
+  judged W1's start op against a head and an owner row that belong to its resume. The fence had behaved
+  as predicted (owner epoch 2, the resume's; nothing rejected). `contract.py` v1.1 takes that op from
+  the orchestrator's dispatch order; no definition changed, the pin follows the file, and the fixture
+  trials now have two ops. The batches of run 39218496515 stay archived as they ran, as the run that
+  found the defect, and are not qualifying batches: every instrument cell runs again under this commit.
 
 ## Pre-registration data
 
@@ -2741,9 +2754,9 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
   ],
   "max_invalid_share": 0.02,
   "mitigation": {
-    "contract": "n8-mitigation-v1",
+    "contract": "n8-mitigation-v1.1",
     "files": {
-      "src/crashcourt/mitigation/contract.py": "4d44072599f7b2d1e7e6755994017b7340d81ed70eb1c37b599d9b04115c7914",
+      "src/crashcourt/mitigation/contract.py": "64bd06bd55e5a70207d4a522c4f6ce786f13955ac01a5b575687d113db475e0c",
       "src/crashcourt/mitigation/fence.py": "64fcc53ce11b6bf9caf5dea882bbbf28be144ad6e2e5582286f8ec3526618743",
       "src/crashcourt/sink/ledger.py": "f80a6753d9ba8889aa4728016de37507b394059977df00ef5b2e19760e1350c2"
     }
