@@ -434,3 +434,126 @@ def test_wilson_intervals() -> None:
     assert low == pytest.approx(0.8389, abs=1e-3) and high == 1.0
     low, high = wilson(0, 20)  # type: ignore[misc]
     assert low == 0.0 and high == pytest.approx(0.1611, abs=1e-3)
+
+
+# -- the judgement against the committed predictions ----------------------------------------------
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def committed_prediction(cell: str) -> Any:
+    from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, parse
+
+    prereg = parse((ROOT / PREREGISTRATION_PATH).read_text(encoding="utf-8"))
+    return prereg.cell(cell).contract
+
+
+@pytest.mark.parametrize(
+    ("cell", "fence", "idempotent", "redelivered"),
+    [
+        ("N8-base", None, False, True),
+        ("N8-placebo", "placebo", False, True),
+        ("N8-F", "enforce", False, True),
+        ("N8-I", None, True, True),
+        ("N8-FI", "enforce", True, True),
+        ("C1-w1-sync-fenced", "enforce", False, False),
+    ],
+)
+def test_each_committed_prediction_is_met_by_its_shape(
+    tmp_path: Path, cell: str, fence: str | None, idempotent: bool, redelivered: bool
+) -> None:
+    """The pre-registered contract predictions describe exactly the shapes the study expects:
+    each synthetic trial of the cell's shape is judged as predicted, and the baseline's shape
+    differs from every mitigated cell's prediction."""
+    from crashcourt.mitigation.judge import judge
+
+    prediction = committed_prediction(cell)
+    assert prediction is not None
+    records = [
+        evaluate_trial(
+            build(
+                tmp_path / f"t{n}",
+                fence=fence,
+                idempotent=idempotent,
+                redelivered=redelivered,
+            ),
+            fence=fence,
+            idempotent_effects=idempotent,
+        )
+        for n in (1, 2)
+    ]
+    verdict = judge(records, prediction, deterministic=True)
+    assert verdict["status"] == "as-predicted", verdict
+    assert verdict["trials_as_predicted"] == 2 and verdict["unreadable"] == 0
+    assert all(m["mismatches"] == {} for m in verdict["measures"].values())
+    if cell not in ("N8-base", "N8-placebo"):
+        baseline = evaluate_trial(build(tmp_path / "b"), fence=None, idempotent_effects=False)
+        differs = judge([baseline], prediction, deterministic=True)
+        assert differs["status"] == "differs" and differs["trials_as_predicted"] == 0
+
+
+def test_a_split_batch_is_unstable_and_an_unreadable_trial_never_as_predicted(
+    tmp_path: Path,
+) -> None:
+    from crashcourt.mitigation.judge import judge
+
+    prediction = committed_prediction("N8-base")
+    good = evaluate_trial(build(tmp_path / "g"), fence=None, idempotent_effects=False)
+    bad = evaluate_trial(
+        build(tmp_path / "b", fence="enforce"), fence="enforce", idempotent_effects=False
+    )
+    split = judge([good, bad], prediction, deterministic=True)
+    assert split["status"] == "unstable" and split["trials_as_predicted"] == 1
+    assert split["measures"]["fork"]["mismatches"] == {"1": False}
+    assert judge([good, bad], prediction, deterministic=False)["status"] == "differs"
+    build(tmp_path / "u", result=False)
+    (tmp_path / "u" / "ledger.json").unlink()
+    unreadable = evaluate_trial(tmp_path / "u", fence=None, idempotent_effects=False)
+    assert unreadable["problems"]
+    verdict = judge([good, unreadable], prediction, deterministic=True)
+    assert verdict["status"] == "differs" and verdict["unreadable"] == 1
+    assert judge([], prediction, deterministic=True)["status"] == "missing"
+
+
+def test_a_batch_summary_carries_the_judgement_for_an_authorized_cell(tmp_path: Path) -> None:
+    """With a repository, the summary judges the batch against the cell's committed prediction,
+    read from the pre-registration at the authorized commit; the CLI prints it."""
+    from crashcourt.cli import main
+    from crashcourt.experiment.gate import AUTHORIZATION_FILE, Authorization
+    from crashcourt.experiment.preregistration import PREREGISTRATION_PATH
+
+    from ._experiment import commit, git
+
+    # A repository whose pre-registration commit holds this checkout's pre-registration.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    prereg_text = (ROOT / PREREGISTRATION_PATH).read_text(encoding="utf-8")
+    head = commit(repo, {str(PREREGISTRATION_PATH): prereg_text}, "pre-register")
+    root = batch(tmp_path, fence="enforce", idempotent_effects=True)
+
+    authorization = Authorization(
+        cell="N8-FI",
+        phase="new-evidence",
+        evidence="new-evidence",
+        scenario="scenarios/mitigation/N8-FI.yaml",
+        scenario_sha256="0" * 64,
+        master_seed="N8-FI-v1",
+        trials=3,
+        run_commit=head,
+        preregistration_commit=head,
+        preregistration_sha256="0" * 64,
+        preregistration_state="final",
+        freeze_commit=head,
+        frozen_md_sha256="0" * 64,
+        checker_version="v1",
+        checker_sha256="0" * 64,
+        registry_sha256="0" * 64,
+        landmark_table_sha256=None,
+    )
+    (root / AUTHORIZATION_FILE).write_text(authorization.to_json(), encoding="utf-8")
+    _, summary = write_records(root, repo)
+    assert summary["judgement"]["status"] == "as-predicted"
+    assert main(["mitigation", "contract", str(root), "--root", str(repo)]) == 0
+    assert "judgement" in json.loads((root / SUMMARY_FILE).read_text(encoding="utf-8"))

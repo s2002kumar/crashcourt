@@ -1,0 +1,14 @@
+# C1-w1-sync-fenced: the negative control on W1 approve under the ownership fence (C1's analog
+# for the fence): one worker, two sequential operations, every run claiming its thread's next
+# epoch, nothing stale and nothing rejected. The fence must change nothing here.
+v: 1
+name: C1-w1-sync-fenced
+cell: C1-w1-sync-fenced
+seed: C1-w1-sync-fenced-v1
+workload: w1
+target: {saver: postgres, driver: async, durability: sync}
+workers: [w1]
+variant: {fence: enforce}
+ops:
+  - {id: start-1, worker: w1, thread: t1, after: start, input: {order: order-17}}
+  - {id: resume-1, worker: w1, thread: t1, after: start-1, resume: approve}

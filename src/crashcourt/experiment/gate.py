@@ -236,6 +236,28 @@ def builder_problems(
     return found
 
 
+def mitigation_problems(
+    root: Path, prereg: Preregistration, cell: Cell, commits: Sequence[tuple[str, str]]
+) -> list[str]:
+    """For a cell that predicts the mitigation contract: the contract and the mechanisms it
+    judges, at each named commit, are the files the pre-registration pins."""
+    if cell.contract is None:
+        return []
+    pin = prereg.mitigation
+    if pin is None:
+        return [f"cell {cell.id} predicts the mitigation contract, but none is pinned"]
+    found: list[str] = []
+    for path, sha256 in pin.files.items():
+        for name, commit in commits:
+            digest = gitproof.blob_sha256(root, commit, path)
+            if digest != sha256:
+                found.append(
+                    f"{path} at the {name} commit hashes to {digest}, not the pre-registered "
+                    f"{sha256}"
+                )
+    return found
+
+
 def authorize_batch(
     source: Path | None,
     trials: int,
@@ -289,6 +311,8 @@ def authorize_batch(
     except KeyError:
         raise NotAuthorized([*check.reasons, f"{rel} is not a pre-registered scenario"]) from None
     for reason in prereg.refusals(cell):
+        check.fail(reason)
+    for reason in mitigation_problems(root, prereg, cell, commits):
         check.fail(reason)
     landmarks = _scenario(root / rel, cell, trials, scenarios, checker, frozen, check)
 

@@ -52,6 +52,7 @@ from crashcourt.experiment.gate import (
     Authorization,
     builder_problems,
     confirm_environment,
+    mitigation_problems,
     rules_at,
 )
 from crashcourt.experiment.preregistration import (
@@ -181,6 +182,7 @@ def verify_batch(batch_dir: Path, repo: Path) -> VerifiedBatch:
             batch_dir, [*problems, f"cell {auth.cell} is not pre-registered"]
         ) from None
     problems.extend(f"at the pre-registration commit, {r}" for r in prereg.refusals(cell))
+    problems.extend(mitigation_problems(repo, prereg, cell, commits))
     if auth.preregistration_state != prereg.state:
         problems.append(
             f"the authorization records a {auth.preregistration_state} pre-registration; "

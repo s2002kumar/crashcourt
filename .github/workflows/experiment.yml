@@ -53,12 +53,13 @@ jobs:
           from pathlib import Path
           from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, parse
           cell = parse(Path(PREREGISTRATION_PATH).read_text("utf-8")).by_scenario(sys.argv[1])
-          print(cell.id, cell.n)' "$SCENARIO")
-          read -r cell trials <<< "$found"
+          print(cell.id, cell.n, "contract" if cell.contract is not None else "-")' "$SCENARIO")
+          read -r cell trials contract <<< "$found"
           out="$RUNNER_TEMP/experiment"
           mkdir -p "$out"
           {
             echo "TRIALS=$trials"
+            echo "CONTRACT=$contract"
             echo "BATCH=$cell-gh$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
             echo "OUT=$out"
           } >> "$GITHUB_ENV"
@@ -103,6 +104,11 @@ jobs:
         run: >-
           uv run crashcourt experiment aggregate "$OUT/runs/$BATCH" --out "$OUT/cells.json"
           | tee "$OUT/aggregate.txt"
+      # A cell of the N8 mitigation study: the mitigation contract on every trial, judged against
+      # the cell's pre-registered contract prediction, beside the frozen checker's reading.
+      - if: ${{ !cancelled() && steps.run.outcome != 'skipped' && env.CONTRACT == 'contract' }}
+        run: >-
+          uv run crashcourt mitigation contract "$OUT/runs/$BATCH" | tee "$OUT/contract.txt"
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:

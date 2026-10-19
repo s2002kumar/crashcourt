@@ -1,0 +1,26 @@
+# N8-placebo: N8's schedule with the disarmed fence (C3's analog for the fence): the same
+# ownership epochs, claims, session bindings, and trigger, which decides and rejects nothing. It
+# must read as N8-base; it is an instrument cell of the mitigation study.
+v: 1
+name: N8-placebo
+cell: N8-placebo
+seed: N8-placebo-v1
+workload: w1
+target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
+workers: [w1, w2]
+variant: {fence: placebo}
+ops:
+  - {id: start-1, worker: w1, thread: t1, after: start, input: {order: order-17}}
+  - {id: resume-1, worker: w1, thread: t1, after: start-1, resume: approve}
+schedule:
+  - on: {fp: put_writes.before, worker: w1, op: resume-1, occurrence: 3}
+    do: {pause: A-writes}
+    landmark: L-EXW
+  - on: {fp: put.before, worker: w1, op: resume-1, occurrence: 2}
+    do: {pause: A-put}
+    landmark: L-EXC
+  - on: {all_paused: [A-writes, A-put]}
+    do: {redeliver: {op: resume-1, to: w2}}
+  - on: {ended: resume-1}
+    do: {release: [A-writes, A-put]}

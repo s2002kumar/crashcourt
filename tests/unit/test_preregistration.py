@@ -39,30 +39,37 @@ def test_the_committed_preregistration_is_final_for_its_tranche() -> None:
     assert prereg.cell("A1").pending and prereg.cell("A1").deferred
 
 
-TRANCHE = ("C1-w1-sync", "C1-w5-sync", "C3-w1-sync", "C3-w5-sync", "K2", "K1a", "K3", "K4", "N8")
+FIRST_TRANCHE = ("C1-w1-sync", "C1-w5-sync", "C3-w1-sync", "C3-w5-sync", "K2", "K1a", "K3", "K4")
+VARIANTS = ("N8-base", "N8-F", "N8-I", "N8-FI")
+TRANCHE = (*FIRST_TRANCHE, "C1-w1-sync-fenced", "N8-placebo", *VARIANTS)
 
 
 def test_the_final_preregistration_can_authorize_every_tranche_cell_and_no_other() -> None:
     prereg = parse(committed())
     assert prereg.runnable() == list(TRANCHE)
-    assert prereg.refusals(prereg.cell("N8")) == []
+    assert all(prereg.refusals(prereg.cell(v)) == [] for v in VARIANTS)
     assert all(prereg.refusals(c) for c in prereg.deferred_cells)
 
 
-def test_the_first_discovery_tranche_is_declared_and_everything_else_deferred() -> None:
-    """The founder's tranche of 2026-10-17: its members, every other cell deferred with a reason,
-    the deferred cells' predictions kept, and `final` asking only for the tranche."""
+def test_the_mitigation_tranche_is_declared_and_everything_else_deferred() -> None:
+    """The N8 mitigation tranche of 2026-10-19: the first tranche's instrument cells again, the
+    fence's two controls, the four variants; N8 deferred after its batch, every other cell
+    deferred with its reason and its predictions kept; `final` asks only for the tranche."""
     prereg = parse(committed())
-    assert prereg.tranche is not None and prereg.tranche.name == "first-discovery"
+    assert prereg.tranche is not None and prereg.tranche.name == "n8-mitigation"
     assert tuple(c.id for c in prereg.tranche_cells) == TRANCHE
-    assert [c.id for c in prereg.cells if c.phase == "new-evidence" and c.deferred is None] == [
-        "N8"
-    ]
+    assert [c.id for c in prereg.cells if c.phase == "new-evidence" and c.deferred is None] == list(
+        VARIANTS
+    )
     for c in prereg.deferred_cells:
         assert c.deferred and len(c.deferred) > 20, c.id
-        assert prereg.refusals(c) == [f"cell {c.id} is deferred from first-discovery: {c.deferred}"]
+        assert prereg.refusals(c) == [f"cell {c.id} is deferred from n8-mitigation: {c.deferred}"]
         assert c.predicted  # kept, visible
     assert prereg.cell("K1b").deferred is not None  # not in the first tranche, by ruling
+    n8 = prereg.cell("N8")
+    assert n8.deferred is not None and "N8-gh39061196254-1" in n8.deferred
+    assert "cc6b13a" in n8.deferred and "never pooled" in n8.deferred
+    assert n8.scenario_sha256 is not None  # its entry is unchanged
     missing = prereg.missing()
     assert not any(m.startswith("cell ") for m in missing), missing
     assert all(m.startswith("instrument check ") for m in missing), missing
@@ -124,7 +131,9 @@ def test_every_written_scenario_is_its_cells() -> None:
     frozen_md = (ROOT / FROZEN_PATH).read_text(encoding="utf-8")
     registry = registry_sha256(ROOT / "clauses")
     written = [c for c in prereg.cells if (ROOT / c.scenario).is_file()]
-    assert [c.id for c in written] == [c.id for c in prereg.tranche_cells]
+    # N8 keeps its file and hash after its batch, deferred from the mitigation tranche.
+    ids = [c.id for c in prereg.tranche_cells]
+    assert [c.id for c in written] == [*ids[:8], "N8", *ids[8:]]
     for c in prereg.cells:
         assert (c.scenario_sha256 is None) == (c not in written), c.id
     for c in written:
@@ -168,7 +177,7 @@ def test_a_redelivery_cell_declares_its_replacement() -> None:
     redelivers has two workers; the gate holds each scenario to its cell's count."""
     cells = {c.id: c for c in parse(committed()).cells}
     redelivering = {i for i, c in cells.items() if "redeliver" in c.trigger}
-    assert redelivering == {"K1a", "K1b", "K3", "N8", "N11", "A1", "A2"}
+    assert redelivering == {"K1a", "K1b", "K3", "N8", "N11", "A1", "A2", "N8-placebo", *VARIANTS}
     assert all(cells[i].workers == 2 for i in redelivering)
 
 
@@ -194,7 +203,8 @@ def test_the_draft_holds_the_first_matrix_and_its_controls() -> None:
     assert replications == PUBLISHED_REPLICATIONS
     assert {"K1a", "K3", "K4", "K2", "K5"} <= instrument
     first = [c for c in prereg.cells if c.phase == "instrument"]
-    assert all(c.id.startswith(("C1-", "C3-", "K")) for c in first)
+    # The fence's placebo (N8-placebo) is the one instrument cell outside C1, C3, and K.
+    assert all(c.id.startswith(("C1-", "C3-", "K")) or c.id == "N8-placebo" for c in first)
     assert all(c.n == 20 for c in prereg.cells if c.id[0] in "KNAE")
     assert all(c.n == 50 for c in prereg.cells if c.control in ("C1", "C3"))
     assert all(c.deterministic for c in prereg.cells)
@@ -478,6 +488,132 @@ def test_parse_needs_exactly_one_block() -> None:
 def test_cli_check_reports_what_is_missing(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["experiment", "check", "--root", str(ROOT)]) == 0
     out = capsys.readouterr().out
-    assert "final, 36 cells (18 instrument, 18 new evidence)" in out
-    assert "tranche first-discovery: 9 cells" in out and "27 deferred" in out
+    assert "final, 42 cells (20 instrument, 22 new evidence)" in out
+    assert "tranche n8-mitigation: 14 cells" in out and "28 deferred" in out
     assert "before it can be final" not in out
+
+
+# -- the N8 mitigation tranche (2026-10-19) ----------------------------------------------------
+
+
+def test_the_mitigation_pin_is_the_contract_and_mechanisms_as_they_are() -> None:
+    """The contract, the fence, and the sink's ledger are pinned by their bytes, so changing one
+    without updating the pin fails here first; the pin names the contract's name."""
+    from crashcourt.experiment.preregistration import MITIGATION_PATHS
+    from crashcourt.mitigation.contract import CONTRACT
+
+    pin = parse(committed()).mitigation
+    assert pin is not None and pin.contract == CONTRACT
+    assert tuple(pin.files) == MITIGATION_PATHS
+    for path, sha in pin.files.items():
+        assert sha == hashlib.sha256((ROOT / path).read_bytes()).hexdigest(), path
+
+
+@pytest.mark.parametrize(
+    ("cell", "variant"),
+    [
+        ("N8-base", None),
+        ("N8-placebo", {"fence": "placebo", "idempotent_effects": False}),
+        ("N8-F", {"fence": "enforce", "idempotent_effects": False}),
+        ("N8-I", {"fence": None, "idempotent_effects": True}),
+        ("N8-FI", {"fence": "enforce", "idempotent_effects": True}),
+    ],
+)
+def test_each_variant_is_n8s_schedule_with_only_its_variant(
+    cell: str, variant: dict[str, Any] | None
+) -> None:
+    from crashcourt.spec.scenario import load_scenario
+
+    other = {"name", "cell", "seed", "variant"}
+    scenario = load_scenario(ROOT / f"scenarios/mitigation/{cell}.yaml")
+    n8 = load_scenario(ROOT / "scenarios/first-matrix/N8.yaml")
+    assert scenario.model_dump(exclude=other) == n8.model_dump(exclude=other)
+    assert (scenario.cell, scenario.seed) == (cell, f"{cell}-v1")
+    assert (scenario.variant.model_dump() if scenario.variant else None) == variant
+    entry = parse(committed()).cell(cell)
+    assert entry.contract is not None and entry.workers == 2 and entry.fault == "F05"
+    assert entry.n == 20 and entry.deterministic
+
+
+def test_the_fenced_c1_is_c1_under_the_fence() -> None:
+    from crashcourt.spec.scenario import load_scenario
+
+    other = {"name", "cell", "seed", "variant"}
+    fenced = load_scenario(ROOT / "scenarios/mitigation/C1-w1-sync-fenced.yaml")
+    plain = load_scenario(ROOT / "scenarios/first-matrix/C1-w1-sync.yaml")
+    assert fenced.model_dump(exclude=other) == plain.model_dump(exclude=other)
+    assert fenced.fence == "enforce" and not fenced.idempotent_effects
+    entry = parse(committed()).cell("C1-w1-sync-fenced")
+    assert entry.control == "C1-fence" and entry.phase == "instrument" and entry.n == 50
+    assert entry.contract is not None and entry.contract.stale is None
+    assert entry.contract.logical == "EXACTLY_ONCE"
+    assert entry.contract.attempt_consistency == "CONSISTENT"
+    assert entry.contract.fence_consistent is True
+    assert [p.invariant for p in entry.predicted] == ["I4", "*"]
+
+
+def test_the_variants_predictions_are_the_studys_design() -> None:
+    """The baseline and the placebo read as the archived N8 batch; the fence keeps the
+    acknowledged branch as the head and fences every stale write but cannot undo the duplicate;
+    the sink applies once but cannot prevent the stale head; both leave the attempt-label
+    residual. Checker v1's predictions stand beside: N8's for the unfenced cells, and for the
+    fenced ones a reading derived from K1a's, predicted firmly."""
+    prereg = parse(committed())
+    base, placebo, f, i, fi = (
+        prereg.cell(c) for c in ("N8-base", "N8-placebo", "N8-F", "N8-I", "N8-FI")
+    )
+    n8 = prereg.cell("N8")
+    for c in (base, placebo, i):
+        assert [(p.invariant, p.expect) for p in c.predicted] == [
+            (p.invariant, p.expect) for p in n8.predicted
+        ]
+        assert c.confidence == "predicted"
+    for c in (f, fi):
+        assert c.confidence == "predicted"  # derived, and compared like any other
+        assert _expect(c, "I4") == ("GAP",) and _expect(c, "I7a") == ("GAP",)
+        assert _expect(c, "I5a") == ("PASS", "NO_ANOMALY_UNSPECIFIED")
+        assert _expect(c, "I6a") == ("PASS", "NO_ANOMALY_UNSPECIFIED")
+        assert _expect(c, "I2") == ("NOT_EXERCISED",)
+    for c in (base, placebo, f):
+        assert [o.label() for o in c.observations] == [
+            "ledger charge: 2 rows, attempts [1, 2], statuses ['applied', 'applied']"
+        ]
+    for c in (i, fi):
+        assert [o.label() for o in c.observations] == [
+            "ledger charge: 2 rows, attempts [1, 2], statuses ['applied', 'duplicate']"
+        ]
+    assert base.contract is not None and placebo.contract is not None
+    assert base.contract.model_dump(exclude={"note", "fence_consistent"}) == (
+        placebo.contract.model_dump(exclude={"note", "fence_consistent"})
+    )
+    assert (base.contract.fence_consistent, placebo.contract.fence_consistent) == (None, True)
+    assert (base.contract.fork, base.contract.acknowledged_is_head) == (True, False)
+    assert base.contract.logical == "DUPLICATED" and base.contract.stale is not None
+    assert not base.contract.stale.none_durable and not base.contract.stale.every_attempt_fenced
+    for c in (f, fi):
+        assert c.contract is not None and c.contract.stale is not None
+        assert (c.contract.fork, c.contract.acknowledged_is_head) == (False, True)
+        assert c.contract.head_attempts == (2,) and c.contract.fence_consistent is True
+        assert c.contract.stale.none_durable and c.contract.stale.every_attempt_fenced
+    assert f.contract is not None and (f.contract.applied, f.contract.logical) == (2, "DUPLICATED")
+    assert i.contract is not None and (i.contract.applied, i.contract.duplicates) == (1, 1)
+    assert (i.contract.logical, i.contract.attempt_consistency) == ("EXACTLY_ONCE", "CONSISTENT")
+    assert (i.contract.fork, i.contract.acknowledged_is_head) == (True, False)
+    assert fi.contract is not None
+    assert (fi.contract.logical, fi.contract.attempt_consistency) == (
+        "EXACTLY_ONCE",
+        "INCONSISTENT",
+    )
+    deviations = committed()[committed().index("## Deviations") :]
+    assert "N8: deferred from the N8 mitigation tranche" in deviations
+    assert "`statuses`, added 2026-10-19" in deviations
+    assert "predict checker v1 by derivation" in deviations
+
+
+def test_a_ledger_observation_may_name_each_rows_status() -> None:
+    from crashcourt.experiment.preregistration import LedgerRows
+
+    rows = LedgerRows(source="ledger", effect="charge", rows=2, statuses=("applied", "duplicate"))
+    assert rows.label() == "ledger charge: 2 rows, statuses ['applied', 'duplicate']"
+    with pytest.raises(ValueError, match="statuses lists each row's"):
+        LedgerRows(source="ledger", effect="charge", rows=2, statuses=("applied",))

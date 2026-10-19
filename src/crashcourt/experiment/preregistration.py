@@ -38,6 +38,12 @@ Observations. Besides its outcomes, a cell may predict what it observes: effect 
 record in checker.json that is not an outcome, or whether an invariant showed an anomaly at all.
 Each is matched in every valid trial, independently of how the anomaly was classified, so a
 replication still checks the published shape when its outcome is GAP or nothing is scored.
+
+The mitigation contract. A cell of the N8 mitigation study also predicts what the mitigation
+contract (crashcourt.mitigation.contract) measures in every valid trial (`contract`), judged
+beside the frozen checker's outcomes and never in their place. The block then pins the contract's
+file and the mechanisms it judges (`mitigation`, by content hash, like the builder): a batch whose
+pre-registration or run commit holds any other version of them is refused.
 """
 
 from __future__ import annotations
@@ -54,6 +60,12 @@ from crashcourt.spec.records import OUTCOMES
 PREREGISTRATION_PATH = PurePosixPath("research/preregistration.md")
 #: The TrialScenario builder: a batch's records to the checker's facts (T-07's side of T-10).
 BUILDER_PATH = "src/crashcourt/orchestrator/declared.py"
+#: The mitigation contract and the mechanisms it judges, pinned together for the N8 study.
+MITIGATION_PATHS: tuple[str, ...] = (
+    "src/crashcourt/mitigation/contract.py",
+    "src/crashcourt/mitigation/fence.py",
+    "src/crashcourt/sink/ledger.py",
+)
 _FENCE = "```json"
 
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
@@ -113,6 +125,9 @@ class LedgerRows(_Model):
     rows: int = Field(ge=0)
     #: The rows' attempts in ascending order; omitted when only the count is predicted.
     attempts: tuple[Annotated[int, Field(ge=1)], ...] | None = None
+    #: The rows' statuses in the sink's order (`applied`, or `duplicate` under an idempotent
+    #: sink); omitted when the statuses are not predicted.
+    statuses: tuple[Id, ...] | None = None
     note: Text | None = None
 
     @model_validator(mode="after")
@@ -121,11 +136,14 @@ class LedgerRows(_Model):
             len(self.attempts) != self.rows or list(self.attempts) != sorted(self.attempts)
         ):
             raise ValueError(f"ledger {self.effect}: attempts lists each row's, in order")
+        if self.statuses is not None and len(self.statuses) != self.rows:
+            raise ValueError(f"ledger {self.effect}: statuses lists each row's, in sink order")
         return self
 
     def label(self) -> str:
         attempts = f", attempts {list(self.attempts)}" if self.attempts is not None else ""
-        return f"ledger {self.effect}: {counted(self.rows, 'row')}{attempts}"
+        statuses = f", statuses {list(self.statuses)}" if self.statuses is not None else ""
+        return f"ledger {self.effect}: {counted(self.rows, 'row')}{attempts}{statuses}"
 
 
 class CheckerRecord(_Model):
@@ -168,6 +186,43 @@ def _subject(o: LedgerRows | CheckerRecord | AnomalySeen) -> tuple[str, str]:
             return (o.source, o.invariant)
 
 
+class StalePrediction(_Model):
+    """What the contract measures of the run an op was taken away from."""
+
+    #: It went on after the takeover (false for a run that was killed, or never released).
+    resumed: bool
+    #: At least this many checkpoint puts and task writes ended after it resumed.
+    attempted_min: int = Field(default=0, ge=0)
+    #: None of them became durable.
+    none_durable: bool
+    #: Every one of them was fenced (and there was at least one).
+    every_attempt_fenced: bool
+
+
+class ContractPrediction(_Model):
+    """What the mitigation contract (crashcourt.mitigation.contract) is predicted to measure in
+    every valid trial of a cell of the N8 mitigation study."""
+
+    #: A checkpoint of the thread with two or more children.
+    fork: bool
+    #: The head (the largest checkpoint id) was written by the run the client's answer came from.
+    acknowledged_is_head: bool
+    #: The attempts the head's `executed` channel names.
+    head_attempts: tuple[Annotated[int, Field(ge=1)], ...]
+    #: The stale run; None when the cell redelivers nothing.
+    stale: StalePrediction | None
+    #: The effect requests any worker made for the logical op, and the ledger's rows by status.
+    requested: int = Field(ge=0)
+    applied: int = Field(ge=0)
+    duplicates: int = Field(ge=0)
+    logical: Literal["EXACTLY_ONCE", "DUPLICATED", "LOST", "NONE"]
+    #: With exactly one applied row: whether the head's state names its attempt.
+    attempt_consistency: Literal["CONSISTENT", "INCONSISTENT", "NOT_APPLICABLE"]
+    #: The thread's owner epoch is the acknowledged run's; None when the cell has no fence.
+    fence_consistent: bool | None
+    note: Text | None = None
+
+
 class Cell(_Model):
     id: Id
     phase: Phase
@@ -204,6 +259,8 @@ class Cell(_Model):
     #: here, so it is checked even when the outcome is GAP or nothing is scored.
     observations: tuple[Observation, ...] = ()
     escalate_if: Text
+    #: For a cell of the N8 mitigation study: what the mitigation contract measures.
+    contract: ContractPrediction | None = None
     #: What this cell's prediction still waits on, if anything; a final pre-registration has none.
     pending: Text | None = None
     #: Why the cell is outside the pre-registration's tranche. A deferred cell keeps its entry
@@ -273,6 +330,21 @@ class BuilderPin(_Model):
     sha256: Sha256
 
 
+class MitigationPin(_Model):
+    """The mitigation contract and the mechanisms it judges (the fence and the sink's ledger),
+    each by the sha256 of its file's bytes, for every cell that predicts the contract."""
+
+    #: The contract's name, as crashcourt.mitigation.contract.CONTRACT states it.
+    contract: Id
+    files: dict[Text, Sha256] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _the_pinned_files(self) -> Self:
+        if tuple(self.files) != MITIGATION_PATHS:
+            raise ValueError(f"the mitigation pin names {list(MITIGATION_PATHS)}, in that order")
+        return self
+
+
 def derive_seed(master_seed: str, cell: str, trial: int) -> str:
     """A trial's seed: sha256 of the JSON array [master_seed, cell, trial], compact, with
     non-ASCII kept. Computed here independently of the runner, so verification checks it."""
@@ -309,6 +381,8 @@ class Preregistration(_Model):
     checker: CheckerPin | None = None
     #: The TrialScenario builder the checker's input comes from; null only in a draft.
     builder: BuilderPin | None = None
+    #: The mitigation contract and mechanisms; required once a tranche cell predicts the contract.
+    mitigation: MitigationPin | None = None
     seeds: SeedRule = SeedRule()
     #: Manifest fields every batch's manifest must equal, by dotted path (`postgres.fsync`).
     environment: dict[str, JsonValue] = Field(min_length=1)
@@ -356,6 +430,8 @@ class Preregistration(_Model):
             found.append("no frozen checker is named")
         if self.builder is None:
             found.append("no TrialScenario builder is pinned")
+        if self.mitigation is None and any(c.contract is not None for c in self.tranche_cells):
+            found.append("a tranche cell predicts the mitigation contract, but none is pinned")
         for name, value in self.environment.items():
             if value is None:
                 found.append(f"environment {name} is not pinned")
@@ -464,6 +540,7 @@ def render_table(prereg: Preregistration) -> str:
             f
             for f, on in (
                 ("unknown", c.confidence == "unknown"),
+                ("contract", c.contract is not None),
                 ("pending", c.pending),
                 ("deferred", c.deferred),
             )

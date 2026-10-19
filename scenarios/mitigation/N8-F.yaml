@@ -1,0 +1,26 @@
+# N8-F: N8's schedule under the storage-checked ownership fence (crashcourt.mitigation.fence).
+# The stale run's checkpoint put and task writes after the takeover are rejected inside their
+# transactions; the sink is the ordinary one, so both charges are applied.
+v: 1
+name: N8-F
+cell: N8-F
+seed: N8-F-v1
+workload: w1
+target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
+workers: [w1, w2]
+variant: {fence: enforce}
+ops:
+  - {id: start-1, worker: w1, thread: t1, after: start, input: {order: order-17}}
+  - {id: resume-1, worker: w1, thread: t1, after: start-1, resume: approve}
+schedule:
+  - on: {fp: put_writes.before, worker: w1, op: resume-1, occurrence: 3}
+    do: {pause: A-writes}
+    landmark: L-EXW
+  - on: {fp: put.before, worker: w1, op: resume-1, occurrence: 2}
+    do: {pause: A-put}
+    landmark: L-EXC
+  - on: {all_paused: [A-writes, A-put]}
+    do: {redeliver: {op: resume-1, to: w2}}
+  - on: {ended: resume-1}
+    do: {release: [A-writes, A-put]}

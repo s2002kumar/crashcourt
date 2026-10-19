@@ -445,9 +445,13 @@ class NotWritten(Exception):
     """A record already on disk differs from the one computed now."""
 
 
-def write_records(batch_dir: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def write_records(
+    batch_dir: Path, repo: Path | None = None
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Write each trial's contract.json and the batch's mitigation.json; a file already there
-    must be byte-identical to what is computed now, or nothing more is written."""
+    must be byte-identical to what is computed now, or nothing more is written. With `repo`,
+    the summary carries the judgement against the cell's pre-registered contract prediction
+    (crashcourt.mitigation.judge), when the batch's cell has one."""
     fence, idempotent = _variant(batch_dir)
     records: list[dict[str, Any]] = []
     for directory in trial_directories(batch_dir):
@@ -461,6 +465,12 @@ def write_records(batch_dir: Path) -> tuple[list[dict[str, Any]], dict[str, Any]
             path.write_text(text, encoding="utf-8")
         records.append(record)
     summary = summarize(batch_dir, records)
+    if repo is not None:
+        from crashcourt.mitigation.judge import judge, predicted_for
+
+        cell = predicted_for(batch_dir, repo)
+        if cell is not None and cell.contract is not None:
+            summary["judgement"] = judge(records, cell.contract, deterministic=cell.deterministic)
     text = json.dumps(summary, indent=2, sort_keys=True) + "\n"
     path = batch_dir / SUMMARY_FILE
     if path.exists():

@@ -70,8 +70,15 @@ def mismatch(o: Observation, t: TrialFiles) -> str | None:
                 return problem
             mine = [r for r in rows if str(r["effect_key"]).split(":", 1)[0] == o.effect]
             attempts = sorted(int(r["attempt"]) for r in mine)
-            if len(mine) != o.rows or (o.attempts is not None and tuple(attempts) != o.attempts):
-                return f"{counted(len(mine), o.effect + ' row')}, attempts {attempts}"
+            in_sink_order = sorted(mine, key=lambda r: int(r.get("sink_seq", 0)))
+            statuses = [str(r.get("status")) for r in in_sink_order]
+            if (
+                len(mine) != o.rows
+                or (o.attempts is not None and tuple(attempts) != o.attempts)
+                or (o.statuses is not None and tuple(statuses) != o.statuses)
+            ):
+                found = f"{counted(len(mine), o.effect + ' row')}, attempts {attempts}"
+                return found + (f", statuses {statuses}" if o.statuses is not None else "")
             return None
         case CheckerRecord():
             records = cast(list[object], t.checker.get("observations") or [])
