@@ -43,7 +43,8 @@ jobs:
           p = parse(Path(PREREGISTRATION_PATH).read_text("utf-8"))
           for c in p.tranche_cells:
               if c.phase == "instrument":
-                  print(c.id, c.scenario, c.n)' > "$out/cells.txt"
+                  print(c.id, c.scenario, c.n, "contract" if c.contract is not None else "-")' \
+            > "$out/cells.txt"
           cat "$out/cells.txt"
           {
             echo "OUT=$out"
@@ -56,7 +57,7 @@ jobs:
       - run: docker compose up -d --wait postgres  # the self-test restarts it
       - name: Every cell through the gate, the run, classify, classify --compare, and verify
         run: |
-          while read -r cell scenario trials; do
+          while read -r cell scenario trials contract; do
             batch="$cell-$STAMP"
             dir="$OUT/runs/$batch"
             log="$OUT/$cell"
@@ -67,7 +68,9 @@ jobs:
                    --out "$OUT/runs" --batch "$batch" > "$log/run.txt" \
               && uv run crashcourt experiment classify "$dir" > "$log/classify.txt" \
               && uv run crashcourt experiment classify --compare "$dir" > "$log/classify-again.txt" \
-              && uv run crashcourt experiment verify "$dir" > "$log/verify.txt"
+              && uv run crashcourt experiment verify "$dir" > "$log/verify.txt" \
+              && { [ "$contract" != contract ] \
+                   || uv run crashcourt mitigation contract "$dir" > "$log/contract.txt"; }
             } || echo "$cell" >> "$OUT/failures.txt"
             tail -n 1 "$log/run.txt" "$log/classify-again.txt" "$log/verify.txt" 2>/dev/null || true
           done < "$OUT/cells.txt"

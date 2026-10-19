@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -20,6 +21,7 @@ from crashcourt.experiment.gate import (
 )
 from crashcourt.experiment.preregistration import (
     BUILDER_PATH,
+    MITIGATION_PATHS,
     PREREGISTRATION_PATH,
     Preregistration,
 )
@@ -33,6 +35,9 @@ from ._experiment import (
     FROZEN_MD_SHA,
     LANDMARK_SHA,
     LANDMARK_TABLES,
+    MITIGATION_PIN,
+    MITIGATION_TEXTS,
+    R1_CONTRACT,
     REGISTRY_SHA,
     SCENARIOS,
     FakeChecker,
@@ -379,3 +384,56 @@ def test_a_builder_missing_at_the_run_commit_is_refused(tmp_path: Path) -> None:
     git(repo.root, "rm", "-q", BUILDER_PATH)
     git(repo.root, "commit", "-q", "-m", "remove the builder")
     assert f"{BUILDER_PATH} at the run commit hashes to None" in refused(authorize, repo)
+
+
+# -- the mitigation pin --------------------------------------------------------------------------
+
+
+def r1_with_contract(**changes: Any) -> Preregistration:
+    data = prereg_model().model_dump(mode="json")
+    data["cells"][0]["contract"] = R1_CONTRACT
+    data.update(changes)
+    return Preregistration.model_validate(data)
+
+
+def test_a_cell_that_predicts_the_contract_needs_the_mitigation_pin(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="predicts the mitigation contract, but none is pinned"):
+        r1_with_contract()  # a final pre-registration cannot leave it out
+    draft = r1_with_contract(state="draft")
+    assert "a tranche cell predicts the mitigation contract, but none is pinned" in draft.missing()
+    repo = make_repo(tmp_path, draft)
+    reasons = refused(authorize, repo)
+    assert "cell R1 predicts the mitigation contract, but none is pinned" in reasons
+
+
+def test_a_pinned_mitigation_file_changed_after_the_preregistration_is_refused(
+    tmp_path: Path,
+) -> None:
+    repo = make_repo(tmp_path, r1_with_contract(mitigation=MITIGATION_PIN))
+    assert authorize(repo).cell == "R1"
+    [contract_path, fence_path, _] = MITIGATION_PATHS
+    commit(repo.root, {fence_path: MITIGATION_TEXTS[fence_path] + "# changed\n"}, "change")
+    reasons = refused(authorize, repo)
+    assert f"{fence_path} at the run commit hashes to " in reasons
+    assert f"not the pre-registered {MITIGATION_PIN['files'][fence_path]}" in reasons
+    assert contract_path not in reasons and "pre-registration commit hashes" not in reasons
+
+
+def test_the_mitigation_pin_is_checked_only_for_cells_that_predict_the_contract(
+    tmp_path: Path,
+) -> None:
+    other = dict(MITIGATION_PIN, files={p: "0" * 64 for p in MITIGATION_PATHS})
+    repo = make_repo(tmp_path, prereg_model(mitigation=other))
+    assert authorize(repo).cell == "R1"  # R1 predicts no contract: the wrong pin is not consulted
+    (tmp_path / "with").mkdir()
+    repo = make_repo(tmp_path / "with", r1_with_contract(mitigation=other))
+    reasons = refused(authorize, repo)
+    for path in MITIGATION_PATHS:
+        assert f"{path} at the pre-registration commit hashes to " in reasons
+
+
+def test_the_mitigation_pin_names_exactly_the_three_files_in_order() -> None:
+    from crashcourt.experiment.preregistration import MitigationPin
+
+    with pytest.raises(ValueError, match="names"):
+        MitigationPin(contract="n8-mitigation-v1", files={MITIGATION_PATHS[0]: "0" * 64})

@@ -1,10 +1,11 @@
 # Pre-registration: the first fault matrix
 
-**Status: FINAL for the first discovery tranche (2026-10-17).** This file declares a tranche (below,
-"The first discovery tranche"): the cells it is final for. Every other cell is deferred, with its reason,
+**Status: FINAL for the N8 mitigation tranche (2026-10-19).** This file declares a tranche (below,
+"The N8 mitigation tranche"): the cells it is final for. Every other cell is deferred, with its reason,
 and is never authorized; `final` says nothing about them. The commit that set this state is the
 pre-registration commit of every batch of the tranche: the instrument cells run again under it before
-N8, and nothing from before it counts.
+any variant, and nothing from before it counts. The first discovery tranche (2026-10-17) is complete:
+its batches, N8's among them, stand under their own commit (cc6b13a) and are never pooled with this one.
 
 This file fixes, before any batch of the first matrix runs, what each cell runs, how many trials it gets, and
 what I predict it shows. The commit that last changes it is the pre-registration commit. A batch runs only
@@ -25,6 +26,12 @@ The JSON block at the end is the binding part; the prose and the table explain i
   the frozen checker, so it is pinned here: a batch whose pre-registration or run commit holds any other
   version of it is refused, and verification refuses it again later. A change to it before this is final
   updates the pin in the same commit (a test fails otherwise).
+- **The mitigation pin.** `mitigation` pins the N8 mitigation study's contract
+  (`src/crashcourt/mitigation/contract.py`), the fence (`src/crashcourt/mitigation/fence.py`), and the
+  sink's ledger (`src/crashcourt/sink/ledger.py`) by the sha256 of their bytes, and names the contract
+  (`n8-mitigation-v1`). A cell that predicts the contract (`contract`) is refused, by the gate and by
+  verification, unless its pre-registration and run commits hold exactly these files. Checker v1 is not
+  among them: it is unchanged, frozen, and reads every trial of the study as before.
 - **Landmarks in the scenarios.** Every scenario step that arms a failpoint names its audited landmark
   (`landmark:`), which must be in the table the scenario names (`landmarks:`) at the step's method and
   occurrence; loading refuses a missing, unknown, or mismatched one, and the name is part of the
@@ -42,7 +49,8 @@ The JSON block at the end is the binding part; the prose and the table explain i
   `NOT_EXERCISED` predicts that the invariant is omitted from the results. Cells whose outcome is honestly
   unknown say `unknown`; their predictions record the expected shape and are compared, but not flagged.
 - **Observations.** A cell may also predict what it observes apart from any outcome: rows of the effect
-  ledger's export (by effect, with their count and attempts), a record in `checker.json` that is not an
+  ledger's export (by effect, with their count, attempts, and, under an idempotent sink, their statuses in
+  the sink's order), a record in `checker.json` that is not an
   outcome, or whether an invariant showed an anomaly at all, whatever its class. Each is matched in every
   valid trial. Every replication names its published observation this way, so it is checked even where
   its outcome is GAP or nothing is scored: langgraph#8039 (K1a) by two charge rows with attempts 1 and 2,
@@ -82,9 +90,10 @@ The JSON block at the end is the binding part; the prose and the table explain i
 ## Run order
 
 The instrument runs first. Every `instrument` cell of the tranche (C1 and C3 on both workloads, C2 as K2,
-and the three published replications, langgraph#8039 as K1a, #8796 as K3, and #8764 as K4) must come out
-as predicted, in its outcomes and its observations, under this commit, the frozen checker, and the same
-environment before any `new-evidence` cell is authorized. A replication that disagrees with its published observation opens a harness investigation; it
+the three published replications, langgraph#8039 as K1a, #8796 as K3, and #8764 as K4, and, in the N8
+mitigation tranche, the fence's two controls, C1-w1-sync-fenced and N8-placebo) must come out
+as predicted, in its outcomes, its observations, and, where it predicts one, its contract, under this
+commit, the frozen checker, and the same environment before any `new-evidence` cell is authorized. A replication that disagrees with its published observation opens a harness investigation; it
 is never a finding. The specification's C11 bar is 19 of 20; these cells are deterministic, so the gate asks
 for every valid trial, and a split marks the cell UNSTABLE before it can count as a replication.
 
@@ -181,6 +190,86 @@ tranche is the smallest set that asks one question legitimately.
   recorded. The combined case, concurrent writers and an effect in one real history, is not itself observed
   before N8: K1a validates the effect side and K3 the fork side, each on its own, and a control that
   observed both together would be N8.
+
+## The N8 mitigation tranche (2026-10-19)
+
+Declared before any batch of it ran, after N8's batch (N8-gh39061196254-1) was accepted: every anomaly a
+GAP under LGP-DT in 20 of 20 trials, no violation of a documented guarantee. The study asks what two
+mitigations do to that composition, each alone and together, against the same schedule run again as a
+baseline. It is a controlled evaluation of documented-but-unspecified behavior, not a search for a new bug,
+and it claims no novelty for either mechanism (fencing tokens and idempotency keys are standard practice).
+
+- **Variants.** Four new-evidence cells of N8's schedule, which differ only in the scenario's `variant`
+  (and in name, cell id, and master seed, which the hash covers): N8-base (nothing), N8-F
+  (`fence: enforce`), N8-I (`idempotent_effects: true`), N8-FI (both). Each is a separate batch of N=20.
+  The archived N8 batch stands as it ran and is reported beside them; it is never pooled with N8-base
+  (different pre-registration commits), and N8 is deferred from this tranche for that reason.
+- **The fence** (`crashcourt.mitigation.fence`). The dispatcher issues a per-thread ownership epoch with
+  every dispatch and redelivery; the run carries it; the worker claims the thread for it in one committed
+  statement before the graph reads anything, and its pool binds it to every connection the run checks out
+  (`crashcourt.epoch`, a session setting); a BEFORE INSERT trigger on `checkpoints` and `checkpoint_writes`
+  reads the owner row FOR SHARE and rejects a write whose session epoch is not the owner's, before ON
+  CONFLICT is resolved, so a stale insert that would have been a silent DO NOTHING is rejected too; the
+  share lock holds until the writing transaction ends, so a claim waits for an in-flight write of the
+  previous owner. The saver is unchanged. Proved narrowly before this declaration
+  (tests/integration/test_fence.py, on the canonical images): the stale checkpoint put and task writes are
+  rejected inside their transactions and leave no row, the blob of the rejected put included; the DO
+  NOTHING case is rejected; a claim blocks on an open write of the previous owner until it commits; a
+  session without an epoch, or a thread without an owner, cannot write; the placebo decides the same and
+  rejects nothing; a database the fence was removed from behaves as setup made it; a single-writer batch
+  under the fence claims every run and rejects nothing. Its limit is the design's: the epoch is a session
+  setting a trusted worker binds, not a credential; a worker that binds another run's epoch defeats it.
+- **The idempotent sink** (`crashcourt.sink.ledger`, `apply_once`). At most one applied effect per logical
+  op, decided and committed in the same exclusive transaction as the row, with a unique partial index over
+  the applied rows as the backstop; every attempt stays a row of the hash chain with its status (`applied`
+  or `duplicate`), so the evidence of what each worker requested is complete and the worker's recorded
+  answer is never the evidence. A ledger opened without it is the file it always was (tests prove the
+  schema, meta, and rows unchanged).
+- **The contract** (`crashcourt.mitigation.contract`, `n8-mitigation-v1`, pinned under `mitigation`). Read
+  from the snapshot, the ledger's export, the histories, and the fence's owner record, independently of the
+  checker: the fork; the head (the largest checkpoint id, the saver's "latest") and whether the acknowledged
+  run wrote it; the stale run's writes after it resumed (causally: the redelivery before the releases, the
+  releases before the stale run's `fp.action`, no clock), how many were attempted, durable, fenced, or
+  raised otherwise; per logical op the requests, the applied and duplicate rows, and `logical`:
+  EXACTLY_ONCE, DUPLICATED, LOST, NONE (names after mstevens843/crashpoint); and, with exactly one applied
+  row, whether the head's `executed` channel names its attempt (CONSISTENT, INCONSISTENT, NOT_APPLICABLE).
+  Logical-op safety and attempt-label consistency are judged apart; neither is folded into the other, and
+  no measure is scored as passing when it is not applicable. A trial the contract cannot read in full
+  records its problems and no measurement. `crashcourt mitigation contract` writes `contract.json` per
+  trial and `mitigation.json` per batch (counts with Wilson intervals, the judgement against the cell's
+  `contract` prediction, and checker v1's outcomes beside) and refuses to overwrite a differing record.
+- **Predictions (contract).** N8-base and N8-placebo: the fork, A's stale branch as the head (`executed`
+  naming attempt 1), the acknowledged run not the head, at least four stale writes attempted after the
+  release of which not none are durable and none fenced, two charges requested and two applied:
+  DUPLICATED, consistency not applicable. N8-F: no fork, B's branch as the head (attempt 2), the
+  acknowledged run the head, at least two stale writes attempted, none durable, every one fenced, two
+  applied: DUPLICATED (the fence cannot undo A's charge). N8-I: the fork and A's stale head as the
+  baseline, one applied and one duplicate: EXACTLY_ONCE, CONSISTENT (the head names attempt 1, the applied
+  one), while the acknowledged run is still not the head. N8-FI: no fork, B's head (attempt 2), every stale
+  write fenced, one applied and one duplicate: EXACTLY_ONCE and INCONSISTENT, the predicted residual.
+  C1-w1-sync-fenced: no stale run, one charge applied, EXACTLY_ONCE, CONSISTENT, the owner row at the
+  acknowledged run's epoch. Under a fence the owner row must hold the acknowledged run's epoch.
+- **Predictions (checker v1).** N8-base, N8-placebo, and N8-I: N8's (I4, I5a, I7a, I6a GAP; I2 not
+  exercised; nothing else). N8-F and N8-FI: I4 GAP (two rows, whatever their statuses: v1 counts rows),
+  I7a GAP (attempt 1's charge with no durable record of its run, as v1 read K1a), I5a and I6a without
+  anomaly (no fork, the acknowledged head), I2 not exercised. The I5a, I6a, and I7a predictions for these
+  two cells are derived from how v1 read K1a and N8 (their notes say so), not from a run of a fenced
+  trial, which none precedes them; they are predicted firmly all the same, so a disagreement is flagged
+  `differs` like any other, recorded as a reading of v1 to investigate, never a finding and never a reason
+  to change v1 or the contract's judgement.
+- **Controls.** The first tranche's eight instrument cells again, under this commit; C1-w1-sync-fenced
+  (the fence's C1: one writer, every run claims, nothing rejected) and N8-placebo (the fence's C3: the
+  disarmed fence, which must read as N8-base on every contract measure and every invariant), both
+  instrument cells; C5 and C9 as the committed controls reports from 871f773, whose sources this commit
+  still holds; the sink's baseline unchanged, by test. The gate refuses every variant until all ten
+  instrument cells are as predicted in one tranche job.
+- **Order and dispatch.** tranche.yml once (the ten instrument cells, one job); then experiment.yml once
+  per variant with that run's id, N8-base, N8-F, N8-I, N8-FI, each classified, verified, aggregated, and
+  judged by the contract in its own job. No development run of any variant precedes the formal ones, and
+  no prediction is changed after any of them. A variant that is UNSTABLE or differs is reported as such.
+- **Performance.** Not part of these batches. A later measurement interleaves baseline and fenced runs
+  after a warm-up and reports p50, p99, and throughput with the raw distributions and the runner's
+  details; three rounds give no interval.
 
 ## Rulings applied (2026-10-17)
 
@@ -298,7 +387,7 @@ My rulings on T-10's readings, applied here before the freeze:
 | N5 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP; I7a: GAP; I7c: GAP; I8: GAP | - | deferred |
 | N6 | new-evidence | new-evidence | w1 | sync | F08 | 2 | 20 | I5a: GAP | - | deferred |
 | N7 | new-evidence | new-evidence | w1 | sync | F07 | 1 | 20 | I4: GAP | - | unknown, deferred |
-| N8 | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP; I2: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger charge: 2 rows, attempts [1, 2] |  |
+| N8 | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP; I2: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger charge: 2 rows, attempts [1, 2] | deferred |
 | N9 | new-evidence | new-evidence | w1 | sync | F13 | 1 | 20 | I1b: PASS | - | deferred |
 | N10 | new-evidence | new-evidence | w1 | sync | F12 | 1 | 20 | I1a: PASS; I1b: PASS; I11: PASS; I4: NO_ANOMALY_UNSPECIFIED | - | deferred |
 | N11 | new-evidence | new-evidence | w1 | sync | F01 | 2 | 20 | I7c: PASS or NO_ANOMALY_UNSPECIFIED | - | unknown, deferred |
@@ -308,6 +397,12 @@ My rulings on T-10's readings, applied here before the freeze:
 | A2 | new-evidence | new-evidence | w1 | async | F01 | 2 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP | - | pending, deferred |
 | A3 | new-evidence | new-evidence | w1 | async | F11 | 1 | 20 | I2: NO_ANOMALY_UNSPECIFIED or GAP; I11: NO_ANOMALY_UNSPECIFIED | - | unknown, pending, deferred |
 | A4 | new-evidence | new-evidence | w1 | async | F12 | 1 | 20 | I4: NO_ANOMALY_UNSPECIFIED; *: NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | - | pending, deferred |
+| C1-w1-sync-fenced | instrument | control (C1-fence) | w1 | sync | - | 1 | 50 | I4: NO_ANOMALY_UNSPECIFIED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger charge: 1 row, attempts [1], statuses ['applied'] | contract |
+| N8-placebo | instrument | control (C3-fence) | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP; I2: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger charge: 2 rows, attempts [1, 2], statuses ['applied', 'applied'] | contract |
+| N8-base | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP; I2: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger charge: 2 rows, attempts [1, 2], statuses ['applied', 'applied'] | contract |
+| N8-F | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I7a: GAP; I5a: PASS or NO_ANOMALY_UNSPECIFIED; I6a: PASS or NO_ANOMALY_UNSPECIFIED; I2: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger charge: 2 rows, attempts [1, 2], statuses ['applied', 'applied'] | contract |
+| N8-I | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I5a: GAP; I7a: GAP; I6a: GAP; I2: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger charge: 2 rows, attempts [1, 2], statuses ['applied', 'duplicate'] | contract |
+| N8-FI | new-evidence | new-evidence | w1 | sync | F05 | 2 | 20 | I4: GAP; I7a: GAP; I5a: PASS or NO_ANOMALY_UNSPECIFIED; I6a: PASS or NO_ANOMALY_UNSPECIFIED; I2: NOT_EXERCISED; *: PASS or NO_ANOMALY_UNSPECIFIED or NOT_EXERCISED | ledger charge: 2 rows, attempts [1, 2], statuses ['applied', 'duplicate'] | contract |
 
 ## Deviations
 
@@ -333,6 +428,21 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
   batch of the tranche from now on: the eight instrument cells run again under it, and the batches of
   6e9cb1e's tranche run (39052757550) stay archived as they ran and are not reused as qualifying batches.
 
+- **N8: deferred from the N8 mitigation tranche, 2026-10-19, after its batch.** N8 ran once, as
+  N8-gh39061196254-1 (run 39061196254, pre-registration and run commit cc6b13a), as predicted in 20 of 20
+  trials. Its entry, predictions, and observation are unchanged; `deferred` records that the batch stands
+  and that N8-base, the same schedule under this commit, is the study's baseline as a separate batch that
+  is never pooled with it. The eight instrument cells of the first tranche keep their entries and run again
+  under this commit; the batches of the first tranche's run (39059806122) are not reused as qualifying
+  batches.
+- **Ledger observations: `statuses`, added 2026-10-19.** The ledger observation may now name each row's
+  status in the sink's order, for cells under the idempotent sink. The existing observations name none,
+  so their matching is unchanged.
+- **N8-F and N8-FI predict checker v1 by derivation, declared 2026-10-19 before any batch.** Their v1
+  predictions for I5a, I6a, and I7a are derived from K1a's and N8's readings (above), not observed, and
+  are predicted firmly rather than `unknown`, so that a disagreement is flagged and investigated as a
+  reading of v1; it changes neither v1 nor the contract's judgement.
+
 ## Pre-registration data
 
 ```json
@@ -344,6 +454,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
   "cells": [
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C1",
       "deferred": null,
       "deterministic": true,
@@ -385,6 +496,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C1",
       "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
@@ -426,6 +538,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C1",
       "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
@@ -468,6 +581,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C1",
       "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
@@ -510,6 +624,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C1",
       "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
@@ -552,6 +667,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C1",
       "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
@@ -593,6 +709,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C1",
       "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
@@ -634,6 +751,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C1",
       "deferred": null,
       "deterministic": true,
@@ -676,6 +794,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C1",
       "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
@@ -718,6 +837,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C3",
       "deferred": null,
       "deterministic": true,
@@ -759,6 +879,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C3",
       "deferred": "no cell of the first discovery tranche runs this workload variant or durability, so this control gates nothing in it",
       "deterministic": true,
@@ -801,6 +922,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C3",
       "deferred": null,
       "deterministic": true,
@@ -843,6 +965,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C2",
       "deferred": null,
       "deterministic": true,
@@ -899,6 +1022,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "misuse",
       "deferred": "the misuse controls gate no cell of the first discovery tranche; deferred with the misuse workload",
       "deterministic": true,
@@ -919,7 +1043,8 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
           "effect": "precheck",
           "note": "attempt 1 before interrupt() in start-1, attempt 2 when approval re-runs on resume",
           "rows": 2,
-          "source": "ledger"
+          "source": "ledger",
+          "statuses": null
         },
         {
           "attempts": [
@@ -928,7 +1053,8 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
           "effect": "charge",
           "note": null,
           "rows": 1,
-          "source": "ledger"
+          "source": "ledger",
+          "statuses": null
         }
       ],
       "pending": null,
@@ -967,6 +1093,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "misuse",
       "deferred": "the misuse controls gate no cell of the first discovery tranche; deferred with the misuse workload",
       "deterministic": true,
@@ -987,14 +1114,16 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
           "effect": "precheck",
           "note": null,
           "rows": 2,
-          "source": "ledger"
+          "source": "ledger",
+          "statuses": null
         },
         {
           "attempts": [],
           "effect": "charge",
           "note": null,
           "rows": 0,
-          "source": "ledger"
+          "source": "ledger",
+          "statuses": null
         }
       ],
       "pending": null,
@@ -1033,6 +1162,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C11",
       "deferred": null,
       "deterministic": true,
@@ -1053,7 +1183,8 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
           "effect": "charge",
           "note": "langgraph#8039's published observation: attempt 1 charged before the kill, attempt 2 after the redelivery",
           "rows": 2,
-          "source": "ledger"
+          "source": "ledger",
+          "statuses": null
         }
       ],
       "pending": null,
@@ -1099,6 +1230,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C11",
       "deferred": null,
       "deterministic": true,
@@ -1154,6 +1286,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": "C11",
       "deferred": null,
       "deterministic": true,
@@ -1207,6 +1340,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": null,
       "deferred": "the committed-writes form of the stale-owner question; deferred so that N8, which holds the writes uncommitted, does not rest on its answer",
       "deterministic": true,
@@ -1240,6 +1374,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "unknown",
+      "contract": null,
       "control": null,
       "deferred": "needs a client retry after client.fail, a schedule step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
@@ -1279,6 +1414,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "unknown",
+      "contract": null,
       "control": null,
       "deferred": "needs a client retry after client.fail, a schedule step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
@@ -1319,6 +1455,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": null,
       "deferred": "needs a client retry after client.fail, a schedule step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
@@ -1351,6 +1488,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "unknown",
+      "contract": null,
       "control": null,
       "deferred": "needs a client retry after client.fail, a schedule step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
@@ -1384,6 +1522,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": null,
       "deferred": "needs a release triggered by a put_writes.return, a step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
@@ -1437,6 +1576,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": null,
       "deferred": "needs a release triggered by a put_writes.return, a step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
@@ -1469,6 +1609,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "unknown",
+      "contract": null,
       "control": null,
       "deferred": "a second resume to the same worker after client.ok (F07): outside the first discovery tranche, which asks one question",
       "deterministic": true,
@@ -1501,8 +1642,9 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": null,
-      "deferred": null,
+      "deferred": "ran as its only batch, N8-gh39061196254-1 (Actions run 39061196254, pre-registration and run commit cc6b13a), which stands as it ran and is reported beside the mitigation study; N8-base is its same-job baseline, the same schedule as a separate batch under this commit, never pooled with it",
       "deterministic": true,
       "durability": "sync",
       "escalate_if": "UNSTABLE, or any anomaly beyond the predicted ones",
@@ -1521,7 +1663,8 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
           "effect": "charge",
           "note": "the effect ledger's own record, independent of the checker: A's charge (attempt 1) before the holds, B's (attempt 2) after the takeover; added 2026-10-17 before any N8 batch (Deviations)",
           "rows": 2,
-          "source": "ledger"
+          "source": "ledger",
+          "statuses": null
         }
       ],
       "pending": null,
@@ -1581,6 +1724,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": null,
       "deferred": "needs a database restart at a failpoint and a client retry, steps the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
@@ -1613,6 +1757,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": null,
       "deferred": "needs a toxic injected and healed at a failpoint (F12), a step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
@@ -1666,6 +1811,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "unknown",
+      "contract": null,
       "control": null,
       "deferred": "a kill with committed resume writes under reject (F01 on W1 reject): outside the first discovery tranche, which asks one question",
       "deterministic": true,
@@ -1699,6 +1845,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "unknown",
+      "contract": null,
       "control": null,
       "deferred": "needs a toxic injected and healed at a failpoint (F11), a step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
@@ -1731,6 +1878,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": null,
       "deferred": "needs a toxic injected at a failpoint (F10), a step the scenario model does not have (T-12's scope); a later tranche",
       "deterministic": true,
@@ -1763,6 +1911,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": null,
       "deferred": "the landmark occurrences under async are not audited (pending); no async cell is in the first discovery tranche",
       "deterministic": true,
@@ -1810,6 +1959,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": null,
       "deferred": "the landmark occurrences under async are not audited (pending); no async cell is in the first discovery tranche",
       "deterministic": true,
@@ -1843,6 +1993,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "unknown",
+      "contract": null,
       "control": null,
       "deferred": "the landmark occurrences under async are not audited (pending); no async cell is in the first discovery tranche",
       "deterministic": true,
@@ -1883,6 +2034,7 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     },
     {
       "confidence": "predicted",
+      "contract": null,
       "control": null,
       "deferred": "the landmark occurrences under async are not audited (pending); no async cell is in the first discovery tranche",
       "deterministic": true,
@@ -1919,6 +2071,599 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
       "scenario_sha256": null,
       "trigger": "N10 under async: pause at L-EXC (occurrence 2 of resume-1's put), put.before; downstream latency 24 h; release; heal after a fixed delay",
       "workers": 1,
+      "workload": "w1"
+    },
+    {
+      "confidence": "predicted",
+      "contract": {
+        "acknowledged_is_head": true,
+        "applied": 1,
+        "attempt_consistency": "CONSISTENT",
+        "duplicates": 0,
+        "fence_consistent": true,
+        "fork": false,
+        "head_attempts": [
+          1
+        ],
+        "logical": "EXACTLY_ONCE",
+        "note": "the fence changes nothing for a single writer: no stale run, nothing fenced",
+        "requested": 1,
+        "stale": null
+      },
+      "control": "C1-fence",
+      "deferred": null,
+      "deterministic": true,
+      "durability": "sync",
+      "escalate_if": "any fenced write (a saver.put.raise or saver.put_writes.raise carrying the fence's error), any anomaly outside the effect model, or more than 2% INVALID: a harness investigation, never a finding",
+      "evidence": "control",
+      "fault": null,
+      "hypothesis": null,
+      "id": "C1-w1-sync-fenced",
+      "master_seed": "C1-w1-sync-fenced-v1",
+      "n": 50,
+      "observations": [
+        {
+          "attempts": [
+            1
+          ],
+          "effect": "charge",
+          "note": "one charge, applied, as C1-w1-sync shows without the fence",
+          "rows": 1,
+          "source": "ledger",
+          "statuses": [
+            "applied"
+          ]
+        }
+      ],
+      "pending": null,
+      "phase": "instrument",
+      "predicted": [
+        {
+          "expect": [
+            "NO_ANOMALY_UNSPECIFIED"
+          ],
+          "invariant": "I4",
+          "note": null
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": null
+        }
+      ],
+      "replication_of": null,
+      "scenario": "scenarios/mitigation/C1-w1-sync-fenced.yaml",
+      "scenario_sha256": "1d1673cdc9741e9bc56f96d392a04e93eba78ab0897e62f23faea00500faf9d0",
+      "trigger": "one worker, sequential operations, no faults and no arms, under the ownership fence (variant fence: enforce): every run claims its thread's next epoch, nothing is stale",
+      "workers": 1,
+      "workload": "w1"
+    },
+    {
+      "confidence": "predicted",
+      "contract": {
+        "acknowledged_is_head": false,
+        "applied": 2,
+        "attempt_consistency": "NOT_APPLICABLE",
+        "duplicates": 0,
+        "fence_consistent": true,
+        "fork": true,
+        "head_attempts": [
+          1
+        ],
+        "logical": "DUPLICATED",
+        "note": "N8-base's contract on every measure, with the owner row at B's epoch",
+        "requested": 2,
+        "stale": {
+          "attempted_min": 4,
+          "every_attempt_fenced": false,
+          "none_durable": false,
+          "resumed": true
+        }
+      },
+      "control": "C3-fence",
+      "deferred": null,
+      "deterministic": true,
+      "durability": "sync",
+      "escalate_if": "any contract measure or invariant other than N8-base's prediction: the fence's plumbing itself changed the behavior; a harness investigation, never a finding",
+      "evidence": "control",
+      "fault": "F05",
+      "hypothesis": null,
+      "id": "N8-placebo",
+      "master_seed": "N8-placebo-v1",
+      "n": 20,
+      "observations": [
+        {
+          "attempts": [
+            1,
+            2
+          ],
+          "effect": "charge",
+          "note": "as N8: both charges applied",
+          "rows": 2,
+          "source": "ledger",
+          "statuses": [
+            "applied",
+            "applied"
+          ]
+        }
+      ],
+      "pending": null,
+      "phase": "instrument",
+      "predicted": [
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I4",
+          "note": "two charge rows, attempts 1 and 2 (LGP-DT)"
+        },
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I5a",
+          "note": "the fork at the checkpoint execute ran on"
+        },
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I7a",
+          "note": "B's completed branch outside the head's lineage"
+        },
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I6a",
+          "note": "A's stale branch selected as the head"
+        },
+        {
+          "expect": [
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I2",
+          "note": "no interruption by checker v1's definition"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": "no anomaly beyond the four named"
+        }
+      ],
+      "replication_of": null,
+      "scenario": "scenarios/mitigation/N8-placebo.yaml",
+      "scenario_sha256": "f3a39236f40532a133fa9cb8b680f250af46b8db869ea6f7c59b5dc3d2ab8696",
+      "trigger": "A held twice at the calls after execute, with the charge already fired: at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before, so execute's writes cannot commit, and at L-EXC (occurrence 2 of resume-1's put), put.before, so A's loop cannot go on; with both held, resume-1 redelivered to B; after B's client.ok, both released: a held pause in C2's shape, not SIGSTOP; the disarmed fence (variant fence: placebo): epochs, claims, bindings, and the trigger, which decides and rejects nothing",
+      "workers": 2,
+      "workload": "w1"
+    },
+    {
+      "confidence": "predicted",
+      "contract": {
+        "acknowledged_is_head": false,
+        "applied": 2,
+        "attempt_consistency": "NOT_APPLICABLE",
+        "duplicates": 0,
+        "fence_consistent": null,
+        "fork": true,
+        "head_attempts": [
+          1
+        ],
+        "logical": "DUPLICATED",
+        "note": "N8's archived batch read by the contract: the fork, A's stale branch as the head, four stale writes attempted after the release of which three were durable (the held execute write hit ON CONFLICT DO NOTHING behind B's), both charges applied",
+        "requested": 2,
+        "stale": {
+          "attempted_min": 4,
+          "every_attempt_fenced": false,
+          "none_durable": false,
+          "resumed": true
+        }
+      },
+      "control": null,
+      "deferred": null,
+      "deterministic": true,
+      "durability": "sync",
+      "escalate_if": "UNSTABLE on any contract measure or invariant; a stale write that raised anything but the fence's error (other_errors); an unreadable trial; or any anomaly beyond the predicted ones: a harness investigation first, never a finding",
+      "evidence": "new-evidence",
+      "fault": "F05",
+      "hypothesis": null,
+      "id": "N8-base",
+      "master_seed": "N8-base-v1",
+      "n": 20,
+      "observations": [
+        {
+          "attempts": [
+            1,
+            2
+          ],
+          "effect": "charge",
+          "note": "as N8: both charges applied",
+          "rows": 2,
+          "source": "ledger",
+          "statuses": [
+            "applied",
+            "applied"
+          ]
+        }
+      ],
+      "pending": null,
+      "phase": "new-evidence",
+      "predicted": [
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I4",
+          "note": "two charge rows, attempts 1 and 2 (LGP-DT)"
+        },
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I5a",
+          "note": "the fork at the checkpoint execute ran on"
+        },
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I7a",
+          "note": "B's completed branch outside the head's lineage"
+        },
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I6a",
+          "note": "A's stale branch selected as the head"
+        },
+        {
+          "expect": [
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I2",
+          "note": "no interruption by checker v1's definition"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": "no anomaly beyond the four named"
+        }
+      ],
+      "replication_of": null,
+      "scenario": "scenarios/mitigation/N8-base.yaml",
+      "scenario_sha256": "2d75e0bf034ab21ed30010d2825a9b4e904dcf5b84002f7d2f95145fe5b23f45",
+      "trigger": "A held twice at the calls after execute, with the charge already fired: at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before, so execute's writes cannot commit, and at L-EXC (occurrence 2 of resume-1's put), put.before, so A's loop cannot go on; with both held, resume-1 redelivered to B; after B's client.ok, both released: a held pause in C2's shape, not SIGSTOP; no variant: the mitigation study's baseline, N8's schedule as a separate batch of the same job",
+      "workers": 2,
+      "workload": "w1"
+    },
+    {
+      "confidence": "predicted",
+      "contract": {
+        "acknowledged_is_head": true,
+        "applied": 2,
+        "attempt_consistency": "NOT_APPLICABLE",
+        "duplicates": 0,
+        "fence_consistent": true,
+        "fork": false,
+        "head_attempts": [
+          2
+        ],
+        "logical": "DUPLICATED",
+        "note": "every stale write A attempts after its release is fenced and none is durable; B's branch is the head; the charge is still applied twice, which the fence cannot undo",
+        "requested": 2,
+        "stale": {
+          "attempted_min": 2,
+          "every_attempt_fenced": true,
+          "none_durable": true,
+          "resumed": true
+        }
+      },
+      "control": null,
+      "deferred": null,
+      "deterministic": true,
+      "durability": "sync",
+      "escalate_if": "UNSTABLE on any contract measure or invariant; a stale write that raised anything but the fence's error (other_errors); an unreadable trial; or any anomaly beyond the predicted ones: a harness investigation first, never a finding",
+      "evidence": "new-evidence",
+      "fault": "F05",
+      "hypothesis": null,
+      "id": "N8-F",
+      "master_seed": "N8-F-v1",
+      "n": 20,
+      "observations": [
+        {
+          "attempts": [
+            1,
+            2
+          ],
+          "effect": "charge",
+          "note": "the ordinary sink applies both charges",
+          "rows": 2,
+          "source": "ledger",
+          "statuses": [
+            "applied",
+            "applied"
+          ]
+        }
+      ],
+      "pending": null,
+      "phase": "new-evidence",
+      "predicted": [
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I4",
+          "note": "two charge rows in the ledger whatever their statuses; checker v1 counts rows"
+        },
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I7a",
+          "note": "orphaned effect: attempt 1 is not in the head lineage, as v1 read K1a's attempt 1, since A's execute writes are rejected by the fence; derived, not observed"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED"
+          ],
+          "invariant": "I5a",
+          "note": "no fork: A's checkpoint put is rejected; derived, not observed"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED"
+          ],
+          "invariant": "I6a",
+          "note": "the head is B's, the acknowledged run's; derived, not observed"
+        },
+        {
+          "expect": [
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I2",
+          "note": "as N8"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": "no anomaly beyond the two named"
+        }
+      ],
+      "replication_of": null,
+      "scenario": "scenarios/mitigation/N8-F.yaml",
+      "scenario_sha256": "148d357ea13b5bc083f20aa0a2810b8db05b06c0bcc15ca2eb0b985e6bcff8f1",
+      "trigger": "A held twice at the calls after execute, with the charge already fired: at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before, so execute's writes cannot commit, and at L-EXC (occurrence 2 of resume-1's put), put.before, so A's loop cannot go on; with both held, resume-1 redelivered to B; after B's client.ok, both released: a held pause in C2's shape, not SIGSTOP; the ownership fence (variant fence: enforce)",
+      "workers": 2,
+      "workload": "w1"
+    },
+    {
+      "confidence": "predicted",
+      "contract": {
+        "acknowledged_is_head": false,
+        "applied": 1,
+        "attempt_consistency": "CONSISTENT",
+        "duplicates": 1,
+        "fence_consistent": null,
+        "fork": true,
+        "head_attempts": [
+          1
+        ],
+        "logical": "EXACTLY_ONCE",
+        "note": "one applied charge, A's; the fork and A's stale head as in N8-base, which the sink cannot prevent; the head names attempt 1, the applied one",
+        "requested": 2,
+        "stale": {
+          "attempted_min": 4,
+          "every_attempt_fenced": false,
+          "none_durable": false,
+          "resumed": true
+        }
+      },
+      "control": null,
+      "deferred": null,
+      "deterministic": true,
+      "durability": "sync",
+      "escalate_if": "UNSTABLE on any contract measure or invariant; a stale write that raised anything but the fence's error (other_errors); an unreadable trial; or any anomaly beyond the predicted ones: a harness investigation first, never a finding",
+      "evidence": "new-evidence",
+      "fault": "F05",
+      "hypothesis": null,
+      "id": "N8-I",
+      "master_seed": "N8-I-v1",
+      "n": 20,
+      "observations": [
+        {
+          "attempts": [
+            1,
+            2
+          ],
+          "effect": "charge",
+          "note": "B's charge recorded as a duplicate of A's",
+          "rows": 2,
+          "source": "ledger",
+          "statuses": [
+            "applied",
+            "duplicate"
+          ]
+        }
+      ],
+      "pending": null,
+      "phase": "new-evidence",
+      "predicted": [
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I4",
+          "note": "two charge rows, attempts 1 and 2 (LGP-DT)"
+        },
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I5a",
+          "note": "the fork at the checkpoint execute ran on"
+        },
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I7a",
+          "note": "B's completed branch outside the head's lineage"
+        },
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I6a",
+          "note": "A's stale branch selected as the head"
+        },
+        {
+          "expect": [
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I2",
+          "note": "no interruption by checker v1's definition"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": "no anomaly beyond the four named"
+        }
+      ],
+      "replication_of": null,
+      "scenario": "scenarios/mitigation/N8-I.yaml",
+      "scenario_sha256": "0a2e04c9c16ebb8f5704b38a1bde09f82b0d0e385cb42b2395b79538ac75b3d6",
+      "trigger": "A held twice at the calls after execute, with the charge already fired: at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before, so execute's writes cannot commit, and at L-EXC (occurrence 2 of resume-1's put), put.before, so A's loop cannot go on; with both held, resume-1 redelivered to B; after B's client.ok, both released: a held pause in C2's shape, not SIGSTOP; the idempotent effect sink (variant idempotent_effects: true)",
+      "workers": 2,
+      "workload": "w1"
+    },
+    {
+      "confidence": "predicted",
+      "contract": {
+        "acknowledged_is_head": true,
+        "applied": 1,
+        "attempt_consistency": "INCONSISTENT",
+        "duplicates": 1,
+        "fence_consistent": true,
+        "fork": false,
+        "head_attempts": [
+          2
+        ],
+        "logical": "EXACTLY_ONCE",
+        "note": "the predicted residual: the selected head, B's, names attempt 2 while the applied charge is attempt 1; logical-op safety holds, attempt-label consistency does not",
+        "requested": 2,
+        "stale": {
+          "attempted_min": 2,
+          "every_attempt_fenced": true,
+          "none_durable": true,
+          "resumed": true
+        }
+      },
+      "control": null,
+      "deferred": null,
+      "deterministic": true,
+      "durability": "sync",
+      "escalate_if": "UNSTABLE on any contract measure or invariant; a stale write that raised anything but the fence's error (other_errors); an unreadable trial; or any anomaly beyond the predicted ones: a harness investigation first, never a finding",
+      "evidence": "new-evidence",
+      "fault": "F05",
+      "hypothesis": null,
+      "id": "N8-FI",
+      "master_seed": "N8-FI-v1",
+      "n": 20,
+      "observations": [
+        {
+          "attempts": [
+            1,
+            2
+          ],
+          "effect": "charge",
+          "note": "B's charge recorded as a duplicate of A's",
+          "rows": 2,
+          "source": "ledger",
+          "statuses": [
+            "applied",
+            "duplicate"
+          ]
+        }
+      ],
+      "pending": null,
+      "phase": "new-evidence",
+      "predicted": [
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I4",
+          "note": "two charge rows in the ledger whatever their statuses; checker v1 counts rows"
+        },
+        {
+          "expect": [
+            "GAP"
+          ],
+          "invariant": "I7a",
+          "note": "orphaned effect: attempt 1 is not in the head lineage, as v1 read K1a's attempt 1, since A's execute writes are rejected by the fence; derived, not observed"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED"
+          ],
+          "invariant": "I5a",
+          "note": "no fork: A's checkpoint put is rejected; derived, not observed"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED"
+          ],
+          "invariant": "I6a",
+          "note": "the head is B's, the acknowledged run's; derived, not observed"
+        },
+        {
+          "expect": [
+            "NOT_EXERCISED"
+          ],
+          "invariant": "I2",
+          "note": "as N8"
+        },
+        {
+          "expect": [
+            "PASS",
+            "NO_ANOMALY_UNSPECIFIED",
+            "NOT_EXERCISED"
+          ],
+          "invariant": "*",
+          "note": "no anomaly beyond the two named"
+        }
+      ],
+      "replication_of": null,
+      "scenario": "scenarios/mitigation/N8-FI.yaml",
+      "scenario_sha256": "702dd81eb1ba5fa621fe576cdf9af117ef21f32a24c7333f00285a352f59569b",
+      "trigger": "A held twice at the calls after execute, with the charge already fired: at L-EXW (occurrence 3 of resume-1's put_writes), put_writes.before, so execute's writes cannot commit, and at L-EXC (occurrence 2 of resume-1's put), put.before, so A's loop cannot go on; with both held, resume-1 redelivered to B; after B's client.ok, both released: a held pause in C2's shape, not SIGSTOP; both: the ownership fence and the idempotent sink (variant fence: enforce, idempotent_effects: true)",
+      "workers": 2,
       "workload": "w1"
     }
   ],
@@ -1995,6 +2740,14 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
     }
   ],
   "max_invalid_share": 0.02,
+  "mitigation": {
+    "contract": "n8-mitigation-v1",
+    "files": {
+      "src/crashcourt/mitigation/contract.py": "4d44072599f7b2d1e7e6755994017b7340d81ed70eb1c37b599d9b04115c7914",
+      "src/crashcourt/mitigation/fence.py": "64fcc53ce11b6bf9caf5dea882bbbf28be144ad6e2e5582286f8ec3526618743",
+      "src/crashcourt/sink/ledger.py": "f80a6753d9ba8889aa4728016de37507b394059977df00ef5b2e19760e1350c2"
+    }
+  },
   "name": "first-matrix",
   "seeds": {
     "derivation": "sha256(json([master_seed, cell, trial]))",
@@ -2002,8 +2755,8 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
   },
   "state": "final",
   "tranche": {
-    "name": "first-discovery",
-    "note": "The smallest tranche that answers one new-evidence question, N8, under the controls and replications its mechanisms rest on: C1 and C3 on both workloads under sync durability, K1a (redelivery with uncommitted writes and a duplicate effect) and K3 (a held takeover and a stale write), and K2 and K4, which the methodology requires before any new claim (C2, C11). Declared 2026-10-17, before any batch of the tranche."
+    "name": "n8-mitigation",
+    "note": "The N8 mitigation study, declared 2026-10-19 before any batch of it: the first tranche's eight instrument cells again (C1 and C3 on both workloads under sync durability, K1a, K3, K2, K4), two controls for the fence (C1-w1-sync-fenced, its single-writer negative control, and N8-placebo, the disarmed fence, which must read as N8-base), and the four variants of N8's schedule as new-evidence cells: N8-base (nothing), N8-F (the fence), N8-I (the idempotent sink), N8-FI (both). N8 itself ran once, as N8-gh39061196254-1 (Actions run 39061196254, pre-registration and run commit cc6b13a), and is deferred: its batch stands as it ran, and N8-base is its same-job baseline, a separate batch under this commit, never pooled with it."
   },
   "v": 1
 }

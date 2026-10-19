@@ -38,6 +38,7 @@ from crashcourt.experiment.gate import (
 )
 from crashcourt.experiment.preregistration import (
     BUILDER_PATH,
+    MITIGATION_PATHS,
     PREREGISTRATION_PATH,
     Preregistration,
     block,
@@ -71,6 +72,26 @@ HOST = {"cpu_count": 4, "memory_gib": 16}
 #: The TrialScenario builder as the fixture repository commits it, and its pinned hash.
 BUILDER_TEXT = '"""The TrialScenario builder, as pre-registered."""\n'
 BUILDER_SHA = hashlib.sha256(BUILDER_TEXT.encode()).hexdigest()
+#: The mitigation contract and the mechanisms it judges, as the fixture repository commits them,
+#: and the pin a pre-registration of the N8 mitigation study names.
+MITIGATION_TEXTS = {p: f'"""{p}, as pre-registered."""\n' for p in MITIGATION_PATHS}
+MITIGATION_PIN: dict[str, Any] = {
+    "contract": "n8-mitigation-v1",
+    "files": {p: hashlib.sha256(t.encode()).hexdigest() for p, t in MITIGATION_TEXTS.items()},
+}
+#: A contract prediction for R1's shape: the replacement's charge applied beside the first.
+R1_CONTRACT: dict[str, Any] = {
+    "fork": False,
+    "acknowledged_is_head": True,
+    "head_attempts": [2],
+    "stale": {"resumed": False, "none_durable": True, "every_attempt_fenced": False},
+    "requested": 2,
+    "applied": 2,
+    "duplicates": 0,
+    "logical": "DUPLICATED",
+    "attempt_consistency": "NOT_APPLICABLE",
+    "fence_consistent": None,
+}
 #: The C9 reference report the C9 instrument check names, and the driver it ran.
 C9_REPORT = "research/evidence/c9.json"
 C9_SOURCES = {C9_DRIVER: "reference driver\n"}
@@ -333,6 +354,7 @@ def make_repo(
     freeze = commit(root, {str(FROZEN_PATH): FROZEN_MD}, "freeze the checker")
     files = {f"scenarios/{c}.yaml": f"cell: {c}\n" for c in SCENARIOS}
     files[BUILDER_PATH] = BUILDER_TEXT
+    files.update(MITIGATION_TEXTS)
     files[str(PREREGISTRATION_PATH)] = prereg_text(prereg or prereg_model())
     files[C5_REPORT] = (report or c5_report()).to_json()
     files.update(C5_SOURCES)

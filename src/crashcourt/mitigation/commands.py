@@ -16,6 +16,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "per trial and mitigation.json per batch",
     )
     contract.add_argument("batch", type=Path, nargs="+", help="batch directories")
+    contract.add_argument("--root", type=Path, default=Path(), help="the repository root")
     contract.add_argument(
         "--dry-run", action="store_true", help="print the summary and write nothing"
     )
@@ -52,7 +53,7 @@ def _contract(args: argparse.Namespace) -> int:
             if args.dry_run:
                 summary = summarize(batch, evaluate_batch(batch))
             else:
-                _, summary = write_records(batch)
+                _, summary = write_records(batch, args.root)
         except NotWritten as exc:
             print(f"not written: {exc}")
             status = 1
@@ -64,6 +65,20 @@ def _contract(args: argparse.Namespace) -> int:
         print(_line(summary))
         for unreadable in summary["unreadable"]:
             print(f"  trial {unreadable['trial']}: {'; '.join(unreadable['problems'])}")
+        judgement = summary.get("judgement")
+        if judgement is not None:
+            print(
+                f"  contract: {judgement['status']} ({judgement['trials_as_predicted']} of "
+                f"{judgement['readable']} readable trials as predicted)"
+            )
+            for name, measure in judgement["measures"].items():
+                if measure["mismatches"]:
+                    print(
+                        f"    {name}: predicted {measure['predicted']!r}, "
+                        f"found {measure['mismatches']}"
+                    )
+            if judgement["status"] != "as-predicted":
+                status = 1
         if summary["v1"]:
             print(f"  v1 beside: {json.dumps(summary['v1'], sort_keys=True)}")
     return status

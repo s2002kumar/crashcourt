@@ -1,0 +1,25 @@
+# N8-I: N8's schedule with the idempotent effect sink: at most one applied charge per logical
+# op, every attempt a row of the ledger. No fence, so the stale run's writes land as in N8.
+v: 1
+name: N8-I
+cell: N8-I
+seed: N8-I-v1
+workload: w1
+target: {saver: postgres, driver: async, durability: sync}
+landmarks: langgraph-v1
+workers: [w1, w2]
+variant: {idempotent_effects: true}
+ops:
+  - {id: start-1, worker: w1, thread: t1, after: start, input: {order: order-17}}
+  - {id: resume-1, worker: w1, thread: t1, after: start-1, resume: approve}
+schedule:
+  - on: {fp: put_writes.before, worker: w1, op: resume-1, occurrence: 3}
+    do: {pause: A-writes}
+    landmark: L-EXW
+  - on: {fp: put.before, worker: w1, op: resume-1, occurrence: 2}
+    do: {pause: A-put}
+    landmark: L-EXC
+  - on: {all_paused: [A-writes, A-put]}
+    do: {redeliver: {op: resume-1, to: w2}}
+  - on: {ended: resume-1}
+    do: {release: [A-writes, A-put]}
