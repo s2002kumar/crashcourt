@@ -71,8 +71,11 @@ class SinkClient:
     def health(self) -> dict[str, Any]:
         return self._call("GET", "/health")
 
-    def open_trial(self, trial: TrialId) -> dict[str, Any]:
-        return self._call("POST", "/trials", trial.__dict__)
+    def open_trial(self, trial: TrialId, *, apply_once: bool = False) -> dict[str, Any]:
+        """Open `trial`'s ledger; `apply_once` asks for an idempotent one (at most one applied
+        effect per logical op), which the sink refuses for a trial opened the other way."""
+        body = {**trial.__dict__, **({"apply_once": True} if apply_once else {})}
+        return self._call("POST", "/trials", body)
 
     def post_effect(self, trial: TrialId, effect: EffectRequest) -> dict[str, Any]:
         """Append one effect to `trial`'s ledger; the sink answers 409 if another is open."""
@@ -130,7 +133,9 @@ def record_effect(
 
     If the sink refuses the request (a 4xx answer), `effect.response` has status fail: the effect
     was not applied. If it does not answer, the status is info: the effect may or may not be in
-    the ledger, which only the ledger can say. Either way SinkError propagates.
+    the ledger, which only the ledger can say. Either way SinkError propagates. An idempotent
+    sink that recorded the request as a duplicate answers ok with `status: duplicate`, which the
+    response event's data carries; the ledger row, not this event, is the evidence of it.
 
     `data` adds fields to the request event's data: the decision the effect acts on, say.
     """
@@ -159,5 +164,9 @@ def record_effect(
         status = "fail" if exc.refused else "info"
         history.emit("effect.response", **fields, status=status, error=str(exc))
         raise
-    history.emit("effect.response", **fields, status="ok", data={"sink_seq": answer["sink_seq"]})
+    response: dict[str, JsonValue] = {"sink_seq": answer["sink_seq"]}
+    if answer.get("status") not in (None, "applied"):
+        response["status"] = answer["status"]
+        response["duplicate_of"] = answer.get("duplicate_of")
+    history.emit("effect.response", **fields, status="ok", data=response)
     return int(answer["sink_seq"])
