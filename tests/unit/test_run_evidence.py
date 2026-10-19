@@ -78,9 +78,10 @@ class World:
         self.sent: list[str] = []
 
     # -- the sink
-    def open_trial(self, trial: TrialId) -> dict[str, Any]:
+    def open_trial(self, trial: TrialId, *, apply_once: bool = False) -> dict[str, Any]:
         self.log.append("open_trial")
         self.opened = trial
+        self.apply_once = apply_once
         return {"trial": vars(trial), "rows": 0}
 
     def health(self) -> dict[str, Any]:
@@ -211,8 +212,8 @@ class SinkFace:
     def __init__(self, world: World) -> None:
         self.world = world
 
-    def open_trial(self, trial: TrialId) -> dict[str, Any]:
-        return self.world.open_trial(trial)
+    def open_trial(self, trial: TrialId, *, apply_once: bool = False) -> dict[str, Any]:
+        return self.world.open_trial(trial, apply_once=apply_once)
 
     def health(self) -> dict[str, Any]:
         return self.world.health()
