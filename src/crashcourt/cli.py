@@ -205,6 +205,12 @@ def _experiment(args: argparse.Namespace) -> int:
     return commands.run(args)
 
 
+def _mitigation(args: argparse.Namespace) -> int:
+    from crashcourt.mitigation import commands  # lazy: keeps `--help` fast
+
+    return commands.run(args)
+
+
 def _fixtures(args: argparse.Namespace) -> int:
     from crashcourt import fixtures  # lazy: keeps `--help` fast
 
@@ -278,6 +284,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     from crashcourt.experiment.commands import add_arguments
 
     add_arguments(experiment)
+    mitigation = commands.add_parser(
+        "mitigation", help="the mitigation contract over finished batches (the N8 study)"
+    )
+    from crashcourt.mitigation.commands import add_arguments as add_mitigation_arguments
+
+    add_mitigation_arguments(mitigation)
     fixture = commands.add_parser(
         "fixtures", help="write the explorer's demo artifacts (DEMO- ids, provenance fixture)"
     )
@@ -330,6 +342,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run(args)
     if args.command == "experiment":
         return _experiment(args)
+    if args.command == "mitigation":
+        return _mitigation(args)
     if args.command == "fixtures":
         return _fixtures(args)
     parser.error(f"unknown command {args.command}")

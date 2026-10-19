@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from crashcourt.history.reader import read_history
+from crashcourt.mitigation.contract import write_records
 from crashcourt.orchestrator.runner import BatchSummary, RunOptions, Settings, run_batch
 from crashcourt.spec.scenario import load_scenario
 
@@ -70,6 +71,15 @@ def test_the_replacements_charge_is_a_duplicate_and_both_attempts_are_rows(
         ]
         sink = read_history(trial.directory / "sink.jsonl").events
         assert [e.data.get("status") for e in sink] == [None, "duplicate"]
+    # The contract on the batch: exactly once, with the residual the study predicts for a
+    # replacement that re-ran execute (the head names attempt 2, the applied charge is 1).
+    records, contract = write_records(summary.directory)
+    assert all(r["problems"] == [] for r in records)
+    assert contract["logical"] == {"EXACTLY_ONCE": 2}
+    assert contract["effects"]["applied"] == {1: 2} and contract["effects"]["duplicates"] == {1: 2}
+    assert contract["effects"]["attempt_consistency"] == {"INCONSISTENT": 2}
+    assert contract["acknowledged_is_head"]["count"] == 2 and contract["fork"]["count"] == 0
+    assert contract["stale"]["resumed"]["count"] == 0  # the stale run was killed, not held
 
 
 def test_a_plain_batch_of_the_same_shape_applies_both(tmp_path: Path) -> None:
@@ -87,3 +97,6 @@ def test_a_plain_batch_of_the_same_shape_applies_both(tmp_path: Path) -> None:
         e for e in read_history(trial.directory / "w2.jsonl").events if e.kind == "effect.response"
     ]
     assert [e.data for e in responses] == [{"sink_seq": 2}]
+    _, contract = write_records(summary.directory)
+    assert contract["logical"] == {"DUPLICATED": 1}
+    assert contract["effects"]["attempt_consistency"] == {"NOT_APPLICABLE": 1}
