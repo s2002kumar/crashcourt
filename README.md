@@ -13,11 +13,14 @@ read of the database.
 The first target is LangGraph 1.2.12 with its Postgres checkpointer (`langgraph-checkpoint-postgres`
 3.1.2) on Postgres 18.6, under `durability="sync"`.
 
-**Status (October 2026).** Two LangGraph failure modes that others reported publicly are reproduced as
-formal, pre-registered batches on GitHub Actions, each in 20 of 20 trials. They are replications that
-validate the instrument, not new findings. No original finding is claimed here.
+**Status (October 2026).** Three formal, pre-registered batches have run on GitHub Actions, each in
+20 of 20 trials. Two reproduce LangGraph failure modes that others reported publicly (K1a, K3); they are
+replications that validate the instrument, not findings. The third, N8, is CrashCourt's first original
+experiment: it measured what the two known mechanisms do together. Every anomaly N8 recorded is a GAP,
+behavior LangGraph's documentation disclaims rather than guarantees; it is not a newly discovered
+upstream bug, and no violation of a documented guarantee was found.
 
-## Results: two formal replications
+## Results: two replications and one original experiment
 
 | | K1a: crash, redelivery, duplicate effect | K3: stale-worker takeover, checkpoint fork |
 | --- | --- | --- |
@@ -56,11 +59,32 @@ commit that pre-registered it: [6e56791](https://github.com/s2002kumar/crashcour
 They do not establish anything new about LangGraph, how often these failures occur in production, or
 how other savers, durability modes, or versions behave.
 
-**Where the evidence is.** Both batches are stored as artifacts of their Actions runs
-(`experiment-K1a-gh38964246590-1` and `experiment-K3-gh38976681097-1`), which GitHub keeps until
-2027-01-14. They are not committed to this repository. Each artifact holds the gate's authorization,
-the fault self-test from the same runner, every trial's histories, ledger, snapshot, and checker
-output, and the classify, verify, and aggregate output.
+### N8: the first original experiment
+
+K1a established what a crash and a redelivery do to an external effect; K3 established what a live,
+stale worker does to the checkpoint lineage. N8 asked what the two do together on the effect path,
+and was pre-registered, with every prediction, before it ran.
+
+| | N8: stale owner with uncommitted writes |
+| --- | --- |
+| Workload | W1, as in K1a |
+| Schedule | Worker A runs `execute` and posts its charge. It is then held at two saver calls: its task writes (so they cannot commit) and its next checkpoint (so it cannot go on). The resume is redelivered to worker B, which reads the checkpoint `execute` ran on, with none of A's writes, and completes. Only after B has answered the client is A released; it then writes the rest of its run. |
+| What the oracle recorded, in 20 of 20 trials | Two `charge` rows applied: attempt 1 from A, attempt 2 from B. B completed and the client was told so. A's later, stale branch received the largest checkpoint ids, so the saver's "latest" read selects it as the thread's head, and B's completed branch sits outside the head lineage. |
+| Frozen checker | I4 (duplicate effect), I5a (fork), I7a (B's effect orphaned), and I6a (the head) were GAP in 20 of 20, under LangGraph's disclaimer of concurrent writers on one thread. I2 was not exercised, as predicted. No violation candidate. |
+| Formal run | [Actions run 39061196254](https://github.com/s2002kumar/crashcourt/actions/runs/39061196254), from commit [cc6b13a](https://github.com/s2002kumar/crashcourt/commit/cc6b13a), which is both the pre-registration commit and the run commit |
+
+N8 could run only because the eight instrument cells it rests on (the negative and placebo controls on
+both workloads, the forced-fork control, and K1a, K3, and the langgraph#8764 replication) had each come
+out as predicted under that same commit, in the same job. It is original in the sense that this
+composition had not been measured; each half of it was already public, and the result is reported as
+documented-but-unspecified behavior, not as a bug. Its outcomes were identical in all 20 trials.
+
+**Where the evidence is.** The three batches are stored as artifacts of their Actions runs
+(`experiment-K1a-gh38964246590-1`, `experiment-K3-gh38976681097-1`, and
+`experiment-N8-gh39061196254-1`), which GitHub keeps until 2027-01-14 (K1a, K3) and 2027-01-15 (N8).
+They are not committed to this repository. Each artifact holds the gate's authorization, the fault
+self-test from the same runner, every trial's histories, ledger, snapshot, and checker output, and the
+classify, verify, and aggregate output; N8's also holds the eight instrument batches the gate accepted.
 
 An earlier K1a batch ([run 38926456031](https://github.com/s2002kumar/crashcourt/actions/runs/38926456031))
 showed the same behavior in 20 of 20 trials. Its prediction named only 3 of the 14 invariants, so the
@@ -112,7 +136,8 @@ flowchart TB
    trial count, and predicted outcome for every invariant before its batch runs.
 2. **Authorize.** `crashcourt experiment authorize` refuses, listing every reason, unless the checkout
    is clean, the checker matches the hashes in its `FROZEN.md`, and the scenario, seed, and trial count
-   match the pre-registration. Formal batches run only through the
+   match the pre-registration; a new-evidence cell also needs every instrument cell of its tranche
+   as predicted under the same commit and environment. Formal batches run only through the
    [experiment workflow](.github/workflows/experiment.yml), from `main`, on GitHub-hosted Ubuntu 24.04.
 3. **Run.** `crashcourt run` first checks the environment (`doctor` writes a manifest of pinned
    versions and image digests), then spawns two worker processes per trial. Each runs a
@@ -190,7 +215,8 @@ the effect matches the approval, I8 resume values are intact).
 **Known-behavior replications.** K1a and K3 (above) reproduce behavior first reported in
 langgraph#8039 and langgraph#8796. They show that the instrument detects a known duplicate effect and a
 known fork, deterministically. Credit for the behaviors belongs to their reporters, and the
-replications are not new findings.
+replications are not new findings. N8 depends on both: it combines K1a's crash-and-redelivery effect
+with K3's live stale-worker fork, and could not be read without them.
 
 **Instrument validation.** Recorded in [research/evidence/](research/evidence/); none of it is a result
 about LangGraph.
@@ -218,14 +244,15 @@ hypotheses, not results, findings, or violations. One example is reading R1: und
 a functional-API `@entrypoint` may run user code before its input checkpoint is durable. It was seen in
 one in-process experiment and has not been measured as a pre-registered cell.
 
-**Future original findings.** New-evidence cells are pre-registered, with their predictions, in
-[research/preregistration.md](research/preregistration.md). One may run only after every instrument cell
-of its tranche has come out as predicted under the same pre-registration commit and in the same
-environment. The instrument cells are the negative and placebo controls, a forced-fork control, and the
-published replications. No new-evidence result is reported in this README. An anomaly against a
-documented guarantee would start an escalation before it could be called a VIOLATION: a rerun as a new
-batch, the controls, a direct read of the rows, a standalone reproduction, a root-cause trace, a
-prior-art check, and an independent review.
+**Original experiments.** N8 (above) is the first new-evidence cell to run. What it establishes is
+the measured, deterministic composition of two known mechanisms and where the documentation stops; what
+it does not establish is a bug, since every anomaly falls under a documented disclaimer. The remaining
+new-evidence cells are pre-registered, with their predictions, in
+[research/preregistration.md](research/preregistration.md), and deferred until the mechanisms they need
+exist; each may run only after every instrument cell of its tranche has come out as predicted under the
+same commit and environment. An anomaly against a documented guarantee would start an escalation before
+it could be called a VIOLATION: a rerun as a new batch, the controls, a direct read of the rows, a
+standalone reproduction, a root-cause trace, a prior-art check, and an independent review.
 
 ## Quickstart
 
@@ -286,7 +313,9 @@ git checkout main
 ```
 
 For K3, use run `38976681097`, the directory
-`experiment-K3-gh38976681097-1/runs/K3-gh38976681097-1`, and commit `4e4e0a9`.
+`experiment-K3-gh38976681097-1/runs/K3-gh38976681097-1`, and commit `4e4e0a9`. For N8, use run
+`39061196254`, the directory `experiment-N8-gh39061196254-1/runs/N8-gh39061196254-1`, and commit
+`cc6b13a`; `verify` and `aggregate` also accept the eight instrument batches under its `instrument/`.
 
 `verify` checks that the pre-registration was committed before the run commit and did not change in
 between, that every hash matches the frozen checker, and that the batch has exactly the pre-registered
@@ -305,8 +334,10 @@ K1a-gh38964246590-1/
     result.json       one outcome per invariant
 ```
 
-In K1a, `ledger.json` holds the two charge rows, and `checker.json` cites them (`ledger#sink_seq=1`,
-`ledger#sink_seq=2`) as the evidence for I4.
+In K1a and N8, `ledger.json` holds the two charge rows, and `checker.json` cites them
+(`ledger#sink_seq=1`, `ledger#sink_seq=2`) as the evidence for I4. In N8, `orchestrator.jsonl` records
+the redelivery naming both of A's holds and the two releases after B's `client.ok`, and `snapshot.json`
+holds both branches.
 
 ### Development checks
 
