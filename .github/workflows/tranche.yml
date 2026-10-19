@@ -79,10 +79,10 @@ jobs:
         run: >-
           uv run crashcourt experiment aggregate "$OUT"/runs/* --out "$OUT/cells.json"
           | tee "$OUT/aggregate.txt"
-      - name: C9 over the C1 batches, as a consistency check beside the committed report
+      - name: C9 over the plain C1 batches (not the fenced one), as a consistency check beside the committed report
         if: ${{ !cancelled() }}
         run: >-
-          uv run python -m tests.controls.c9 --batches "$OUT"/runs/C1-* --report "$OUT/c9.json"
+          uv run python -m tests.controls.c9 --batches "$OUT"/runs/C1-w?-sync-gh* --report "$OUT/c9.json"
           | tee "$OUT/c9.txt"
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
