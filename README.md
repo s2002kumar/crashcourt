@@ -75,9 +75,15 @@ and was pre-registered, with every prediction, before it ran.
 
 N8 could run only because the eight instrument cells it rests on (the negative and placebo controls on
 both workloads, the forced-fork control, and K1a, K3, and the langgraph#8764 replication) had each come
-out as predicted under that same commit, in the same job. It is original in the sense that this
-composition had not been measured; each half of it was already public, and the result is reported as
-documented-but-unspecified behavior, not as a bug. Its outcomes were identical in all 20 trials.
+out as predicted under that same commit, in one tranche run
+([Actions run 39059806122](https://github.com/s2002kumar/crashcourt/actions/runs/39059806122)).
+
+The head outcome is not new: langgraph#8796 and its independent reproductions already report a stale
+writer's branch becoming the tip and the completed run's checkpoint becoming unreachable. What N8 adds
+is the external effect, counted by the independent ledger: the charge left outside the head lineage is
+the one from the run the client was told had succeeded, in 20 of 20 pre-registered trials. It is
+reported as behavior the documentation does not cover, not as a bug. Its outcomes were identical in all
+20 trials.
 
 **Where the evidence is.** The three batches are stored as artifacts of their Actions runs
 (`experiment-K1a-gh38964246590-1`, `experiment-K3-gh38976681097-1`, and
@@ -408,7 +414,7 @@ No batch is in `results/` yet, so the formal batches above are not in the explor
 ## Related work and credits
 
 - langchain-ai/langgraph#8796: write-ownership conformance proposal and SIGSTOP fork repro (bharatnpti).
-  K3 replicates it.
+  K3 replicates its fork; N8's head outcome matches its report.
 - langchain-ai/langgraph#8039, #8234: sync-durability persistence ordering and post-crash recovery. K1a
   replicates #8039.
 - langchain-ai/langgraph#8764: crash before the first durable checkpoint.
