@@ -109,3 +109,56 @@ def test_a_failed_send_keeps_what_the_dead_peer_sent() -> None:
         return got
 
     assert asyncio.run(scenario()) == [encode(Result(op_id="op-1", status="ok"))[:-1]]
+
+
+FENCED = Run(op_id="op-1", thread_id="b/c/1/t1", durability="sync", input={"n": 1}, epoch=2)
+
+
+def test_a_fenced_run_sets_its_epoch_and_claims_before_the_graph_runs(tmp_path: Path) -> None:
+    from crashcourt.mitigation import fence
+
+    seen: list[tuple[str, int | None, int | None]] = []
+
+    async def claim(run: Run) -> None:
+        seen.append(("claim", run.epoch, fence.run_epoch.get()))
+
+    class Observing(Graph):
+        async def ainvoke(self, payload: Any, config: Any, *, durability: str) -> Any:
+            seen.append(("graph", None, fence.run_epoch.get()))
+            return await super().ainvoke(payload, config, durability=durability)
+
+    with writer(tmp_path) as history:
+        graph = Observing(history, {"trace": ["first"]})
+        result = asyncio.run(execute(graph, lambda out: out, history, FENCED, claim=claim))
+    assert result.status == "ok"
+    assert seen == [("claim", 2, 2), ("graph", None, 2)]
+
+
+def test_a_refused_claim_is_a_failed_result_and_the_graph_never_runs(tmp_path: Path) -> None:
+    from crashcourt.mitigation.fence import FenceError
+
+    async def refused(run: Run) -> None:
+        raise FenceError("crashcourt fence: epoch 2 for thread t is stale before it starts")
+
+    with writer(tmp_path) as history:
+        graph = Graph(history, {"trace": []})
+        result = asyncio.run(execute(graph, lambda out: out, history, FENCED, claim=refused))
+    assert graph.calls == []
+    assert result.status == "fail"
+    assert (
+        result.error
+        == "FenceError: crashcourt fence: epoch 2 for thread t is stale before it starts"
+    )
+    assert result.error_type == "crashcourt.mitigation.fence.FenceError"
+
+
+def test_an_unfenced_run_never_claims(tmp_path: Path) -> None:
+    from crashcourt.mitigation import fence
+
+    async def claim(run: Run) -> None:
+        raise AssertionError("claimed without an epoch")
+
+    with writer(tmp_path) as history:
+        graph = Graph(history, {"trace": []})
+        result = asyncio.run(execute(graph, lambda out: out, history, RUN, claim=claim))
+    assert result.status == "ok" and fence.run_epoch.get() is None

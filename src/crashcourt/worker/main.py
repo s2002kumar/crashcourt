@@ -27,7 +27,7 @@ import importlib
 import os
 import sys
 import threading
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -36,6 +36,7 @@ from typing import Any, NoReturn, cast
 from crashcourt.failpoints.context import operation
 from crashcourt.failpoints.registry import Arm, FailpointRegistry
 from crashcourt.history.writer import HistoryWriter, RunIdentity
+from crashcourt.mitigation import fence
 from crashcourt.spec.events import Event, EventKind
 from crashcourt.spec.protocol import (
     MAX_LINE,
@@ -185,6 +186,7 @@ async def execute(
     summarize: Callable[[Any], Any],
     history: WorkerHistory,
     run: Run,
+    claim: Callable[[Run], Awaitable[None]] | None = None,
 ) -> Result:
     """Run one op and say how it ended.
 
@@ -193,13 +195,22 @@ async def execute(
     commit); only the oracle can say. An error after the run completed, while building its
     report, is the harness's own and is raised as HarnessError; so is any failure to write the
     history while the run went on.
+
+    A run that holds an ownership epoch (`run.epoch`) sets it for everything the run does, so
+    the pool binds it to each connection the run checks out, and `claim` takes the thread for
+    it before the graph reads anything; a refused claim is a failed result, like any error the
+    run raises before it completes.
     """
     from langgraph.types import Command
 
     config = {"configurable": {"thread_id": run.thread_id}}
     payload: Any = run.input if run.resume is None else Command(resume=run.resume)
+    if run.epoch is not None:
+        fence.run_epoch.set(run.epoch)
     try:
         with operation(run.op_id):
+            if run.epoch is not None and claim is not None:
+                await claim(run)
             output = await graph.ainvoke(payload, config, durability=run.durability)
     except Exception as exc:
         if history.failure is not None:
@@ -290,6 +301,7 @@ async def serve(config: WorkerConfig) -> int:
         config.dsn,
         kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
         open=False,
+        check=fence.bind_session,  # each checkout carries the run's epoch, if it has one
     )
     try:
         await pool.open(wait=True, timeout=config.connect_timeout)
@@ -303,9 +315,14 @@ async def serve(config: WorkerConfig) -> int:
     summarize = cast(Callable[[Any], Any], workload.summarize)
     graph = build(saver, Harness(history, SinkClient(config.sink_url)))
 
+    async def take(run: Run) -> None:
+        assert run.epoch is not None
+        async with pool.connection() as conn:
+            await fence.claim(conn, run.thread_id, run.epoch)
+
     async def respond(run: Run) -> None:
         try:
-            result = await execute(graph, summarize, history, run)
+            result = await execute(graph, summarize, history, run, claim=take)
         except HarnessError as exc:
             _fatal(EXIT_HARNESS, str(exc))
         await link.send(result)

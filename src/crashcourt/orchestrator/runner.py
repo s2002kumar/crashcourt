@@ -64,6 +64,7 @@ from crashcourt.history.merge import merge
 from crashcourt.history.reader import HistoryError, read_history
 from crashcourt.history.writer import HistoryWriter, RunIdentity
 from crashcourt.manifest import Manifest
+from crashcourt.mitigation import fence
 from crashcourt.orchestrator import evidence, placebo, preregistered, topology
 from crashcourt.orchestrator.dispatcher import EngineReport, Note, TrialEngine, describe_status
 from crashcourt.orchestrator.workers import ProcessWorker, socket_directory
@@ -395,6 +396,13 @@ async def run_trial(ctx: _Batch, number: int) -> TrialResult:
             quiescent=all(link.reaped for link in links),
         )
     )
+    if scenario.fence is not None:
+        try:
+            await asyncio.to_thread(
+                fence.write_owners, directory, ctx.settings.direct_dsn, threads, scenario.fence
+            )
+        except Exception as exc:  # noqa: BLE001 - the file is absent rather than partial
+            reasons.append(f"{fence.OWNERS_FILE} not written: {type(exc).__name__}: {exc}")
     sink_rows = len(after.rows) if after is not None else 0
     sink_pid = _sink_pid(after)
     result = assess(scenario, report, directory, reasons)
@@ -662,6 +670,7 @@ def _trial_record(
         # Written only when the scenario has them, so other trials' records keep their form.
         **({"toxics": toxics} if ctx.scenario.toxics else {}),
         **({"saver_mutant": ctx.saver_mutant} if ctx.saver_mutant is not None else {}),
+        **({"fence": ctx.scenario.fence} if ctx.scenario.fence is not None else {}),
     }
 
 
@@ -763,6 +772,12 @@ def run_batch(
         raise RunRefused("the worker routes are not plain paths: " + "; ".join(unclean))
 
     asyncio.run(_setup_tables(settings.direct_dsn))
+    # The fence is schema around the saver's tables: installed for a batch whose scenario names
+    # it, in that mode, and absent from every other batch.
+    if scenario.fence is not None:
+        fence.install(settings.direct_dsn, scenario.fence)
+    else:
+        fence.remove(settings.direct_dsn)
 
     directory.mkdir(parents=True)
     if authorization is not None:
@@ -794,6 +809,8 @@ def run_batch(
             "phase": authorization.phase if authorization else None,
             "own_database": options.own_database,
             "host": host,
+            # Written only for a fenced batch, so other batches' records keep their form.
+            **({"fence": scenario.fence} if scenario.fence is not None else {}),
             "started": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
             "trials": options.trials,
             "scenario": {
