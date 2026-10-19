@@ -12,6 +12,9 @@ Checkpoints (snapshot.json, the direct read of the saver's tables after quiescen
   acknowledged it; `head_attempts`: the attempt labels the head's state names in its `executed`
   channel (W1's record of every charge: [effect key, attempt]).
 - `acknowledged_is_head`: the head was written by the run whose answer the client received.
+  The op under test is the redelivered op, or, without a redelivery, the last op the orchestrator
+  dispatched on the thread (by its own event order; a thread's earlier ops, such as W1's start
+  before its resume, are not it).
 
 The stale run (the run an op was redelivered away from, while it was still alive):
 - `resumed`: it went on after the takeover, which the histories show causally: the redelivery is
@@ -38,6 +41,11 @@ The fence (fence.json, the owner rows after the trial, when the batch had a fenc
 
 A trial the contract cannot read in full (a missing file, two threads, two redeliveries) is
 recorded with its `problems` and no measurements are invented for it.
+
+v1.1 (2026-10-19): the op under test of a trial without a redelivery is taken from the
+orchestrator's dispatch order, not from trial.json's key order, which is alphabetical and named
+W1's start-1 instead of its resume-1 in the first run of C1-w1-sync-fenced (tranche run
+39218496515); every definition above is unchanged.
 """
 
 from __future__ import annotations
@@ -55,7 +63,7 @@ from crashcourt.spec.events import Event
 
 #: The contract's name, recorded on every record it writes; a change of any definition above
 #: is a new name.
-CONTRACT = "n8-mitigation-v1"
+CONTRACT = "n8-mitigation-v1.1"
 CONTRACT_FILE = "contract.json"
 SUMMARY_FILE = "mitigation.json"
 #: W1's channel that records every charge as [effect key, attempt].
@@ -130,7 +138,13 @@ def _fill(directory: Path, record: dict[str, Any]) -> None:
             f"the contract covers one redelivery; the trial recorded {len(redeliveries)}"
         )
     redelivery = redeliveries[0] if redeliveries else None
-    op = str(redelivery.op_id) if redelivery is not None else str(list(ops)[-1])
+    if redelivery is not None:
+        op = str(redelivery.op_id)
+    else:
+        sent = [e for e in orchestrator if e.kind == "dispatch.send" and e.thread_id == thread]
+        if not sent:
+            raise _Unreadable("the orchestrator dispatched no op on the thread")
+        op = str(max(sent, key=lambda e: e.seq).op_id)
     answer = next(
         (
             e

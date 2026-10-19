@@ -104,6 +104,23 @@ def build(
     with HistoryWriter(directory / "orchestrator.jsonl", run=run, proc="orchestrator") as o:
         o.emit("worker.start", data={"proc": "w1", "pid": 11})
         o.emit("worker.start", data={"proc": "w2", "pid": 12})
+        # W1's start op comes first on the thread; trial.json lists ops in key order, so
+        # "resume-1" sorts before "start-1" there, and the op under test must come from the
+        # orchestrator's dispatch order.
+        o.emit("client.invoke", op_id="start-1", thread_id=THREAD, data={"worker": "w1"})
+        o.emit(
+            "dispatch.send",
+            op_id="start-1",
+            thread_id=THREAD,
+            data={"to": "w1", **({"epoch": 1} if fence else {})},
+        )
+        o.emit(
+            "client.ok",
+            op_id="start-1",
+            thread_id=THREAD,
+            status="ok",
+            data={"worker": "w1", "worker_seq": 1},
+        )
         o.emit("client.invoke", op_id="resume-1", thread_id=THREAD, data={"worker": "w1"})
         o.emit("dispatch.send", op_id="resume-1", thread_id=THREAD, data={"to": "w1", **epoch})
         if redelivered:
@@ -240,7 +257,8 @@ def build(
             "thread_id": THREAD,
             "worker": "w1",
             "redelivered_to": "w2" if redelivered else None,
-        }
+        },
+        "start-1": {"thread_id": THREAD, "worker": "w1", "redelivered_to": None},
     }
     trial = {"trial": 1, "ops": ops, "workers": {"w1": {}, "w2": {}}}
     (directory / "trial.json").write_text(json.dumps(trial), encoding="utf-8")
@@ -348,7 +366,10 @@ def test_a_single_writer_has_no_stale_run_and_one_applied_charge(tmp_path: Path)
         build(tmp_path / "t", redelivered=False), fence=None, idempotent_effects=False
     )
     assert record["problems"] == [] and record["stale"] is None
-    assert record["acknowledged"]["worker"] == "w1"
+    # The op under test is the thread's last dispatched op, resume-1, not the alphabetically
+    # last key of trial.json's ops (start-1): the defect C1-w1-sync-fenced's first batch found.
+    assert record["op"] == "resume-1"
+    assert record["acknowledged"] == {"worker": "w1", "op": "resume-1", "worker_seq": 13}
     assert not record["checkpoints"]["fork"] and record["checkpoints"]["acknowledged_is_head"]
     [effect] = record["effects"]
     assert (effect["requested"], effect["applied"]) == (1, 1)
