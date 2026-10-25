@@ -1,0 +1,56 @@
+# The mitigation overhead benchmark (`crashcourt mitigation bench`) on the canonical runner,
+# GitHub-hosted Ubuntu 24.04, from main. It measures cost and is not an experiment: it runs no
+# pre-registered cell and writes no batch. It shares the experiment workflows' concurrency group,
+# so it never runs beside a formal batch on the same account's runners. Everything it measured is
+# uploaded; the summary is shown on the run's page.
+# Every action is pinned to a full commit SHA (supply-chain rule); the release tag is in the comment.
+name: bench
+on:
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: rounds (three give three values of each figure and no interval)
+        required: true
+        default: "3"
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: experiment
+  cancel-in-progress: false
+env:
+  UV_VERSION: "0.12.1"  # the uv that wrote uv.lock
+  ROUNDS: ${{ inputs.rounds }}
+defaults:
+  run:
+    shell: bash
+jobs:
+  bench:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --locked --group dev
+      - run: docker compose up -d --wait --build
+      - name: The benchmark
+        run: |
+          case "$ROUNDS" in
+            '' | *[!0-9]*) echo "::error::rounds must be a positive number, not '$ROUNDS'"; exit 1 ;;
+          esac
+          uv run crashcourt mitigation bench --rounds "$ROUNDS" --out "$RUNNER_TEMP/bench"
+      - if: always()
+        name: The summary on the run's page
+        run: cat "$RUNNER_TEMP/bench/bench.md" >> "$GITHUB_STEP_SUMMARY" || true
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: bench-gh${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bench
+          if-no-files-found: error
+          retention-days: 90
