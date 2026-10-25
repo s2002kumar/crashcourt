@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -17,11 +18,29 @@ from crashcourt.faults import db, selftest
 from crashcourt.faults.base import FaultError
 from crashcourt.history.reader import read_history
 from crashcourt.history.writer import HistoryWriter, RunIdentity
-from crashcourt.probes import DEFAULT_PG_DSN, DEFAULT_PG_PROXY_DSN, DEFAULT_TOXIPROXY_URL
+from crashcourt.probes import (
+    DEFAULT_PG_DSN,
+    DEFAULT_PG_PROXY_DSN,
+    DEFAULT_TOXIPROXY_URL,
+    SystemProbes,
+)
 
 pytestmark = pytest.mark.integration
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def wait_until_postgres_is_healthy(timeout_s: float = 90) -> None:
+    """The restart check returns once Postgres accepts connections, but compose reports the
+    container `starting` until its next healthcheck passes, and doctor (so every later test that
+    runs a batch) accepts only `healthy`. Leave the stack as the suite found it, as CI does after
+    the 20-trial self-test."""
+    probes = SystemProbes(ROOT)
+    deadline = time.monotonic() + timeout_s
+    while (state := probes.service_states().get("postgres")) != "healthy":
+        if time.monotonic() > deadline:
+            raise AssertionError(f"postgres is {state!r} {timeout_s} s after the restart check")
+        time.sleep(0.5)
 
 
 def test_one_selftest_trial_passes_every_check(tmp_path: Path) -> None:
@@ -35,6 +54,7 @@ def test_one_selftest_trial_passes_every_check(tmp_path: Path) -> None:
         trial = selftest.run_trial(targets, 1, tmp_path, restart=True)
     finally:
         targets.toxiproxy.reset()
+        wait_until_postgres_is_healthy()
     statuses = {c.name: c.status for c in trial.checks}
     failed = {c.name: c.observed for c in trial.checks if c.status == "fail"}
     assert not failed, failed
