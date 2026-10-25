@@ -1,0 +1,452 @@
+# The N8 mitigation study (research/preregistration.md, tranche n8-mitigation) in ONE job on the
+# canonical runner, GitHub-hosted Ubuntu 24.04, so its ten instrument batches and its four variants
+# share one host, kernel, image, and package set by construction, whatever runner-image rollout is in
+# progress. It replaces the pre-registered dispatch (tranche.yml once, then experiment.yml once per
+# variant) for this study only; the experimental steps are the same commands in the same order.
+#
+# It runs only the study's experimental commit, STUDY_COMMIT, the pre-registration commit of the
+# tranche: the input must name it in full, the checkout is that commit, and every batch records it as
+# its run commit, as the gate and the manifest read it from the checkout. The workflow file is the
+# only thing taken from main's head; study.json records both commits.
+#
+# Order: the ten instrument cells as tranche.yml runs them (the gate, the canonical run, classify,
+# classify --compare, verify, the contract on the two fence controls), each batch then checked for
+# isolation and integrity; the aggregate; C9. Only if every instrument cell came through every step,
+# reads as-predicted in the aggregate, and C9 passed: N8-base, N8-F, N8-I, N8-FI, in that order, each
+# as experiment.yml runs one, on this job's ten instrument batches, and each checked the same way.
+# The job stops before the next variant at the first one that was refused, has an INVALID trial,
+# fails classify, classify --compare, verify, or the isolation check, or is not as predicted by the
+# frozen checker's aggregate or by the contract; a batch that ran is classified and kept whatever
+# happened. stopped.txt says where and why. Nothing is retried. Everything is uploaded.
+name: mitigation-study
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: the study's experimental commit, in full (only 4f4176bc185a0559db3b358ecbcbb7ae364c88d1)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: experiment
+  cancel-in-progress: false
+env:
+  UV_VERSION: "0.12.1"  # the uv that wrote uv.lock
+  # The study's experimental source and pre-registration commit (#46); no other is run.
+  STUDY_COMMIT: 4f4176bc185a0559db3b358ecbcbb7ae364c88d1
+  INPUT_COMMIT: ${{ inputs.commit }}
+defaults:
+  run:
+    shell: bash  # runs with -eo pipefail
+jobs:
+  study:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: The study's metadata; the input names the study's commit
+        run: |
+          out="$RUNNER_TEMP/study"
+          mkdir -p "$out/runs" "$out/variants" "$out/environment"
+          {
+            echo "OUT=$out"
+            echo "STAMP=gh$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_ENV"
+          jq -n \
+            --arg experimental_commit "$STUDY_COMMIT" \
+            --arg input_commit "$INPUT_COMMIT" \
+            --arg workflow_commit "$WORKFLOW_SHA" \
+            --arg workflow_ref "$WORKFLOW_REF" \
+            --arg dispatch_sha "$GITHUB_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg image_os "${ImageOS:-}" \
+            --arg image_version "${ImageVersion:-}" \
+            --arg kernel "$(uname -r)" \
+            --arg started "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{v: 1, study: "n8-mitigation", experimental_commit: $experimental_commit,
+              preregistration_commit: $experimental_commit, input_commit: $input_commit,
+              workflow_commit: $workflow_commit, workflow_ref: $workflow_ref,
+              dispatch_sha: $dispatch_sha, run_id: $run_id, run_attempt: $run_attempt,
+              image_os: $image_os, image_version: $image_version, kernel: $kernel,
+              started: $started}' > "$out/study.json"
+          cat "$out/study.json"
+          if [ "$INPUT_COMMIT" != "$STUDY_COMMIT" ]; then
+            echo "::error::this workflow runs only the study's commit $STUDY_COMMIT, not '$INPUT_COMMIT'"
+            exit 1
+          fi
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # the gate and verification read the history of both pins
+          ref: ${{ env.STUDY_COMMIT }}
+      - name: The checkout is the study's commit, clean, and in main's history
+        run: |
+          head=$(git rev-parse HEAD)
+          if [ "$head" != "$STUDY_COMMIT" ]; then
+            echo "::error::the checkout is $head, not $STUDY_COMMIT"
+            exit 1
+          fi
+          if ! git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null; then
+            git fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main
+          fi
+          main=$(git rev-parse refs/remotes/origin/main)
+          if ! git merge-base --is-ancestor "$head" "$main"; then
+            echo "::error::$head is not in main's history (main is $main)"
+            exit 1
+          fi
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::the checkout is not clean"
+            exit 1
+          fi
+          jq --arg head "$head" --arg main "$main" '. + {checkout_head: $head, main_head: $main}' \
+            "$OUT/study.json" > "$OUT/study.json.new"
+          mv "$OUT/study.json.new" "$OUT/study.json"
+          echo "experimental commit $head; main $main"
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --locked --group dev
+      - name: The tranche's cells, in pre-registration order, and the batch check
+        run: |
+          uv run python -c '
+          import sys
+          from pathlib import Path
+          from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, parse
+          p = parse(Path(PREREGISTRATION_PATH).read_text("utf-8"))
+          out = Path(sys.argv[1])
+          with (out / "instrument.txt").open("w") as i, (out / "variants.txt").open("w") as v:
+              for c in p.tranche_cells:
+                  kind = "contract" if c.contract is not None else "-"
+                  print(c.id, c.scenario, c.n, kind, file=i if c.phase == "instrument" else v)' "$OUT"
+          cat "$OUT/instrument.txt" "$OUT/variants.txt"
+          if [ "$(wc -l < "$OUT/instrument.txt")" != 10 ]; then
+            echo "::error::the tranche does not declare ten instrument cells"
+            exit 1
+          fi
+          if [ "$(cut -d' ' -f1 "$OUT/variants.txt" | tr '\n' ' ')" != "N8-base N8-F N8-I N8-FI " ]; then
+            echo "::error::the variants are not N8-base N8-F N8-I N8-FI in that order"
+            exit 1
+          fi
+          cat > "$OUT/validate_batch.py" <<'PY'
+          """One batch of the N8 mitigation study, checked for isolation and integrity after it ran: from its own
+          records (identity, commit, environment, N, trial ledgers, worker lifecycle, fence and sink mode, the
+          evidence files) and, unless --records-only, from the live services (no worker process left, every
+          Toxiproxy route plain, the fence installed in the batch's mode, the sink open on the batch's last
+          trial in its mode). It changes nothing; it prints every problem and exits 1 if there is one.
+
+              python validate_batch.py <batch dir> [--reference <batch dir>] [--records-only]
+          """
+
+          from __future__ import annotations
+
+          import argparse
+          import json
+          import os
+          import sys
+          from pathlib import Path
+          from typing import Any
+
+          from crashcourt.experiment.fingerprint import fingerprint_sha256, host_record
+          from crashcourt.experiment.preregistration import PREREGISTRATION_PATH, parse
+          from crashcourt.manifest import Manifest
+          from crashcourt.spec.scenario import parse_scenario
+
+          STUDY_COMMIT = os.environ.get("STUDY_COMMIT", "4f4176bc185a0559db3b358ecbcbb7ae364c88d1")
+
+
+          def load(path: Path) -> Any:
+              return json.loads(path.read_text(encoding="utf-8"))
+
+
+          def environment(batch_dir: Path) -> str:
+              manifest = Manifest.from_json((batch_dir / "manifest.json").read_text(encoding="utf-8"))
+              return fingerprint_sha256(manifest, host_record(load(batch_dir / "run.json")))
+
+
+          def check(batch_dir: Path, reference: Path | None, live: bool) -> list[str]:
+              problems: list[str] = []
+
+              def need(ok: bool, what: str) -> None:
+                  if not ok:
+                      problems.append(what)
+
+              batch = load(batch_dir / "batch.json")
+              auth = load(batch_dir / "authorization.json")
+              run = load(batch_dir / "run.json")
+              manifest = Manifest.from_json((batch_dir / "manifest.json").read_text(encoding="utf-8"))
+              scenario = parse_scenario(load(batch_dir / "scenario.json"))
+              prereg = parse(Path(PREREGISTRATION_PATH).read_text(encoding="utf-8"))
+              cell = prereg.cell(scenario.cell)
+              batch_id = str(batch["batch"])
+
+              # Identity, commit, and the pre-registered cell.
+              need(batch_id == batch_dir.name, f"batch.json names {batch_id}, the directory is {batch_dir.name}")
+              need(batch.get("provenance") == "run", f"provenance is {batch.get('provenance')!r}")
+              need(batch.get("scenario_sha256") == cell.scenario_sha256, "the scenario hash is not the cell's")
+              need(auth.get("cell") == cell.id, f"authorized for {auth.get('cell')}, ran {cell.id}")
+              need(auth.get("run_commit") == STUDY_COMMIT, f"run commit {auth.get('run_commit')}")
+              need(auth.get("preregistration_commit") == STUDY_COMMIT, "pre-registration commit is not the study's")
+              need(auth.get("preregistration_state") == "final", "the pre-registration was not final")
+              need(manifest.git_sha == STUDY_COMMIT and not manifest.git_dirty, "the manifest's commit or tree")
+              need(run.get("mode") == "canonical", f"mode {run.get('mode')!r}")
+              need(run.get("trials") == cell.n, f"{run.get('trials')} trials, the cell's N is {cell.n}")
+              need(run.get("fence") == scenario.fence, f"run.json fence {run.get('fence')!r}, scenario {scenario.fence!r}")
+              need(
+                  bool(run.get("idempotent_effects", False)) == scenario.idempotent_effects,
+                  "run.json's sink mode is not the scenario's",
+              )
+
+              # One environment for the whole job.
+              if reference is not None and reference.resolve() != batch_dir.resolve():
+                  need(environment(batch_dir) == environment(reference), f"environment differs from {reference.name}")
+
+              # Unique batch identities in this job.
+              root = batch_dir.parent.parent
+              ids = [str(load(p)["batch"]) for p in sorted(root.glob("*/*/batch.json"))]
+              need(ids.count(batch_id) == 1, f"batch id {batch_id} appears {ids.count(batch_id)} times in the job")
+
+              # Every trial: its evidence files, its own ledger, its workers, its sink and fence records.
+              trials = sorted((batch_dir / cell.id).glob("trial-*"))
+              need(len(trials) == cell.n, f"{len(trials)} trial directories, N is {cell.n}")
+              allowed = {"applied", "duplicate"} if scenario.idempotent_effects else {"applied"}
+              for n, directory in enumerate(trials, start=1):
+                  where = f"trial {n}"
+                  prefix = f"{batch_id}/{cell.id}/{n}"
+                  need(directory.name == f"trial-{n:05d}", f"{where}: directory {directory.name}")
+                  files = ["trial.json", "ledger.json", "snapshot.json", "sink-health.json", "checker.json"]
+                  files += ["orchestrator.jsonl", *(f"{w}.jsonl" for w in scenario.workers)]
+                  files += ["fence.json"] if scenario.fence is not None else []
+                  files += ["contract.json"] if cell.contract is not None else []
+                  missing = [f for f in files if not (directory / f).exists()]
+                  need(not missing, f"{where}: missing {missing}")
+                  if scenario.fence is None:
+                      need(not (directory / "fence.json").exists(), f"{where}: fence.json in an unfenced batch")
+                  if missing:
+                      continue
+                  trial = load(directory / "trial.json")
+                  need(trial.get("valid") is True and not trial.get("invalid_reasons"), f"{where}: INVALID {trial.get('invalid_reasons')}")
+                  need(trial.get("trial") == n and trial.get("batch") == batch_id, f"{where}: trial.json names another trial")
+                  workers = trial.get("workers") or {}
+                  need(sorted(workers) == sorted(scenario.workers), f"{where}: workers {sorted(workers)}")
+                  forced = [w for w, r in workers.items() if r.get("forced")]
+                  need(not forced, f"{where}: workers force-killed at shutdown: {forced}")
+                  ledger = load(directory / "ledger.json")
+                  rows = ledger.get("rows") or []
+                  need(ledger.get("verify_ok") is True, f"{where}: the ledger's chain did not verify")
+                  need(len(rows) == (trial.get("sink") or {}).get("rows"), f"{where}: ledger rows differ from trial.json")
+                  foreign = [r.get("thread_id") for r in rows if not str(r.get("thread_id")).startswith(prefix + "/")]
+                  need(not foreign, f"{where}: ledger rows of another trial: {foreign}")
+                  statuses = {str(r.get("status")) for r in rows}
+                  need(statuses <= allowed, f"{where}: ledger statuses {sorted(statuses)} in this sink mode")
+                  health = load(directory / "sink-health.json")
+                  need([h.get("open_trial") for h in health] == [prefix, prefix], f"{where}: the sink had another trial open")
+                  need(not any(h.get("hooks_enabled") for h in health), f"{where}: a sink test hook was armed")
+                  snapshot = load(directory / "snapshot.json")["second"]
+                  stray = [
+                      r.get("thread_id")
+                      for table in ("checkpoints", "writes", "blobs")
+                      for r in snapshot.get(table, [])
+                      if not str(r.get("thread_id")).startswith(prefix + "/")
+                  ]
+                  need(not stray, f"{where}: snapshot rows of another trial: {stray[:3]}")
+                  if scenario.fence is not None:
+                      owners = load(directory / "fence.json")
+                      need(owners.get("mode") == scenario.fence, f"{where}: fence.json mode {owners.get('mode')!r}")
+                      stray_owners = [t for t in owners.get("owners", {}) if not t.startswith(prefix + "/")]
+                      need(not stray_owners, f"{where}: owner rows of another trial: {stray_owners}")
+
+              if live:
+                  problems.extend(check_live(scenario, batch_id, cell.id, cell.n))
+              return problems
+
+
+          def check_live(scenario: Any, batch_id: str, cell_id: str, n: int) -> list[str]:
+              from crashcourt.faults.toxiproxy import ToxiproxyClient
+              from crashcourt.mitigation import fence
+              from crashcourt.probes import DEFAULT_PG_DSN, DEFAULT_SINK_URL, DEFAULT_TOXIPROXY_URL
+              from crashcourt.sink.client import SinkClient
+
+              problems: list[str] = []
+              leaked = []
+              for proc in Path("/proc").glob("[0-9]*"):
+                  try:
+                      cmdline = (proc / "cmdline").read_bytes()
+                  except OSError:
+                      continue
+                  if b"crashcourt.worker" in cmdline:
+                      leaked.append(proc.name)
+              if leaked:
+                  problems.append(f"worker processes still running: pids {leaked}")
+              toxiproxy = ToxiproxyClient(os.environ.get("CRASHCOURT_TOXIPROXY_URL", DEFAULT_TOXIPROXY_URL))
+              for proxy in toxiproxy.proxies():
+                  if not proxy.enabled or proxy.toxics:
+                      problems.append(f"route {proxy.name} is not plain: enabled {proxy.enabled}, toxics {proxy.toxics}")
+              installed = fence.installed(os.environ.get("CRASHCOURT_PG_DSN", DEFAULT_PG_DSN))
+              if installed != scenario.fence:
+                  problems.append(f"the database's fence is {installed!r}, the batch's {scenario.fence!r}")
+              health = SinkClient(os.environ.get("CRASHCOURT_SINK_URL", DEFAULT_SINK_URL)).health()
+              trial = health.get("trial") or {}
+              if (trial.get("batch"), trial.get("cell"), trial.get("trial")) != (batch_id, cell_id, n):
+                  problems.append(f"the sink's open trial is {trial}, not this batch's last")
+              if bool(health.get("apply_once")) != scenario.idempotent_effects or health.get("test_hooks"):
+                  problems.append(f"the sink's mode: apply_once {health.get('apply_once')}, hooks {health.get('test_hooks')}")
+              return problems
+
+
+          def main() -> int:
+              parser = argparse.ArgumentParser()
+              parser.add_argument("batch", type=Path)
+              parser.add_argument("--reference", type=Path, default=None)
+              parser.add_argument("--records-only", action="store_true")
+              args = parser.parse_args()
+              problems = check(args.batch, args.reference, live=not args.records_only)
+              for p in problems:
+                  print(f"PROBLEM {p}")
+              env = environment(args.batch)
+              if problems:
+                  print(f"{args.batch.name}: isolation and integrity: {len(problems)} problem(s); environment {env[:16]}")
+                  return 1
+              print(f"{args.batch.name}: isolation and integrity ok; environment {env[:16]}")
+              return 0
+
+
+          if __name__ == "__main__":
+              sys.exit(main())
+          PY
+      - run: docker compose up -d --wait
+      - run: uv run crashcourt clauses check | tee "$OUT/clauses-check.txt"  # control C6
+      # Every fault primitive behaves as the fault model assumes, in this environment.
+      - run: uv run crashcourt faults selftest --trials 20 --report "$OUT/fault-selftest.md"
+      - run: docker compose up -d --wait postgres  # the self-test restarts it
+      - name: The ten instrument cells, each through the gate, the run, classify, compare, verify
+        run: |
+          first="$OUT/runs/$(head -n 1 "$OUT/instrument.txt" | cut -d' ' -f1)-$STAMP"
+          while read -r -u 3 cell scenario trials contract; do
+            batch="$cell-$STAMP"
+            dir="$OUT/runs/$batch"
+            log="$OUT/$cell"
+            mkdir -p "$log"
+            {
+              uv run crashcourt experiment authorize "$scenario" --trials "$trials" > "$log/gate.txt" \
+              && uv run crashcourt run "$scenario" --trials "$trials" --canonical \
+                   --out "$OUT/runs" --batch "$batch" > "$log/run.txt" \
+              && uv run crashcourt experiment classify "$dir" > "$log/classify.txt" \
+              && uv run crashcourt experiment classify --compare "$dir" > "$log/classify-again.txt" \
+              && uv run crashcourt experiment verify "$dir" > "$log/verify.txt" \
+              && { [ "$contract" != contract ] \
+                   || uv run crashcourt mitigation contract "$dir" > "$log/contract.txt"; } \
+              && uv run python "$OUT/validate_batch.py" "$dir" --reference "$first" > "$log/validate.txt"
+            } || echo "$cell" >> "$OUT/failures.txt"
+            tail -n 1 "$log/run.txt" "$log/classify-again.txt" "$log/verify.txt" \
+              "$log/validate.txt" 2>/dev/null || true
+          done 3< "$OUT/instrument.txt"
+      - name: Aggregate the instrument batches
+        if: ${{ !cancelled() }}
+        run: >-
+          uv run crashcourt experiment aggregate "$OUT"/runs/* --out "$OUT/cells.json"
+          | tee "$OUT/aggregate.txt"
+      - name: C9 over the plain C1 batches (not the fenced one), beside the committed report
+        if: ${{ !cancelled() }}
+        run: >-
+          uv run python -m tests.controls.c9 --batches "$OUT"/runs/C1-w?-sync-gh* --report "$OUT/c9.json"
+          | tee "$OUT/c9.txt"
+      - name: The four variants, in order, each only after the one before it came out as predicted
+        run: |
+          stop() { echo "$1" | tee "$OUT/stopped.txt"; exit 0; }
+          if [ -f "$OUT/failures.txt" ]; then
+            stop "not started: instrument cells failed a step: $(tr '\n' ' ' < "$OUT/failures.txt")"
+          fi
+          while read -r -u 3 cell _ _ _; do
+            grep -qx "$cell: as-predicted" "$OUT/aggregate.txt" \
+              || stop "not started: instrument cell $cell is not as-predicted in the aggregate"
+          done 3< "$OUT/instrument.txt"
+          grep -q "^C9 passed" "$OUT/c9.txt" || stop "not started: C9 did not pass"
+          instrument=("$OUT"/runs/*)
+          [ "${#instrument[@]}" = 10 ] || stop "not started: ${#instrument[@]} instrument batches, not 10"
+          first="$OUT/runs/$(head -n 1 "$OUT/instrument.txt" | cut -d' ' -f1)-$STAMP"
+          while read -r -u 3 cell scenario trials _; do
+            ran="" classified="" compared="" verified="" judged="" checked=""
+            batch="$cell-$STAMP"
+            dir="$OUT/variants/$batch"
+            log="$OUT/$cell"
+            mkdir -p "$log"
+            uv run crashcourt experiment authorize "$scenario" --trials "$trials" \
+              --instrument "${instrument[@]}" > "$log/gate.txt" \
+              || stop "$cell: the gate refused it (gate.txt)"
+            uv run crashcourt run "$scenario" --trials "$trials" --canonical --out "$OUT/variants" \
+              --batch "$batch" --instrument "${instrument[@]}" > "$log/run.txt" \
+              || ran=failed
+            [ -d "$dir" ] || stop "$cell: refused before any trial (run.txt)"
+            # A batch that ran is classified, verified, aggregated, judged, checked, and kept,
+            # whatever happened in it.
+            uv run crashcourt experiment classify "$dir" > "$log/classify.txt" || classified=failed
+            uv run crashcourt experiment classify --compare "$dir" > "$log/classify-again.txt" \
+              || compared=failed
+            uv run crashcourt experiment verify "$dir" > "$log/verify.txt" || verified=failed
+            uv run crashcourt experiment aggregate "$dir" --out "$log/cells.json" \
+              > "$log/aggregate.txt" || true
+            uv run crashcourt mitigation contract "$dir" > "$log/contract.txt" || judged=failed
+            uv run python "$OUT/validate_batch.py" "$dir" --reference "$first" > "$log/validate.txt" \
+              || checked=failed
+            tail -n 1 "$log/run.txt" "$log/verify.txt" "$log/validate.txt" || true
+            cat "$log/aggregate.txt" "$log/contract.txt" || true
+            [ "$ran" = failed ] && stop "$cell: a trial was INVALID or the batch did not complete (run.txt)"
+            [ "$classified" = failed ] && stop "$cell: classify failed (classify.txt)"
+            [ "$compared" = failed ] && stop "$cell: classify --compare was not byte-identical (classify-again.txt)"
+            [ "$verified" = failed ] && stop "$cell: verification failed (verify.txt)"
+            [ "$checked" = failed ] && stop "$cell: the isolation and integrity check failed (validate.txt)"
+            grep -qx "$cell: as-predicted" "$log/aggregate.txt" \
+              || stop "$cell: the frozen checker's aggregate is not as-predicted (aggregate.txt)"
+            [ "$judged" = failed ] && stop "$cell: the contract is not as predicted (contract.txt)"
+            grep -q "^  contract: as-predicted" "$log/contract.txt" \
+              || stop "$cell: no contract judgement as-predicted (contract.txt)"
+            echo "$cell: as predicted; next"
+          done 3< "$OUT/variants.txt"
+          echo "all four variants ran and came out as predicted" | tee "$OUT/completed.txt"
+      - name: The environment and the services at the end
+        if: always()
+        run: |
+          out="${OUT:-$RUNNER_TEMP/study}"
+          mkdir -p "$out/environment"
+          uname -a > "$out/environment/uname.txt" || true
+          { docker version; docker compose version; } > "$out/environment/docker.txt" 2>&1 || true
+          docker compose ps -a > "$out/environment/compose-ps.txt" 2>&1 || true
+          docker compose logs --no-color > "$out/environment/compose.log" 2>&1 || true
+          ps -eo pid,ppid,etime,args > "$out/environment/processes.txt" 2>&1 || true
+          status=incomplete
+          [ -f "$out/completed.txt" ] && status=completed
+          [ -f "$out/stopped.txt" ] && status=stopped
+          [ -f "$out/failures.txt" ] && status=instrument-failed
+          if [ -f "$out/study.json" ]; then
+            jq --arg status "$status" --arg finished "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              '. + {status: $status, finished: $finished}' "$out/study.json" > "$out/study.json.new" \
+              && mv "$out/study.json.new" "$out/study.json"
+          fi
+          cat "$out/study.json" || true
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: mitigation-study-${{ env.STAMP || github.run_id }}
+          path: ${{ runner.temp }}/study
+          if-no-files-found: error
+          retention-days: 90
+      - name: A failed or stopped study fails the job
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -f "$OUT/failures.txt" ]; then
+            echo "::error::instrument cells failed a step: $(tr '\n' ' ' < "$OUT/failures.txt")"
+            exit 1
+          fi
+          if [ -f "$OUT/stopped.txt" ]; then
+            echo "::error::$(cat "$OUT/stopped.txt")"
+            exit 1
+          fi
+          if [ ! -f "$OUT/completed.txt" ]; then
+            echo "::error::the variants did not run to completion"
+            exit 1
+          fi
