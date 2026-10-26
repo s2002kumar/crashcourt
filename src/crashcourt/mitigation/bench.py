@@ -58,7 +58,7 @@ import random
 import sys
 import tempfile
 import time
-from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -651,7 +651,7 @@ def host_record(probes: Any) -> dict[str, Any]:
 
 
 @contextmanager
-def prepared_databases(admin_dsn: str) -> Iterator[dict[str, str]]:
+def prepared_databases(admin_dsn: str) -> Generator[dict[str, str]]:
     """Set up the benchmark's databases, and remove only those this invocation created.
 
     The names are reserved for this benchmark. A pre-existing name is a hard refusal, not
