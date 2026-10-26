@@ -316,4 +316,6 @@ Gate question: are the transaction boundaries and ambiguous-commit windows locat
 - Nothing found removes the network-fault cells. AW1 to AW3 are the targets for the lost-acknowledgment and
   connection-reset faults.
 
-**G0: GO** (research/gates/g0-note.md, 2026-10-09). Not a novelty claim; reading R1 stays private until measured.
+**G0: GO** (research/gates/g0-note.md, 2026-10-09). Not a novelty claim. Until measured, reading R1 and the other
+unmeasured readings may be public only as explicitly labeled readings or hypotheses, never as results, findings, or
+violations (the G0 note's condition, amended 2026-10-16).
