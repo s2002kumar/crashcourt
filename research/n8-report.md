@@ -1,9 +1,10 @@
 # N8: Stale-worker recovery, checkpoint ownership, and external effects
 
-**Status:** Evidence-backed interim technical report. The N8-I and N8-FI continuation and the
-canonical mitigation-overhead measurement are not included until those runs complete and their
-artifacts are verified. This document does **not** claim a violation of any documented LangGraph
-guarantee.
+**Status:** Four mitigation variants and the canonical three-round overhead benchmark have
+completed. N8-F and N8-FI retain the frozen checker's I6a prediction mismatch; the
+mitigation contract matched its predictions in all four variants. This report preserves the
+original stopped study and post-outcome continuation separately. No documented LangGraph
+guarantee violation is claimed.
 
 ## Abstract
 
@@ -18,9 +19,12 @@ was applied twice.
 In the **unprotected N8 baseline**, all 20 trials had a checkpoint fork and two applied charges.
 With the **epoch-ownership fence N8-F**, all 20 trials rejected the stale worker's late writes,
 preserved the acknowledged run's checkpoint as the selected head, and still applied **two charges**.
-This is an experimentally controlled demonstration of a mitigation boundary: database ownership
-fencing protects the checkpoint lineage but cannot retract an external effect sent before
-takeover. It is not an estimate of incident frequency in production.
+With idempotency alone (N8-I), 20/20 trials applied just one charge but retained the checkpoint
+fork and displaced acknowledged head. With both protections (N8-FI), all 20 trials had a single
+applied charge, no fork, and the acknowledged head—but all 20 saved states named the *duplicate*
+attempt rather than the earlier attempt that actually applied the charge. The protections
+address different properties; together they do not yet establish accurate attempt provenance.
+These results are specific to a controlled fault schedule, not production failure frequencies.
 
 ## Why this matters
 
@@ -48,62 +52,83 @@ does not imply exactly-once external effects. CrashCourt evaluates these indepen
 The complete experimental protocol, controls, locked scenario hashes, predictions, stop conditions,
 and post-run deviations are recorded in
 [research/preregistration.md](preregistration.md). The study uses LangGraph 1.2.12,
-langgraph-checkpoint-postgres 3.1.2, Postgres 18.6, and \`durability="sync"\`.
+langgraph-checkpoint-postgres 3.1.2, Postgres 18.6, and `durability="sync"`.
 
 N8 is CrashCourt's composition of two previously known recovery mechanisms. K1a replicates a
 reported duplicate external effect; K3 replicates a reported concurrent-writer checkpoint fork.
 The component failures are **not** claimed as novel discoveries.
 
-## Current verified mitigation comparison
+## Verified four-way mitigation comparison
 
-| Observation per 20-trial cell | N8-base: no protection | N8-F: epoch fence |
-| --- | ---: | ---: |
-| Checkpoint lineage fork | 20/20 | 0/20 |
-| Acknowledged run is the stored head | 0/20 | 20/20 |
-| Stale worker's late writes rejected | 0/20 | 20/20 |
-| Applied charges per trial | 2 | 2 |
-| INVALID trials | 0 | 0 |
-| Documented-guarantee violation candidates | 0 | 0 |
+The observations below are from the independently preserved baseline/fence study
+[40155579729](https://github.com/s2002kumar/crashcourt/actions/runs/40155579729) and the
+single continuation [40276230146](https://github.com/s2002kumar/crashcourt/actions/runs/40276230146),
+both using the pinned experimental commit **4f4176bc185a0559db3b358ecbcbb7ae364c88d1**.
+Each variant exercised 20 trials. The first and second CI runs should be considered separate
+experimental environments until their full environment fingerprints are confirmed identical;
+this table juxtaposes their independent outcomes and does not pool trials across runs.
 
-The 10 instrument batches qualified, the C9 control passed, and both fence-control contracts
-matched their predictions. The two variants above are preserved in
-[Actions run 40155579729](https://github.com/s2002kumar/crashcourt/actions/runs/40155579729),
-along with the environment fingerprint and individual trial artifacts. The original standalone N8
-result is [run 39061196254](https://github.com/s2002kumar/crashcourt/actions/runs/39061196254).
+| Observation | N8-base | N8-F | N8-I | N8-FI |
+| --- | ---: | ---: | ---: | ---: |
+| Checkpoint lineage fork | 20/20 | 0/20 | 20/20 | 0/20 |
+| Acknowledged run is stored head | 0/20 | 20/20 | 0/20 | 20/20 |
+| Logical operation has exactly one applied effect | 0/20 | 0/20 | 20/20 | 20/20 |
+| Applied-effect attempt agrees with saved attempt reference | Not claimed | Not claimed | 20/20 | 0/20 |
+| Stale writes rejected by an ownership fence | No fence | 20/20 | No fence | 20/20 |
+| INVALID trials | 0 | 0 | 0 | 0 |
+| Mitigation contract | As predicted | As predicted | As predicted | As predicted |
 
-The sample size is for controlled schedule reproducibility, not statistical estimation of how
-frequently crashes or duplicates occur in production.
+In the two unfenced cells the original and replacement worker can each attach a checkpoint
+branch to the same parent. In the two cells without effect idempotency, both charge attempts
+are **applied**, regardless of whether a fence protects checkpoint writes. Under N8-I and N8-FI,
+the ledger records two requests, but only one is **applied**; the other is a duplicate.
 
-### A pre-registration mismatch was preserved, not repaired
+The combined case is the key remaining limit: the durable checkpoint records the replacement
+worker's charge attempt, whereas the sink applied the earlier request. Correct durable ownership
+and exactly-once *logical effect application* are therefore insufficient to establish correct
+attempt identity. This does not claim that LangGraph guarantees concurrent same-thread recovery:
+that behavior remains outside the pinned runtime's documented contract.
 
-The frozen v1 checker's I6a outcome for **N8-F** was **GAP in 20/20 trials**, whereas the
-pre-registered prediction expected PASS or NO_ANOMALY_UNSPECIFIED. The pre-registration inferred
-that prediction from K1a, where A had been killed before B started. In N8-F, A and B were both
-dispatched on the same thread while A was alive. The frozen I6a rule regards the head of a thread
-with overlapping dispatches as an anomaly regardless of which worker saved that head; the
-documentation disclaimer therefore classifies it as a GAP.
+All ten instrument cells and C9 completed as predicted in both study jobs. Both fence controls
+agreed with their respective contracts. Original N8
+[39061196254](https://github.com/s2002kumar/crashcourt/actions/runs/39061196254) and
+the K1a/K3 known-behavior replications remain separate historical experiments.
 
-The separate mitigation contract reported N8-F's protection as predicted. That is **not**
-permission to reinterpret or modify the frozen checker. The disagreement was disclosed and the
-original study stopped as pre-registered. A subsequent decision to continue with the remaining
-variants is a deviation made **after observing N8-F**, and must be kept in the operations record,
-workflow metadata, and pre-registration deviations section.
+### Frozen-checker mismatch, preserved without changing predictions
 
-### Additional registered variants, not yet observed in this report
+The independent mitigation contract was **as-predicted in 20/20 trials** of each of the four
+variants. The frozen v1 checker is intentionally not identical to that contract. I6a flags
+the head of a thread with overlapping live dispatches, even when fencing prevents any stale
+checkpoint from becoming head. LangGraph's disclaimer makes its observation a GAP.
 
-- **N8-I:** idempotent external-effect ledger without checkpoint ownership fencing.
-- **N8-FI:** both ownership fencing and idempotent effect application.
+- **N8-F:** I6a was GAP in 20/20, but the frozen prediction allowed PASS or
+  NO_ANOMALY_UNSPECIFIED. First study run 40155579729 stopped after this difference.
+- **N8-I:** I6a GAP in 20/20 was within its already registered prediction. The
+  continuation ran it, and both frozen checker and contract were as-predicted.
+- **N8-FI:** I6a was GAP in 20/20, again outside its frozen predicted outcomes, so the
+  continuation's overall GitHub job reports failure and stops. **The job's failure is a
+  pre-registered prediction mismatch, not an INVALID cell or a discovered violation.**
+  Its complete 20-trial artifacts, independent contract results, and head/effect evidence
+  were still uploaded.
 
-Their predictions remain whatever was locked before the formal experiments. In particular, the
-combined treatment could prevent a second *applied* charge while retaining an incorrect mapping
-between the saved attempt identifier and the attempt that originally applied the effect. That is a
-**pre-registered hypothesis, not an observed result** until the continuation artifacts are
-verified. The I6a prediction mismatch already seen in N8-F must remain visible in the N8-FI
-comparison; it cannot be relabeled after the fact.
+This disagreement was not corrected after observing N8-F. The separate continuation decision
+was made after the original stop and is expressly a **protocol deviation**, with identical
+registered predictions and a repeat of the ten instrument controls. The record lives in the
+[preregistration deviations](preregistration.md#deviations) and the
+[operations log](n8-mitigation-operations.md). No variants were silently rerun to produce a
+more favorable study conclusion.
 
-The continuation runs its own instrument gate. Results from different GitHub runner
-fingerprints must be reported as separate environments, even with identical checked-out
-experimental code. **Do not pool trials across differing environment fingerprints.**
+### Formal evidence location
+
+The continuation artifact is
+[mitigation-study-gh40276230146-1](https://github.com/s2002kumar/crashcourt/actions/runs/40276230146/artifacts/12630983255),
+GitHub-reported SHA-256 **56d4d83c376c390404e8543b05ca84a2ea7ce5276273c05853b75d974a108deb**.
+The baseline/fence artifact from the first job is
+[mitigation-study-gh40155579729-1](https://github.com/s2002kumar/crashcourt/actions/runs/40155579729),
+GitHub-reported SHA-256 **3697fb80e3f604f46561016bf772e25c00c351c8793b8dcda09b68e211419522**.
+These hashes describe the downloadable GitHub artifact ZIPs, not independently reconstructed
+per-trial hashes. Source runs and recorded experiment bundles must be checked for full
+provenance before claiming matched environments.
 
 ## Overhead measurement: separate from the fault study
 
@@ -112,10 +137,34 @@ The mitigation-overhead benchmark exercises fault-free W1 approval runs under fo
 real async Postgres saver, ownership claims, connection epoch binding, ledger operations,
 and throughput under controlled ordering, preserving raw durations and runner information.
 
-One development run on a laptop saw an approximately 16–17% increase in median W1 duration
-with fencing across three rounds. This is **non-canonical**. The laptop's p99 and throughput
-figures were not stable enough to support a comparison. No reproducible runner-based cost
-claim belongs in the conclusions until the approved canonical CI run completes.
+The approved canonical measurement completed on GitHub-hosted Ubuntu 24.04:
+[benchmark run 40278406294](https://github.com/s2002kumar/crashcourt/actions/runs/40278406294),
+at source commit **33d0b4ff3f4104388a8d8a8176f8720f58b19ef7**.
+Its benchmark record reported **checks: all passed** and published every duration.
+
+| Round | Base median | Fence median | F vs base | Idempotency median | Both median | FI vs base |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 14.46 ms | 17.52 ms | +21.1% | 14.58 ms | 17.58 ms | +21.6% |
+| 2 | 14.57 ms | 17.59 ms | +20.7% | 14.51 ms | 17.65 ms | +21.2% |
+| 3 | 14.50 ms | 17.61 ms | +21.5% | 14.52 ms | 17.57 ms | +21.2% |
+
+Each latency arm used **300 timed W1 units per round** after warm-up, under a seeded
+interleaving. Fencing's median overhead was consistent across the three rounds;
+idempotency alone was close to baseline. The precise figure is environment- and
+workload-specific, not a universally expected cost.
+
+**Tail latency and throughput are inconclusive.** Fence-versus-baseline p99 differed by
+-3.7%, +121.5%, and +80.4% across the three rounds. Its measured throughput difference
+ranged from **+39.5% to -20.3%**, showing contention/noise rather than a demonstrated
+throughput improvement or a stable regression. Three rounds are not a confidence interval,
+and no interval is claimed. The runner and complete distributions are preserved in
+[bench-gh40278406294-1](https://github.com/s2002kumar/crashcourt/actions/runs/40278406294/artifacts/12631855036),
+GitHub-reported SHA-256
+**1f0a422bbd6737a7cfdda0239cafadcc8e470e5626261b00ad37462fd1203d68**.
+
+An earlier laptop development run suggested a 16–17% median overhead; it is superseded as
+the headline by this canonical runner measurement. No overhead observation changes a
+formal fault experiment's result or frozen prediction.
 
 ## Evidence integrity and reproduction
 
@@ -156,6 +205,7 @@ verified evidence release is published.
 - [CrashCourt README](../README.md):
   broader system architecture, other controls, reproducibility and limitations.
 
-**Publication gate:** Add N8-I/N8-FI observed results, the recorded continuation deviation,
-canonical benchmark outcome, comparison of runner fingerprints, stable evidence links, and
-release checksums before declaring the full mitigation study or V1 closed.
+**Remaining release checks:** Confirm comparable environment fingerprints, complete the
+post-run archive scan and durable publication, and verify reproduction instructions before
+marking V1 fully closed. The four-way study and canonical benchmark have completed; no
+unobserved variant is represented as an experiment result.
