@@ -1,6 +1,38 @@
-# CrashCourt
+# CrashCourt — The Reliability Lab
 
-**Deterministic fault injection and conformance testing for durable AI-agent runtimes.**
+**Deterministic fault injection and conformance testing for durable AI-agent workflows.**
+
+A workflow can save its checkpoints correctly and still charge a customer twice. A replacement
+worker can complete successfully, yet a stale worker may later write a checkpoint that hides the
+completed run. CrashCourt forces these recovery schedules in real processes, independently records
+what happened, and checks each outcome against explicitly cited runtime guarantees.
+
+**Start here:** [Experiments and results](#results-two-replications-and-one-original-experiment) ·
+[Architecture](docs/ARCHITECTURE.md) · [N8 technical report](research/n8-report.md) ·
+[Run locally](docs/REPRODUCING.md) ·
+[Inspect formal evidence](#inspect-the-formal-evidence) · [Limitations](#limitations)
+
+| The engineering question | What CrashCourt tests |
+| --- | --- |
+| Did recovery change the outside world more than once? | An independent, hash-chained effect ledger records every attempted and applied charge. |
+| Did an old worker overwrite the new owner's durable state? | Process barriers, direct Postgres snapshots, and checkpoint ancestry expose stale branches. |
+| Does a mitigation actually fix the failure? | Pre-registered baseline, ownership-fence, idempotency, and combined-treatment comparisons distinguish state correctness from external effects. |
+| Can someone else verify the claim? | Frozen invariants, fault-placement controls, git-backed authorization, raw trial histories, and repeatable checker output. |
+
+**Measured example:** Under N8's controlled concurrent-worker schedule, the baseline produced
+a checkpoint fork and two applied charges in **20/20** trials. With an ownership fence, the
+fork disappeared (**0/20**) and the acknowledged run remained the saved head (**20/20**),
+but **both charges were still applied**. Fencing protects durable ownership; it does not
+undo an external side effect that already occurred. These are observations under a specific
+experimental schedule—not production failure rates, and not violations of LangGraph's documented
+concurrency guarantees. [Study run and archived evidence](https://github.com/s2002kumar/crashcourt/actions/runs/40155579729).
+
+**Scope today:** LangGraph 1.2.12, Postgres checkpointer 3.1.2, Postgres 18.6,
+`durability="sync"`. Cross-runtime support is a future direction, **not an implemented claim**.
+
+---
+
+
 
 Agent runtimes such as LangGraph save a checkpoint after each step so that a crashed run can resume
 where it stopped. CrashCourt tests what actually happens when it does. It kills or holds agent worker
