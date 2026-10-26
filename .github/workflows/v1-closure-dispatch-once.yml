@@ -12,7 +12,7 @@ permissions:
   actions: write
 jobs:
   launch:
-    if: startsWith(github.event.head_commit.message, 'chore: launch CrashCourt V1 study and benchmark once')
+    if: "startsWith(github.event.head_commit.message, 'chore: launch CrashCourt V1 study and benchmark once')"
     runs-on: ubuntu-24.04
     timeout-minutes: 345
     env:
