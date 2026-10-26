@@ -9,22 +9,37 @@ Two kinds of reproduction are deliberately separate:
 
 ## Prerequisites
 
-Python is installed through uv 0.12.1 from the locked project. Evidence reproduction needs Git and GitHub CLI; artifact downloads require GitHub access. Live fault reproduction additionally needs Linux/WSL2 and Docker Compose.
+Python is installed through uv 0.12.1 from the locked project. Evidence reproduction needs Git, GitHub CLI, `unzip` and a SHA-256 utility (`sha256sum` in the commands below); no Docker is required. For Windows, run the shell commands in WSL2 or a compatible Unix shell. Live fault reproduction additionally needs Linux/WSL2 and Docker Compose.
 
 ## A. Verify the formal evidence
 
-From a fresh checkout:
+From a fresh checkout, obtain the **preserved release** instead of relying on a 90-day Actions artifact:
 
 ~~~bash
 git clone https://github.com/s2002kumar/crashcourt.git
 cd crashcourt
 uv sync --locked --group dev
-mkdir -p ../cc-evidence/k1a
-gh run download 38964246590 --repo s2002kumar/crashcourt --dir ../cc-evidence/k1a
+mkdir -p ../cc-release ../cc-evidence/k1a/experiment-K1a-gh38964246590-1
+
+gh release download evidence-2026-10 --repo s2002kumar/crashcourt \\
+  --pattern 'SHA256SUMS.txt' \\
+  --pattern 'experiment-K1a-gh38964246590-1.zip' \\
+  --dir ../cc-release
+
+(cd ../cc-release && sha256sum --ignore-missing -c SHA256SUMS.txt)
+unzip -q ../cc-release/experiment-K1a-gh38964246590-1.zip \\
+  -d ../cc-evidence/k1a/experiment-K1a-gh38964246590-1
 
 K1A="../cc-evidence/k1a/experiment-K1a-gh38964246590-1/runs/K1a-gh38964246590-1"
 uv run crashcourt experiment verify "$K1A"
 ~~~
+
+The release also provides `evidence-manifest.json`, which links archived ZIPs to their original
+GitHub workflow runs and artifact identities. The digest check compares the download to the
+published `SHA256SUMS.txt`; it does not replace examining the run's pre-registration and verified
+trial records. If using an expiring Actions artifact instead, the equivalent historical command is
+`gh run download 38964246590 --repo s2002kumar/crashcourt --dir ../cc-evidence/k1a`.
+
 
 The verification command checks the historical checkout, registered scenario and predictions,
 frozen checker hashes and authorization record. It does not depend on trusting a README count.
@@ -72,6 +87,6 @@ For context, see [architecture](ARCHITECTURE.md), [N8 technical report](../resea
 
 ## Limitations and preservation
 
-GitHub Actions artifacts expire. Do not assume the download commands will remain available after their retention period. A durable evidence release with checksums must be published and its raw records verified before treating the public reproduction path as long-lived.
+GitHub Actions artifacts expire, so prefer the [published, checksummed V1 evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10) for long-lived reproduction. The release preserves the original ZIP bytes and an origin manifest; these should still be verified against the recorded run and checker before trusting a result.
 
 The formal K1a result is not an estimate of production failure frequency; it demonstrates a behavior deterministically under a particular adversarial schedule. Differences in kernel, runner image, Postgres binaries, or upstream dependencies must be recorded, not silently pooled.
