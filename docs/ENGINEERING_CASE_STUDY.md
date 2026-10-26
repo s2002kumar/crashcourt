@@ -27,7 +27,7 @@ The original N8 experiment composes two previously reported failure mechanisms. 
 | Idempotent sink (I) | 20/20 | 0/20 | 1 per trial | Consistent, 20/20 |
 | Fence + idempotency (FI) | 0/20 | 20/20 | 1 per trial | **Inconsistent, 20/20** |
 
-Each treatment has 20 valid trials. Baseline and F were recorded in the original study; I and FI were recorded in a separate, explicitly disclosed continuation. The experiments must not be pooled or described as one matched environment without confirming complete environment fingerprints.
+Each treatment has 20 valid trials. Baseline and F were recorded in the original study; I and FI were recorded in a separate, explicitly disclosed continuation started after the first job's outcome was known. The two jobs' complete recorded environment fingerprints are identical (same runner image, kernel, container images, locked packages, and host size); each treatment is still its own 20-trial batch, and nothing is pooled.
 
 **The engineering takeaway:** A fence decides **who may write durable state**. Idempotency decides **how many times a logical external effect applies**. Using both can still leave the wrong effect-attempt reference in the saved state. These are different correctness properties.
 
