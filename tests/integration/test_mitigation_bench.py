@@ -68,7 +68,7 @@ def test_an_existing_output_directory_is_refused(tmp_path: Path) -> None:
         run_bench(BenchOptions(out=tmp_path / "bench"), ROOT, progress=lambda _: None)
 
 def test_preexisting_second_database_is_preserved_and_partial_setup_is_cleaned() -> None:
-    """If the second reserved name is in use, the first CREATE must be undone, not the existing DB."""
+    """If the second name is in use, undo the first CREATE and preserve the existing database."""
     dsn = os.environ.get("CRASHCOURT_PG_DSN", DEFAULT_PG_DSN)
     with psycopg.connect(dsn, autocommit=True) as conn:
         existing = conn.execute(
@@ -81,9 +81,8 @@ def test_preexisting_second_database_is_preserved_and_partial_setup_is_cleaned()
             sql.SQL("CREATE DATABASE {}").format(sql.Identifier(DATABASES["fenced"]))
         )
     try:
-        with pytest.raises(BenchError, match="already exists"):
-            with prepared_databases(dsn):
-                pytest.fail("must refuse to enter a benchmark with an existing database")
+        with pytest.raises(BenchError, match="already exists"), prepared_databases(dsn):
+            pytest.fail("must refuse to enter a benchmark with an existing database")
         with psycopg.connect(dsn, autocommit=True) as conn:
             found = {
                 name for (name,) in conn.execute(
@@ -121,9 +120,10 @@ def test_fence_install_failure_cleans_up_both_created_databases(
         raise RuntimeError("synthetic fence install failure")
 
     monkeypatch.setattr(fence, "install", fail_install)
-    with pytest.raises(RuntimeError, match="synthetic fence install failure"):
-        with prepared_databases(dsn):
-            pytest.fail("fence install must fail before yielding")
+    with pytest.raises(
+        RuntimeError, match="synthetic fence install failure"
+    ), prepared_databases(dsn):
+        pytest.fail("fence install must fail before yielding")
     with psycopg.connect(dsn, autocommit=True) as conn:
         found = conn.execute(
             "SELECT datname FROM pg_database WHERE datname = ANY(%s)",
