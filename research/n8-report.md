@@ -177,8 +177,9 @@ it does not permit new predictions to be inserted after the outcome is known.
 To reproduce an existing formal result with the currently public tooling, see
 [the repository quickstart and evidence commands](../README.md#inspect-the-formal-evidence).
 The study artifact's own run metadata is the authority for the exact commit, environment,
-trial counts, and worker history. GitHub Actions artifacts are temporary until a separately
-verified evidence release is published.
+trial counts, and worker history. GitHub Actions artifacts are temporary. Their original ZIP bytes, source-run identifiers,
+and SHA-256 checksums are preserved in the published
+[evidence-2026-10 release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10).
 
 ## Interpretive limits
 
@@ -205,7 +206,11 @@ verified evidence release is published.
 - [CrashCourt README](../README.md):
   broader system architecture, other controls, reproducibility and limitations.
 
-**Remaining release checks:** Confirm comparable environment fingerprints, complete the
-post-run archive scan and durable publication, and verify reproduction instructions before
-marking V1 fully closed. The four-way study and canonical benchmark have completed; no
-unobserved variant is represented as an experiment result.
+**V1 publication status (2026-10-26):** The four-way study and canonical benchmark are
+completed, and the [checksummed evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10)
+was published with original run artifacts and an evidence manifest. The baseline/fence and
+idempotency/combined arms are still described as **separate experimental environments**
+unless a full fingerprint comparison confirms equality; the report does not silently pool them.
+The registered checker mismatches, the resulting stopped jobs, and the post-outcome continuation
+remain part of the scientific record. An independently reproduced external review has not
+been claimed.
