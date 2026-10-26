@@ -18,6 +18,20 @@
 # fails classify, classify --compare, verify, or the isolation check, or is not as predicted by the
 # frozen checker's aggregate or by the contract; a batch that ran is classified and kept whatever
 # happened. stopped.txt says where and why. Nothing is retried. Everything is uploaded.
+#
+# The continuation (`variants: N8-I N8-FI`), a disclosed deviation from the pre-registered dispatch.
+# Run 40155579729 stopped after N8-F, as specified: N8-F's contract came out as predicted and checker
+# v1 differed on I6a alone, because v1's I6a records the head of any thread whose dispatches overlap
+# as an anomaly, whoever wrote it, and the pre-registered prediction was derived from K1a, where they
+# do not. That is a reading of the frozen checker, not a finding about LangGraph. Continuing past
+# that stop was decided after seeing it; the study's operational record and the pre-registration's
+# Deviations list it with the results. N8-base's and N8-F's batches stand as they ran and are never
+# run again. The continuation runs the same job with the variants that did not run, N8-I then N8-FI,
+# under the same commit and the same, unchanged predictions: the ten instrument cells again first,
+# since the gate admits a variant only on instrument batches of its own commit and environment, then
+# each variant with the stop rule above. Its batches are a second environment unless their
+# fingerprint equals run 40155579729's, and the aggregate never pools across environments.
+# study.json records the variants and the run it continues.
 name: mitigation-study
 on:
   workflow_dispatch:
@@ -26,6 +40,13 @@ on:
         description: the study's experimental commit, in full (only 4f4176bc185a0559db3b358ecbcbb7ae364c88d1)
         required: true
         type: string
+      variants:
+        description: the variants to run, in pre-registration order (N8-I N8-FI continues run 40155579729)
+        required: true
+        type: choice
+        options:
+          - N8-base N8-F N8-I N8-FI
+          - N8-I N8-FI
 permissions:
   contents: read
 concurrency:
@@ -36,6 +57,9 @@ env:
   # The study's experimental source and pre-registration commit (#46); no other is run.
   STUDY_COMMIT: 4f4176bc185a0559db3b358ecbcbb7ae364c88d1
   INPUT_COMMIT: ${{ inputs.commit }}
+  INPUT_VARIANTS: ${{ inputs.variants }}
+  # The study run that stopped after N8-F; the continuation names it in study.json.
+  STOPPED_RUN: "40155579729"
 defaults:
   run:
     shell: bash  # runs with -eo pipefail
@@ -53,9 +77,13 @@ jobs:
             echo "OUT=$out"
             echo "STAMP=gh$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           } >> "$GITHUB_ENV"
+          continues=""
+          [ "$INPUT_VARIANTS" = "N8-I N8-FI" ] && continues="$STOPPED_RUN"
           jq -n \
             --arg experimental_commit "$STUDY_COMMIT" \
             --arg input_commit "$INPUT_COMMIT" \
+            --arg variants "$INPUT_VARIANTS" \
+            --arg continues "$continues" \
             --arg workflow_commit "$WORKFLOW_SHA" \
             --arg workflow_ref "$WORKFLOW_REF" \
             --arg dispatch_sha "$GITHUB_SHA" \
@@ -67,6 +95,7 @@ jobs:
             --arg started "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             '{v: 1, study: "n8-mitigation", experimental_commit: $experimental_commit,
               preregistration_commit: $experimental_commit, input_commit: $input_commit,
+              variants: $variants, continues: $continues,
               workflow_commit: $workflow_commit, workflow_ref: $workflow_ref,
               dispatch_sha: $dispatch_sha, run_id: $run_id, run_attempt: $run_attempt,
               image_os: $image_os, image_version: $image_version, kernel: $kernel,
@@ -76,6 +105,13 @@ jobs:
             echo "::error::this workflow runs only the study's commit $STUDY_COMMIT, not '$INPUT_COMMIT'"
             exit 1
           fi
+          case "$INPUT_VARIANTS" in
+            "N8-base N8-F N8-I N8-FI" | "N8-I N8-FI") ;;
+            *)
+              echo "::error::the variants are all four or 'N8-I N8-FI', not '$INPUT_VARIANTS'"
+              exit 1
+              ;;
+          esac
         env:
           WORKFLOW_SHA: ${{ github.workflow_sha }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
@@ -132,6 +168,18 @@ jobs:
             echo "::error::the variants are not N8-base N8-F N8-I N8-FI in that order"
             exit 1
           fi
+          # The variants this job runs: the input's, in the pre-registration's order.
+          read -r -a wanted <<< "$INPUT_VARIANTS"
+          while read -r cell rest; do
+            for w in "${wanted[@]}"; do
+              if [ "$cell" = "$w" ]; then echo "$cell $rest"; fi
+            done
+          done < "$OUT/variants.txt" > "$OUT/run-variants.txt"
+          if [ "$(cut -d' ' -f1 "$OUT/run-variants.txt" | tr '\n' ' ')" != "$INPUT_VARIANTS " ]; then
+            echo "::error::the variants to run are not '$INPUT_VARIANTS' in pre-registration order"
+            exit 1
+          fi
+          cat "$OUT/run-variants.txt"
           cat > "$OUT/validate_batch.py" <<'PY'
           """One batch of the N8 mitigation study, checked for isolation and integrity after it ran: from its own
           records (identity, commit, environment, N, trial ledgers, worker lifecycle, fence and sink mode, the
@@ -355,7 +403,7 @@ jobs:
         run: >-
           uv run python -m tests.controls.c9 --batches "$OUT"/runs/C1-w?-sync-gh* --report "$OUT/c9.json"
           | tee "$OUT/c9.txt"
-      - name: The four variants, in order, each only after the one before it came out as predicted
+      - name: The variants, in order, each only after the one before it came out as predicted
         run: |
           stop() { echo "$1" | tee "$OUT/stopped.txt"; exit 0; }
           if [ -f "$OUT/failures.txt" ]; then
@@ -406,8 +454,9 @@ jobs:
             grep -q "^  contract: as-predicted" "$log/contract.txt" \
               || stop "$cell: no contract judgement as-predicted (contract.txt)"
             echo "$cell: as predicted; next"
-          done 3< "$OUT/variants.txt"
-          echo "all four variants ran and came out as predicted" | tee "$OUT/completed.txt"
+          done 3< "$OUT/run-variants.txt"
+          echo "every variant of '$INPUT_VARIANTS' ran and came out as predicted" \
+            | tee "$OUT/completed.txt"
       - name: The environment and the services at the end
         if: always()
         run: |
