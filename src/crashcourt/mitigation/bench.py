@@ -58,7 +58,8 @@ import random
 import sys
 import tempfile
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -649,42 +650,48 @@ def host_record(probes: Any) -> dict[str, Any]:
     }
 
 
-def prepare_databases(admin_dsn: str) -> dict[str, str]:
-    """Create the twin databases afresh; the saver's setup runs in each and the fence is
-    installed in the fenced one. Returns their DSNs."""
+@contextmanager
+def prepared_databases(admin_dsn: str) -> Iterator[dict[str, str]]:
+    """Set up the benchmark's databases, and remove only those this invocation created.
+
+    The names are reserved for this benchmark. A pre-existing name is a hard refusal, not
+    permission to drop anyone else's database or force-disconnect their clients. Cleanup is
+    active from the first successful CREATE, including if the second CREATE or setup fails.
+    """
     import psycopg
     from psycopg import sql
     from psycopg.conninfo import make_conninfo
 
-    with psycopg.connect(admin_dsn, autocommit=True, connect_timeout=5) as conn:
-        for name in DATABASES.values():
-            conn.execute(
-                sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(name))
-            )
-            conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
-    dsns = {key: make_conninfo(admin_dsn, dbname=name) for key, name in DATABASES.items()}
+    created: list[str] = []
+    try:
+        with psycopg.connect(admin_dsn, autocommit=True, connect_timeout=5) as conn:
+            for name in DATABASES.values():
+                try:
+                    conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+                except psycopg.errors.DuplicateDatabase as exc:
+                    raise BenchError(
+                        f"benchmark database {name!r} already exists; refusing to overwrite it"
+                    ) from exc
+                created.append(name)
+        dsns = {key: make_conninfo(admin_dsn, dbname=name) for key, name in DATABASES.items()}
 
-    async def setup() -> None:
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        async def setup() -> None:
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-        for dsn in dsns.values():
-            async with AsyncPostgresSaver.from_conn_string(dsn) as saver:
-                await saver.setup()
+            for dsn in dsns.values():
+                async with AsyncPostgresSaver.from_conn_string(dsn) as saver:
+                    await saver.setup()
 
-    _run_async(setup())
-    fence.install(dsns["fenced"], "enforce")
-    return dsns
-
-
-def drop_databases(admin_dsn: str) -> None:
-    import psycopg
-    from psycopg import sql
-
-    with psycopg.connect(admin_dsn, autocommit=True, connect_timeout=5) as conn:
-        for name in DATABASES.values():
-            conn.execute(
-                sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(name))
-            )
+        _run_async(setup())
+        fence.install(dsns["fenced"], "enforce")
+        yield dsns
+    finally:
+        if created:
+            with psycopg.connect(admin_dsn, autocommit=True, connect_timeout=5) as conn:
+                for name in reversed(created):
+                    conn.execute(
+                        sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name))
+                    )
 
 
 def _run_async(coro: Awaitable[Any]) -> Any:
@@ -820,8 +827,7 @@ def run_bench(
     started = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     batch = f"bench-{dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')}"
     progress(f"{batch}: creating {', '.join(DATABASES.values())}")
-    dsns = prepare_databases(admin_dsn)
-    try:
+    with prepared_databases(admin_dsn) as dsns:
         with tempfile.TemporaryDirectory(prefix="crashcourt-bench-") as scratch:
             rounds, arms = _run_async(_measure(options, dsns, Path(scratch), batch))
             record: dict[str, Any] = {
@@ -839,8 +845,6 @@ def run_bench(
                 "rounds": rounds,
             }
             record["problems"] = check_records(record, dsns, arms)
-    finally:
-        drop_databases(admin_dsn)
     record["valid"] = not record["problems"]
     record["summary"] = [summarize_round(r) for r in rounds]
     options.out.mkdir(parents=True)
