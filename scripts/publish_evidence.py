@@ -33,7 +33,17 @@ PINNED: dict[int, str] = {
     12584876230: "3697fb80e3f604f46561016bf772e25c00c351c8793b8dcda09b68e211419522",
 }
 TEXT_EXTENSIONS = {
-    ".json", ".jsonl", ".txt", ".log", ".md", ".yaml", ".yml", ".toml", ".csv", ".py", ".sql"
+    ".json",
+    ".jsonl",
+    ".txt",
+    ".log",
+    ".md",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".csv",
+    ".py",
+    ".sql",
 }
 SCANNERS = {
     "Github credential": re.compile(r"\b(?:ghp_|gho_|ghs_|github_pat_)[A-Za-z0-9_]{15,}"),
