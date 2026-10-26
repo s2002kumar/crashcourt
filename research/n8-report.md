@@ -64,9 +64,11 @@ The observations below are from the independently preserved baseline/fence study
 [40155579729](https://github.com/s2002kumar/crashcourt/actions/runs/40155579729) and the
 single continuation [40276230146](https://github.com/s2002kumar/crashcourt/actions/runs/40276230146),
 both using the pinned experimental commit **4f4176bc185a0559db3b358ecbcbb7ae364c88d1**.
-Each variant exercised 20 trials. The first and second CI runs should be considered separate
-experimental environments until their full environment fingerprints are confirmed identical;
-this table juxtaposes their independent outcomes and does not pool trials across runs.
+Each variant exercised 20 trials. The two jobs' full recorded environment fingerprints are
+identical (all 24 batches share `4f9a9e6155b64ce0...`; the comparison is in the
+[operations log](n8-mitigation-operations.md)), but they remain two jobs, the second started
+after the first's outcome was known. The table sets their outcomes side by side and pools no
+trials across runs.
 
 | Observation | N8-base | N8-F | N8-I | N8-FI |
 | --- | ---: | ---: | ---: | ---: |
@@ -121,14 +123,14 @@ more favorable study conclusion.
 ### Formal evidence location
 
 The continuation artifact is
-[mitigation-study-gh40276230146-1](https://github.com/s2002kumar/crashcourt/actions/runs/40276230146/artifacts/12630983255),
+[mitigation-study-gh40276230146-1](https://github.com/s2002kumar/crashcourt/releases/download/evidence-2026-10/mitigation-study-gh40276230146-1.zip) (GitHub artifact 12630983255),
 GitHub-reported SHA-256 **56d4d83c376c390404e8543b05ca84a2ea7ce5276273c05853b75d974a108deb**.
 The baseline/fence artifact from the first job is
-[mitigation-study-gh40155579729-1](https://github.com/s2002kumar/crashcourt/actions/runs/40155579729),
+[mitigation-study-gh40155579729-1](https://github.com/s2002kumar/crashcourt/releases/download/evidence-2026-10/mitigation-study-gh40155579729-1.zip) (GitHub artifact 12584876230),
 GitHub-reported SHA-256 **3697fb80e3f604f46561016bf772e25c00c351c8793b8dcda09b68e211419522**.
-These hashes describe the downloadable GitHub artifact ZIPs, not independently reconstructed
-per-trial hashes. Source runs and recorded experiment bundles must be checked for full
-provenance before claiming matched environments.
+These hashes describe the GitHub artifact ZIPs, which the evidence release preserves byte for
+byte; they are not independently reconstructed per-trial hashes. The two jobs' recorded
+environment fingerprints were compared batch by batch and are identical.
 
 ## Overhead measurement: separate from the fault study
 
@@ -158,7 +160,7 @@ workload-specific, not a universally expected cost.
 ranged from **+39.5% to -20.3%**, showing contention/noise rather than a demonstrated
 throughput improvement or a stable regression. Three rounds are not a confidence interval,
 and no interval is claimed. The runner and complete distributions are preserved in
-[bench-gh40278406294-1](https://github.com/s2002kumar/crashcourt/actions/runs/40278406294/artifacts/12631855036),
+[bench-gh40278406294-1](https://github.com/s2002kumar/crashcourt/releases/download/evidence-2026-10/bench-gh40278406294-1.zip) (GitHub artifact 12631855036),
 GitHub-reported SHA-256
 **1f0a422bbd6737a7cfdda0239cafadcc8e470e5626261b00ad37462fd1203d68**.
 
@@ -209,8 +211,8 @@ and SHA-256 checksums are preserved in the published
 **V1 publication status (2026-10-26):** The four-way study and canonical benchmark are
 completed, and the [checksummed evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10)
 was published with original run artifacts and an evidence manifest. The baseline/fence and
-idempotency/combined arms are still described as **separate experimental environments**
-unless a full fingerprint comparison confirms equality; the report does not silently pool them.
+idempotency/combined arms ran in two jobs whose full recorded environment fingerprints are
+identical; they are reported side by side, and the report pools no trials across them.
 The registered checker mismatches, the resulting stopped jobs, and the post-outcome continuation
 remain part of the scientific record. An independently reproduced external review has not
 been claimed.

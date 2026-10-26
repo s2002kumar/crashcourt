@@ -5,6 +5,39 @@ and does not amend the frozen checker, scenario hashes, predictions, or original
 experimental commit. The binding commitments remain at
 [4f4176bc185a0559db3b358ecbcbb7ae364c88d1](https://github.com/s2002kumar/crashcourt/commit/4f4176bc185a0559db3b358ecbcbb7ae364c88d1).
 
+## Before the single-job study: 2026-10-19 to 2026-10-24
+
+The pre-registered dispatch was `tranche.yml` once for the ten instrument cells, then
+`experiment.yml` once per variant on that tranche's batches. Three runs came before the study
+job; none produced a variant batch.
+
+- **Tranche [39218496515](https://github.com/s2002kumar/crashcourt/actions/runs/39218496515),
+  2026-10-19, commit 3e775a9.** Checker v1 and every observation came out as predicted in all ten
+  instrument cells, N8-placebo's contract as predicted, and C9 passed. C1-w1-sync-fenced's
+  contract differed in 50 of 50 trials on `acknowledged_is_head` and `fence_consistent`: the
+  contract's evaluator took the op under test from `trial.json`'s alphabetical key order
+  (`resume-1` before `start-1`). The fence had behaved as predicted. The evaluator was fixed in #46,
+  which became the pre-registration commit 4f4176b; the pre-registration's Deviations record it.
+  Not a qualifying run. Its artifact is in the evidence release.
+- **Tranche [39260011909](https://github.com/s2002kumar/crashcourt/actions/runs/39260011909),
+  2026-10-19, commit 4f4176b.** All ten instrument cells as predicted, both fence controls'
+  contracts as predicted, C9 passed, on runner image 20261012.334.1 (kernel 6.17.0-1022-azure).
+  Its artifact is in the evidence release.
+- **Experiment [39312360471](https://github.com/s2002kumar/crashcourt/actions/runs/39312360471),
+  2026-10-19, N8-base on tranche 39260011909.** The gate authorized it; `crashcourt run` then
+  refused before any trial, because the runner (image 20261018.339.1, a pre-release then rolling
+  out) had kernel 7.0.0-1017-azure where the instrument batches had 6.17.0-1022-azure. No batch
+  directory and no trial; it is not in any outcome denominator. Its artifact
+  (`experiment-N8-base-gh39312360471-1`, GitHub artifact 12217210708, SHA-256
+  `9c14cbf75905042aab0477712b679b226e1afaa21e3d65959175a8371158dd3a`) holds only the gate's
+  output and the refusal, is not in the evidence release, and expires on 2027-01-17.
+
+The new image did not settle: on 2026-10-22 its release was withdrawn, a second pre-release
+started, and public ubuntu-24.04 jobs started in the same second were landing on both images. So
+instead of waiting longer, the study was amended once (#48, workflow-only) to run the ten
+instrument cells and the variants in one job at 4f4176b, so that they share one runner by
+construction, with a stop before the next variant at the first one not as predicted.
+
 ## Original study: 2026-10-25
 
 [GitHub Actions 40155579729](https://github.com/s2002kumar/crashcourt/actions/runs/40155579729)
@@ -47,9 +80,17 @@ even when stale A's writes are rejected. The original prediction was derived
 from K1a's killed-then-redelivered schedule. This interpretation was apparent
 after N8-F and is stated as a limitation, not a discovery or guarantee violation.
 
-These two Github-hosted jobs have separately captured environment manifests.
-Until a full fingerprint comparison confirms their equality, the four variants
-must be reported side-by-side, **not pooled as one environment**.
+The two jobs' recorded environments were compared on 2026-10-26, batch by batch, with the same
+fingerprint function the gate and the aggregator use. All 24 batches of both jobs (the ten
+instrument batches of each, N8-base, N8-F, N8-I, and N8-FI) have one environment fingerprint,
+`4f9a9e6155b64ce00678f8a516271bc9023e600e0a0572e2b5867f130b273235`: the same runner image (ubuntu24 20261023.334.3), kernel (6.17.0-1022-azure), Docker 28.0.4
+and Compose 2.38.2, pinned container images, locked packages, libpq 18.6, and host (4 CPUs, 16
+GiB). What differs is outside the fingerprint by design: each manifest's generation time and sink
+clock offset, the run identifiers and dates, the workflow-definition commit (95e240a, then 43fd22d
+with PR #50's `variants` input), and container uptimes. The four variants therefore ran in one
+recorded environment. They are still two jobs on two runners a day apart, the second started after
+the first's outcome was known, and each variant is its own 20-trial batch, reported side by side;
+nothing is pooled.
 
 ### Archived continuation artifacts
 

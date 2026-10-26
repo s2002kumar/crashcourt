@@ -60,12 +60,15 @@ read of the database.
 The first target is LangGraph 1.2.12 with its Postgres checkpointer (`langgraph-checkpoint-postgres`
 3.1.2) on Postgres 18.6, under `durability="sync"`.
 
-**Status (October 2026).** Three formal, pre-registered batches have run on GitHub Actions, each in
-20 of 20 trials. Two reproduce LangGraph failure modes that others reported publicly (K1a, K3); they are
-replications that validate the instrument, not findings. The third, N8, is CrashCourt's first original
-experiment: it measured what the two known mechanisms do together. Every anomaly N8 recorded is a GAP,
-behavior LangGraph's documentation disclaims rather than guarantees; it is not a newly discovered
-upstream bug, and no violation of a documented guarantee was found.
+**Status (V1, October 2026).** The experiment batches reported below each ran 20 pre-registered
+trials on GitHub Actions, all valid. Two reproduce LangGraph failure modes that others reported
+publicly (K1a, K3); they are replications that validate the instrument, not findings. N8,
+CrashCourt's first original experiment, measured what the two known mechanisms do together. A
+pre-registered mitigation study then ran N8's schedule four ways (no mitigation, an ownership fence,
+idempotent effects, both), in two jobs with identical recorded environments, the second a disclosed
+continuation after a registered stop. Every anomaly recorded is a GAP, behavior LangGraph's
+documentation disclaims rather than guarantees; none is a newly discovered upstream bug, and no
+violation of a documented guarantee was found.
 
 ## Results: two replications and one original experiment
 
@@ -299,7 +302,8 @@ hypotheses, not results, findings, or violations. One example is reading R1: und
 a functional-API `@entrypoint` may run user code before its input checkpoint is durable. It was seen in
 one in-process experiment and has not been measured as a pre-registered cell.
 
-**Original experiments.** N8 (above) is the first new-evidence cell to run. What it establishes is
+**Original experiments.** N8 (above) is the first new-evidence cell to run, and the four mitigation
+variants of its schedule followed ([research/n8-report.md](research/n8-report.md)). What N8 establishes is
 the measured, deterministic composition of two known mechanisms and where the documentation stops; what
 it does not establish is a bug, since every anomaly falls under a documented disclaimer. The remaining
 new-evidence cells are pre-registered, with their predictions, in
@@ -442,10 +446,12 @@ No batch is in `results/` yet, so the formal batches above are not in the explor
 | `src/crashcourt/snapshot/` | the direct post-trial database snapshot |
 | `src/crashcourt/checker/` | the frozen checker v1 and `FROZEN.md` |
 | `src/crashcourt/experiment/` | the pre-registration model, the gate, verify, aggregate |
+| `src/crashcourt/mitigation/` | the N8 study's ownership fence, mitigation contract, and overhead benchmark |
 | `src/crashcourt/workloads/` | W1 (approval before an effect), W5 (continuation), the scripted model |
 | `clauses/langgraph/` | the documented statements verdicts cite |
 | `scenarios/` | scenarios; `first-matrix/` is pre-registered, `landmarks/` is the audited landmark table |
-| `research/` | the pre-registration, the source audit, recorded evidence, gate notes |
+| `research/` | the pre-registration, the N8 report and operations log, the source audit, recorded evidence, gate notes |
+| `docs/` | the engineering case study, the architecture, and the reproduction guide |
 | `site/` | the evidence explorer |
 | `tests/` | unit, integration, audit, saver-mutant, and control tests |
 
