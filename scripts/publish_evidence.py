@@ -39,7 +39,9 @@ SCANNERS = {
     "Github credential": re.compile(r"\b(?:ghp_|gho_|ghs_|github_pat_)[A-Za-z0-9_]{15,}"),
     "API credential": re.compile(r"\b(?:sk-[A-Za-z0-9_-]{18,}|AIza[A-Za-z0-9_-]{30,})"),
     "private key": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-    "user path": re.compile(r"(?i)(?:[A-Za-z]:[\\/]+Users[\\/]+|/Users/[^/\s]+/|/home/(?!runner)[^/\s]+/)"),
+    "user path": re.compile(
+        r"(?i)(?:[A-Za-z]:[\\/]+Users[\\/]+|/Users/[^/\s]+/|/home/(?!runner)[^/\s]+/)"
+    ),
 }
 
 
