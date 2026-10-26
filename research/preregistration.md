@@ -456,6 +456,43 @@ after a new-evidence batch of the tranche exists names that batch as prior knowl
   trials now have two ops. The batches of run 39218496515 stay archived as they ran, as the run that
   found the defect, and are not qualifying batches: every instrument cell runs again under this commit.
 
+- **N8 mitigation continuation after the registered stop (disclosed 2026-10-26).**
+  The original single-job study [Actions 40155579729](https://github.com/s2002kumar/crashcourt/actions/runs/40155579729)
+  ran all ten instrument cells and C9 as predicted, then N8-base as predicted; N8-F's
+  mitigation contract was as predicted in all 20 trials, but frozen checker v1 returned
+  **I6a GAP in 20/20** rather than its registered PASS or NO_ANOMALY_UNSPECIFIED prediction.
+  The job **stopped before N8-I**, as the pre-registered stop rule required. This was a
+  prediction derived from a different crash schedule (K1a) without overlapping live workers;
+  the frozen I6a checks overlapping dispatches, even when the fencing mechanism prevents
+  a stale checkpoint write. The mismatch is not an upstream guarantee violation, nor a
+  newly observed failure of fencing.
+  
+  After observing that I6a mismatch, continuing past the stop was approved as an **explicit
+  post-outcome protocol deviation**, implemented in the workflow-only PR #50. The second job
+  [Actions 40276230146](https://github.com/s2002kumar/crashcourt/actions/runs/40276230146)
+  checked out the **same pinned experiment and pre-registration commit
+  4f4176bc185a0559db3b358ecbcbb7ae364c88d1**, repeated the ten instrument
+  cells in its own environment, passed the controls and C9, and then executed
+  **N8-I** followed by **N8-FI** without rerunning N8-base or N8-F.
+  Every scenario, prediction, hash, frozen checker rule, mitigation contract and stop
+  criterion remained as originally registered. The continuation job is **not a
+  pre-registered uninterrupted four-arm run**, and its environment is independently
+  fingerprinted; results from the two jobs must not be pooled unless those full
+  fingerprints agree.
+  
+  **Observed continuation:** N8-I had 20/20 valid/readable trials, 20/20 forks,
+  acknowledged head in 0/20, logical EXACTLY_ONCE and consistent effect-attempt
+  mapping in 20/20; its frozen aggregate and separate mitigation contract were
+  **as predicted**. N8-FI had 20/20 valid/readable trials, 0/20 forks, acknowledged
+  head in 20/20, logical EXACTLY_ONCE but inconsistent applied-effect attempt
+  mapping in 20/20; its mitigation contract was **as predicted**. Frozen checker
+  v1 again returned **I6a GAP in 20/20**, contradicting the unchanged registered
+  prediction for N8-FI, so the continuation stopped and returned GitHub workflow
+  **failure**, preserving all trial records. No evidence was discarded, retrospectively
+  reclassified, or re-run to improve the reported result. The post-study narrative and
+  benchmark are recorded in research/n8-report.md and
+  research/n8-mitigation-operations.md.
+
 ## Pre-registration data
 
 ```json
