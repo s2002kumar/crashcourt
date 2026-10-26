@@ -105,6 +105,7 @@ def fetch_artifact(repo: str, artifact_id: int, expected: str, directory: Path) 
             "--show-error",
             "--location",
             "--header",
+            f"Authorization: Bearer {token}",
             f"https://api.github.com/repos/{repo}/actions/artifacts/{artifact_id}/zip",
             "--output",
             str(target),
