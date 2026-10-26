@@ -21,13 +21,13 @@ cd crashcourt
 uv sync --locked --group dev
 mkdir -p ../cc-release ../cc-evidence/k1a/experiment-K1a-gh38964246590-1
 
-gh release download evidence-2026-10 --repo s2002kumar/crashcourt \\
-  --pattern 'SHA256SUMS.txt' \\
-  --pattern 'experiment-K1a-gh38964246590-1.zip' \\
+gh release download evidence-2026-10 --repo s2002kumar/crashcourt \
+  --pattern 'SHA256SUMS.txt' \
+  --pattern 'experiment-K1a-gh38964246590-1.zip' \
   --dir ../cc-release
 
 (cd ../cc-release && sha256sum --ignore-missing -c SHA256SUMS.txt)
-unzip -q ../cc-release/experiment-K1a-gh38964246590-1.zip \\
+unzip -q ../cc-release/experiment-K1a-gh38964246590-1.zip \
   -d ../cc-evidence/k1a/experiment-K1a-gh38964246590-1
 
 K1A="../cc-evidence/k1a/experiment-K1a-gh38964246590-1/runs/K1a-gh38964246590-1"
@@ -58,10 +58,10 @@ The compare command requires the checker to produce byte-identical results. A fa
 
 ## B. Execute the controlled development schedule
 
-The reproduction must run under Linux because the harness controls actual worker processes and POSIX signals:
+The reproduction must run under Linux because the harness controls actual worker processes and POSIX signals. Start from the clone. If you just ran the checker comparison above, you are in `../cc-k1a-checker`, so the first command returns to the clone:
 
 ~~~bash
-cd crashcourt
+cd ../crashcourt
 docker compose up -d --wait --build
 uv run crashcourt doctor
 uv run crashcourt faults selftest --trials 20 --report ../cc-fault-selftest.md
@@ -70,6 +70,8 @@ uv run crashcourt run tests/integration/scenarios/t11-k1a-shape.yaml --trials 20
 ~~~
 
 The self-test restarts Postgres. The explicit health wait before the development batch prevents a false refusal while Compose still marks the container as starting.
+
+The stack publishes Postgres on 127.0.0.1:55432, Toxiproxy on 8474 and 15432-15434, and the effect sink on 8480. If a local Postgres already holds 55432, publish the stack's Postgres on another port with a Compose override (`ports: !override ["127.0.0.1:55462:5432"]` for the `postgres` service, added to `COMPOSE_FILE`) and set `CRASHCOURT_PG_DSN=postgresql://crashcourt:crashcourt@127.0.0.1:55462/crashcourt`. Keep the Compose project name `crashcourt`: the database-restart fault acts only on that project's container.
 
 The development scenario has the same K1a-shaped fault path, but its different scenario identity and seed mean the run is **development evidence**, not the original formal K1a result. Follow the [README's classify instructions](../README.md#run-trials-linux-only) to inspect its resulting batch; do not aggregate it with the pre-registered run.
 
