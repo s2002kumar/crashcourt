@@ -285,7 +285,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     add_arguments(experiment)
     mitigation = commands.add_parser(
-        "mitigation", help="the mitigation contract over finished batches (the N8 study)"
+        "mitigation",
+        help="the N8 study's mitigations: the contract over finished batches, and their cost",
     )
     from crashcourt.mitigation.commands import add_arguments as add_mitigation_arguments
 
