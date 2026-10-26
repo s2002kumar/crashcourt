@@ -8,7 +8,8 @@ completed run. CrashCourt forces these recovery schedules in real processes, ind
 what happened, and checks each outcome against explicitly cited runtime guarantees.
 
 **Start here:** [Experiments and results](#results-two-replications-and-one-original-experiment) ·
-[Architecture](#how-it-works) · [Run locally](#quickstart) ·
+[Architecture](docs/ARCHITECTURE.md) · [N8 technical report](research/n8-report.md) ·
+[Run locally](#quickstart) ·
 [Inspect formal evidence](#inspect-the-formal-evidence) · [Limitations](#limitations)
 
 | The engineering question | What CrashCourt tests |
