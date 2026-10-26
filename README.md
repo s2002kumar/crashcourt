@@ -27,12 +27,25 @@ undo an external side effect that already occurred. These are observations under
 experimental schedule—not production failure rates, and not violations of LangGraph's documented
 concurrency guarantees. [Study run and archived evidence](https://github.com/s2002kumar/crashcourt/actions/runs/40155579729).
 
+**The deeper result:** The follow-up [N8-I/N8-FI continuation](https://github.com/s2002kumar/crashcourt/actions/runs/40276230146)
+ran both remaining variants in **20/20 valid trials** each. Idempotency alone prevented a
+second *applied* charge but left the checkpoint fork. Combined fencing and idempotency
+eliminated the fork and second applied charge, but the saved state identified the
+*duplicate* effect attempt rather than the earlier attempt that actually applied it
+(**20/20 inconsistent attempt references**). The independent mitigation contract was
+as predicted. The frozen checker disagreed with a previously registered I6a prediction
+in N8-F and N8-FI, so the formal runs **stopped and retained that mismatch**.
+[Full comparison and methodological limits](research/n8-report.md).
+
+**Measured cost:** On the canonical GitHub runner, the epoch fence added **20.7–21.5%**
+to W1's median duration across three 300-unit-per-arm rounds. Tail latency and
+throughput were variable, so we do not claim a stable effect on either.
+[Benchmark source and raw distributions](https://github.com/s2002kumar/crashcourt/actions/runs/40278406294).
+
 **Scope today:** LangGraph 1.2.12, Postgres checkpointer 3.1.2, Postgres 18.6,
 `durability="sync"`. Cross-runtime support is a future direction, **not an implemented claim**.
 
 ---
-
-
 
 Agent runtimes such as LangGraph save a checkpoint after each step so that a crashed run can resume
 where it stopped. CrashCourt tests what actually happens when it does. It kills or holds agent worker
