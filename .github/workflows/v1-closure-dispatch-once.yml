@@ -1,0 +1,105 @@
+# One-time coordinator for the already approved CrashCourt V1 closure runs.
+# It dispatches the existing frozen study and benchmark workflows, never changes their protocol.
+# It is inert on future edits/removal: only the named squash-merge title enables it.
+name: v1-closure-dispatch-once
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/v1-closure-dispatch-once.yml
+permissions:
+  contents: read
+  actions: write
+jobs:
+  launch:
+    if: startsWith(github.event.head_commit.message, 'chore: launch CrashCourt V1 study and benchmark once')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 345
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      STUDY_SHA: 4f4176bc185a0559db3b358ecbcbb7ae364c88d1
+      PRIOR_STUDY_RUN: "40155579729"
+    steps:
+      - name: Require the triggering main commit to pass CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 240); do
+            found="$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?branch=main&per_page=40" \
+              --jq ".workflow_runs | map(select(.head_sha == \"$GITHUB_SHA\" and .event == \"push\")) | first | {status, conclusion}")"
+            result="$(jq -r '.conclusion // ""' <<<"$found")"
+            state="$(jq -r '.status // ""' <<<"$found")"
+            if [[ "$state" == completed ]]; then
+              [[ "$result" == success ]] || { echo "Main CI did not pass: $result"; exit 1; }
+              echo "Main CI passed for $GITHUB_SHA"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Main CI did not finish; no V1 workflow dispatched"
+          exit 1
+      - name: Dispatch N8-I and N8-FI only once
+        shell: bash
+        run: |
+          set -euo pipefail
+          original="$(gh api "repos/$GH_REPO/actions/workflows/mitigation-study.yml/runs?event=workflow_dispatch&per_page=10" \
+            --jq '.workflow_runs[0].id // 0')"
+          if (( original > PRIOR_STUDY_RUN )); then
+            echo "A newer study already exists ($original); refusing duplicate dispatch"
+            exit 1
+          fi
+          gh api -X POST "repos/$GH_REPO/actions/workflows/mitigation-study.yml/dispatches" \
+            -f ref=main -f "inputs[commit]=$STUDY_SHA" -f "inputs[variants]=N8-I N8-FI" >/dev/null
+          echo "Dispatched N8-I then N8-FI with frozen predictions; no retries"
+          for attempt in $(seq 1 60); do
+            newest="$(gh api "repos/$GH_REPO/actions/workflows/mitigation-study.yml/runs?event=workflow_dispatch&per_page=10" \
+              --jq '.workflow_runs[0].id // 0')"
+            if (( newest > original )); then
+              echo "STUDY_RUN=$newest" >> "$GITHUB_ENV"
+              echo "N8 continuation: https://github.com/$GH_REPO/actions/runs/$newest" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Dispatch submitted but run ID not found; do not retry automatically"
+          exit 1
+      - name: Wait for study completion without changing its stop rule
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 195); do
+            state="$(gh api "repos/$GH_REPO/actions/runs/$STUDY_RUN" --jq '.status')"
+            if [[ "$state" == completed ]]; then
+              result="$(gh api "repos/$GH_REPO/actions/runs/$STUDY_RUN" --jq '.conclusion')"
+              echo "N8 continuation ended: $result"
+              echo "N8 continuation: $result; failure can be a frozen prediction mismatch" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 60
+          done
+          echo "Study still running; benchmark not dispatched and no retry"
+          exit 1
+      - name: Dispatch one canonical benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(gh api "repos/$GH_REPO/actions/workflows/bench.yml/runs?event=workflow_dispatch&per_page=10" \
+            --jq '.workflow_runs[0].id // 0')"
+          if [[ "$existing" != 0 ]]; then
+            echo "Benchmark already exists ($existing); refusing duplicate dispatch"
+            exit 1
+          fi
+          gh api -X POST "repos/$GH_REPO/actions/workflows/bench.yml/dispatches" \
+            -f ref=main -f 'inputs[rounds]=3' >/dev/null
+          for attempt in $(seq 1 60); do
+            new="$(gh api "repos/$GH_REPO/actions/workflows/bench.yml/runs?event=workflow_dispatch&per_page=10" \
+              --jq '.workflow_runs[0].id // 0')"
+            if (( new > 0 )); then
+              echo "Benchmark: https://github.com/$GH_REPO/actions/runs/$new" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Benchmark dispatched but run ID missing; no automatic retry"
+          exit 1
