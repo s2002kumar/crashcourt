@@ -827,24 +827,26 @@ def run_bench(
     started = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     batch = f"bench-{dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')}"
     progress(f"{batch}: creating {', '.join(DATABASES.values())}")
-    with prepared_databases(admin_dsn) as dsns:
-        with tempfile.TemporaryDirectory(prefix="crashcourt-bench-") as scratch:
-            rounds, arms = _run_async(_measure(options, dsns, Path(scratch), batch))
-            record: dict[str, Any] = {
-                "v": BENCH_VERSION,
-                "kind": "crashcourt mitigation bench",
-                "note": "a measurement of cost, not an experiment and not a batch",
-                "batch": batch,
-                "options": {k: v for k, v in asdict(options).items() if k != "out"},
-                "started": started,
-                "finished": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
-                "git": {"sha": sha, "dirty": dirty},
-                "manifest": manifest,
-                "host": host_record(probes),
-                "databases": DATABASES,
-                "rounds": rounds,
-            }
-            record["problems"] = check_records(record, dsns, arms)
+    with (
+        prepared_databases(admin_dsn) as dsns,
+        tempfile.TemporaryDirectory(prefix="crashcourt-bench-") as scratch,
+    ):
+        rounds, arms = _run_async(_measure(options, dsns, Path(scratch), batch))
+        record: dict[str, Any] = {
+            "v": BENCH_VERSION,
+            "kind": "crashcourt mitigation bench",
+            "note": "a measurement of cost, not an experiment and not a batch",
+            "batch": batch,
+            "options": {k: v for k, v in asdict(options).items() if k != "out"},
+            "started": started,
+            "finished": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+            "git": {"sha": sha, "dirty": dirty},
+            "manifest": manifest,
+            "host": host_record(probes),
+            "databases": DATABASES,
+            "rounds": rounds,
+        }
+        record["problems"] = check_records(record, dsns, arms)
     record["valid"] = not record["problems"]
     record["summary"] = [summarize_round(r) for r in rounds]
     options.out.mkdir(parents=True)
