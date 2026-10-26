@@ -7,10 +7,12 @@ worker can complete successfully, yet a stale worker may later write a checkpoin
 completed run. CrashCourt forces these recovery schedules in real processes, independently records
 what happened, and checks each outcome against explicitly cited runtime guarantees.
 
-**Start here:** [Experiments and results](#results-two-replications-and-one-original-experiment) ·
-[Architecture](docs/ARCHITECTURE.md) · [N8 technical report](research/n8-report.md) ·
-[Run locally](docs/REPRODUCING.md) ·
-[Inspect formal evidence](#inspect-the-formal-evidence) · [Limitations](#limitations)
+**Start here:** [Five-minute engineering case study](docs/ENGINEERING_CASE_STUDY.md) ·
+[Experiments and results](#results-two-replications-and-one-original-experiment) ·
+[N8 technical report](research/n8-report.md) · [Architecture](docs/ARCHITECTURE.md) ·
+[Reproduce the evidence](docs/REPRODUCING.md) ·
+[Checksummed V1 evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10) ·
+[Limitations](#limitations)
 
 | The engineering question | What CrashCourt tests |
 | --- | --- |
@@ -133,7 +135,9 @@ reported as behavior the documentation does not cover, not as a bug. Its outcome
 **Where the evidence is.** The three batches are stored as artifacts of their Actions runs
 (`experiment-K1a-gh38964246590-1`, `experiment-K3-gh38976681097-1`, and
 `experiment-N8-gh39061196254-1`), which GitHub keeps until 2027-01-14 (K1a, K3) and 2027-01-15 (N8).
-They are not committed to this repository. Each artifact holds the gate's authorization, the fault
+The original GitHub Actions artifacts are not committed to this repository. Their bytes are
+also preserved in the [checksummed V1 evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10),
+alongside a manifest linking the original runs and SHA-256 hashes. Each artifact holds the gate's authorization, the fault
 self-test from the same runner, every trial's histories, ledger, snapshot, and checker output, and the
 classify, verify, and aggregate output; N8's also holds the eight instrument batches the gate accepted.
 
@@ -348,7 +352,13 @@ environment. Maintainers start them with
 
 ### Inspect the formal evidence
 
-This needs neither Docker nor Linux. Download each artifact outside the clone, because `classify`
+**Durable source:** [evidence-2026-10](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10)
+contains the original experiment/study/benchmark ZIPs, `evidence-manifest.json` and
+`SHA256SUMS.txt`. The [reproduction guide](docs/REPRODUCING.md) explains how to obtain
+and verify a checksummed release ZIP without relying on expiring Actions artifacts.
+
+For historical run provenance, the original Actions artifacts can also be downloaded while
+available. This needs neither Docker nor Linux. Download outside the clone, because `classify`
 refuses a checkout with untracked files. Downloading needs a GitHub login (`gh auth login`).
 
 ```bash
@@ -452,7 +462,9 @@ No batch is in `results/` yet, so the formal batches above are not in the explor
   on one host. Machine crashes and lost fsyncs are out of scope: trials kill processes, not the host.
 - Two of the five specified saver mutants (a lost pending-write row, a by-id read) are not exercised by
   the current workloads, so the instrument's sensitivity to them is unmeasured.
-- The formal batches are in Actions artifacts kept for 90 days, not in the repository.
+- Formal batches are not committed in git. The original Actions artifacts are temporary;
+  a [checksummed evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10)
+  preserves their ZIP bytes separately, with the original run identifiers and file digests.
 - The project specification is private and is not in this repository; `spec-provenance.json` holds
   only its provenance metadata and sha256 hash.
 
