@@ -9,9 +9,18 @@ import os
 from pathlib import Path
 
 import psycopg
+from psycopg import sql
 import pytest
 
-from crashcourt.mitigation.bench import ARMS, DATABASES, SINK_KINDS, BenchOptions, run_bench
+from crashcourt.mitigation.bench import (
+    ARMS,
+    DATABASES,
+    SINK_KINDS,
+    BenchError,
+    BenchOptions,
+    prepared_databases,
+    run_bench,
+)
 from crashcourt.probes import DEFAULT_PG_DSN
 
 pytestmark = pytest.mark.integration
@@ -57,3 +66,67 @@ def test_an_existing_output_directory_is_refused(tmp_path: Path) -> None:
     (tmp_path / "bench").mkdir()
     with pytest.raises(BenchError, match="never overwrites"):
         run_bench(BenchOptions(out=tmp_path / "bench"), ROOT, progress=lambda _: None)
+
+def test_preexisting_second_database_is_preserved_and_partial_setup_is_cleaned() -> None:
+    """If the second reserved name is in use, the first CREATE must be undone, not the existing DB."""
+    dsn = os.environ.get("CRASHCOURT_PG_DSN", DEFAULT_PG_DSN)
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        existing = conn.execute(
+            "SELECT datname FROM pg_database WHERE datname = ANY(%s)",
+            (list(DATABASES.values()),),
+        ).fetchall()
+        if existing:
+            pytest.skip("benchmark database name in use; do not touch its owner")
+        conn.execute(
+            sql.SQL("CREATE DATABASE {}").format(sql.Identifier(DATABASES["fenced"]))
+        )
+    try:
+        with pytest.raises(BenchError, match="already exists"):
+            with prepared_databases(dsn):
+                pytest.fail("must refuse to enter a benchmark with an existing database")
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            found = {
+                name for (name,) in conn.execute(
+                    "SELECT datname FROM pg_database WHERE datname = ANY(%s)",
+                    (list(DATABASES.values()),),
+                ).fetchall()
+            }
+        assert found == {DATABASES["fenced"]}
+    finally:
+        # Only the fenced database was created by this test; never touch any other database.
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            conn.execute(
+                sql.SQL("DROP DATABASE {} WITH (FORCE)").format(
+                    sql.Identifier(DATABASES["fenced"])
+                )
+            )
+
+
+def test_fence_install_failure_cleans_up_both_created_databases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even failure after saver setup leaves no benchmark databases behind."""
+    from crashcourt.mitigation import fence
+
+    dsn = os.environ.get("CRASHCOURT_PG_DSN", DEFAULT_PG_DSN)
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        existing = conn.execute(
+            "SELECT datname FROM pg_database WHERE datname = ANY(%s)",
+            (list(DATABASES.values()),),
+        ).fetchall()
+    if existing:
+        pytest.skip("benchmark database name in use; do not touch its owner")
+
+    def fail_install(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("synthetic fence install failure")
+
+    monkeypatch.setattr(fence, "install", fail_install)
+    with pytest.raises(RuntimeError, match="synthetic fence install failure"):
+        with prepared_databases(dsn):
+            pytest.fail("fence install must fail before yielding")
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        found = conn.execute(
+            "SELECT datname FROM pg_database WHERE datname = ANY(%s)",
+            (list(DATABASES.values()),),
+        ).fetchall()
+    assert found == []
