@@ -78,5 +78,6 @@ were variable and do not support a stable estimate from these three rounds.
 - GitHub-reported SHA-256: 1f0a422bbd6737a7cfdda0239cafadcc8e470e5626261b00ad37462fd1203d68
 
 Full evidence and limitations are in [n8-report.md](n8-report.md).
-The definitive raw evidence is the pinned GitHub artifacts and any future
-verified checksummed release, not this prose record.
+The definitive raw evidence is the pinned source-run artifacts, additionally preserved
+in the [published checksummed release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10).
+This prose record is a guide to those primary records, not a replacement for them.
