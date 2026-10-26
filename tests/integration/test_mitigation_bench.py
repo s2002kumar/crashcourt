@@ -77,15 +77,14 @@ def test_preexisting_second_database_is_preserved_and_partial_setup_is_cleaned()
         ).fetchall()
         if existing:
             pytest.skip("benchmark database name in use; do not touch its owner")
-        conn.execute(
-            sql.SQL("CREATE DATABASE {}").format(sql.Identifier(DATABASES["fenced"]))
-        )
+        conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(DATABASES["fenced"])))
     try:
         with pytest.raises(BenchError, match="already exists"), prepared_databases(dsn):
             pytest.fail("must refuse to enter a benchmark with an existing database")
         with psycopg.connect(dsn, autocommit=True) as conn:
             found = {
-                name for (name,) in conn.execute(
+                name
+                for (name,) in conn.execute(
                     "SELECT datname FROM pg_database WHERE datname = ANY(%s)",
                     (list(DATABASES.values()),),
                 ).fetchall()
@@ -95,9 +94,7 @@ def test_preexisting_second_database_is_preserved_and_partial_setup_is_cleaned()
         # Only the fenced database was created by this test; never touch any other database.
         with psycopg.connect(dsn, autocommit=True) as conn:
             conn.execute(
-                sql.SQL("DROP DATABASE {} WITH (FORCE)").format(
-                    sql.Identifier(DATABASES["fenced"])
-                )
+                sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(DATABASES["fenced"]))
             )
 
 
@@ -120,9 +117,10 @@ def test_fence_install_failure_cleans_up_both_created_databases(
         raise RuntimeError("synthetic fence install failure")
 
     monkeypatch.setattr(fence, "install", fail_install)
-    with pytest.raises(
-        RuntimeError, match="synthetic fence install failure"
-    ), prepared_databases(dsn):
+    with (
+        pytest.raises(RuntimeError, match="synthetic fence install failure"),
+        prepared_databases(dsn),
+    ):
         pytest.fail("fence install must fail before yielding")
     with psycopg.connect(dsn, autocommit=True) as conn:
         found = conn.execute(
