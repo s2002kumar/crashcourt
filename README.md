@@ -9,7 +9,7 @@ what happened, and checks each outcome against explicitly cited runtime guarante
 
 **Start here:** [Experiments and results](#results-two-replications-and-one-original-experiment) ·
 [Architecture](docs/ARCHITECTURE.md) · [N8 technical report](research/n8-report.md) ·
-[Run locally](#quickstart) ·
+[Run locally](docs/REPRODUCING.md) ·
 [Inspect formal evidence](#inspect-the-formal-evidence) · [Limitations](#limitations)
 
 | The engineering question | What CrashCourt tests |
