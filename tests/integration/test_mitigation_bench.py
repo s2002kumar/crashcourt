@@ -9,8 +9,8 @@ import os
 from pathlib import Path
 
 import psycopg
-from psycopg import sql
 import pytest
+from psycopg import sql
 
 from crashcourt.mitigation.bench import (
     ARMS,
