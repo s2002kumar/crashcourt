@@ -99,10 +99,15 @@ def fetch_artifact(repo: str, artifact_id: int, expected: str, directory: Path) 
         raise ArchiveError("No GitHub Actions token available")
     response = subprocess.run(
         [
-            "curl", "--fail", "--silent", "--show-error", "--location",
-            "--header", f"Authorization: Bearer {token}",
+            "curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--header",
             f"https://api.github.com/repos/{repo}/actions/artifacts/{artifact_id}/zip",
-            "--output", str(target),
+            "--output",
+            str(target),
         ],
         capture_output=True,
         check=False,
@@ -137,7 +142,8 @@ def require_one_artifact(repo: str, run_id: int, prefix: str) -> tuple[int, str]
 def find_continuation(repo: str) -> tuple[int, str]:
     runs = gh(repo, "actions/runs?per_page=100").get("workflow_runs", [])
     matches = [
-        x for x in runs
+        x
+        for x in runs
         if x.get("name") == "mitigation-study"
         and x.get("event") == "workflow_dispatch"
         and int(x.get("id", 0)) > FIRST_CONTINUATION_ID
@@ -239,11 +245,21 @@ def publish(repo: str, bench_run: int) -> None:
         )
 
         args = [
-            "gh", "release", "create", TAG, "--repo", repo,
-            "--title", "CrashCourt V1 — verified reliability evidence",
-            "--notes-file", str(notes), "--target", "main",
+            "gh",
+            "release",
+            "create",
+            TAG,
+            "--repo",
+            repo,
+            "--title",
+            "CrashCourt V1 — verified reliability evidence",
+            "--notes-file",
+            str(notes),
+            "--target",
+            "main",
             *[str(directory / str(r["asset"])) for r in records],
-            str(sums), str(manifest),
+            str(sums),
+            str(manifest),
         ]
         result = subprocess.run(args, capture_output=True, text=True, check=False)
         if result.returncode:
