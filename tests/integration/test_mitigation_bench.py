@@ -67,6 +67,7 @@ def test_an_existing_output_directory_is_refused(tmp_path: Path) -> None:
     with pytest.raises(BenchError, match="never overwrites"):
         run_bench(BenchOptions(out=tmp_path / "bench"), ROOT, progress=lambda _: None)
 
+
 def test_preexisting_second_database_is_preserved_and_partial_setup_is_cleaned() -> None:
     """If the second name is in use, undo the first CREATE and preserve the existing database."""
     dsn = os.environ.get("CRASHCOURT_PG_DSN", DEFAULT_PG_DSN)
