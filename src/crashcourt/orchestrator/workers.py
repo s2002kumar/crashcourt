@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Mapping
+from contextlib import ExitStack
 from pathlib import Path
 from typing import IO, Any
 
@@ -61,9 +62,13 @@ def _listen(path: Path) -> socket.socket:
     if sys.platform == "win32":
         raise OSError("workers need a POSIX host: Unix sockets and signals")
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    server.bind(str(path))
-    server.listen(1)
-    server.setblocking(False)
+    try:
+        server.bind(str(path))
+        server.listen(1)
+        server.setblocking(False)
+    except BaseException:
+        server.close()
+        raise
     return server
 
 
@@ -153,41 +158,47 @@ class ProcessWorker:
         self._channel: Channel | None = None
         self._reader_task: asyncio.Task[None] | None = None
         self._socket_path = socket_dir / f"{name}.sock"
-        self._server = _listen(self._socket_path)
-        self._log: IO[bytes] = (trial_dir / f"{name}.log").open("wb")
-        argv = [
-            sys.executable,
-            "-m",
-            "crashcourt.worker",
-            "--name",
-            name,
-            "--socket",
-            str(self._socket_path),
-            "--history",
-            str(trial_dir / f"{name}.jsonl"),
-            "--batch",
-            run.batch,
-            "--cell",
-            run.cell,
-            "--trial",
-            str(run.trial),
-            "--seed",
-            run.seed,
-            "--workload",
-            workload,
-            "--sink-url",
-            sink_url,
-            *(("--saver-mutant", saver_mutant) if saver_mutant is not None else ()),
-        ]
-        self.popen: subprocess.Popen[Any] = subprocess.Popen(
-            argv,
-            stdin=subprocess.DEVNULL,
-            stdout=self._log,
-            stderr=subprocess.STDOUT,
-            env=worker_environment(os.environ, route.dsn),
-            cwd=cwd,
-            start_new_session=True,
-        )
+        # Until Popen succeeds, a failed open/spawn must not strand the log or socket.
+        with ExitStack() as unstarted:
+            self._server = _listen(self._socket_path)
+            unstarted.callback(self._server.close)
+            unstarted.callback(self._socket_path.unlink, missing_ok=True)
+            self._log: IO[bytes] = (trial_dir / f"{name}.log").open("wb")
+            unstarted.callback(self._log.close)
+            argv = [
+                sys.executable,
+                "-m",
+                "crashcourt.worker",
+                "--name",
+                name,
+                "--socket",
+                str(self._socket_path),
+                "--history",
+                str(trial_dir / f"{name}.jsonl"),
+                "--batch",
+                run.batch,
+                "--cell",
+                run.cell,
+                "--trial",
+                str(run.trial),
+                "--seed",
+                run.seed,
+                "--workload",
+                workload,
+                "--sink-url",
+                sink_url,
+                *(("--saver-mutant", saver_mutant) if saver_mutant is not None else ()),
+            ]
+            self.popen: subprocess.Popen[Any] = subprocess.Popen(
+                argv,
+                stdin=subprocess.DEVNULL,
+                stdout=self._log,
+                stderr=subprocess.STDOUT,
+                env=worker_environment(os.environ, route.dsn),
+                cwd=cwd,
+                start_new_session=True,
+            )
+            unstarted.pop_all()
         self.pid = self.popen.pid
         data: dict[str, JsonValue] = {
             "proc": name,
