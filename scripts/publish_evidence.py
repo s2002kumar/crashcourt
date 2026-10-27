@@ -199,6 +199,8 @@ def publish(repo: str, bench_run: int) -> None:
         raise ArchiveError("Triggering run is not the canonical dispatched benchmark")
     if bench.get("status") != "completed":
         raise ArchiveError("Canonical benchmark has not completed")
+    if bench.get("conclusion") != "success":
+        raise ArchiveError("Canonical benchmark workflow did not succeed; refusing publication")
     study_run, study_result = find_continuation(repo)
     bench_result = str(bench.get("conclusion"))
 

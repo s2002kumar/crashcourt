@@ -1,7 +1,8 @@
 """Offline guards for the V1 evidence-release archiver.
 
 These tests do not contact GitHub or publish a release. Only the archive scanner and
-checksum arithmetic are exercised; download provenance is checked again by the real run.
+checksum arithmetic and benchmark success gating are exercised offline.
+Download provenance is checked again by the real run.
 """
 
 from __future__ import annotations
@@ -57,3 +58,52 @@ def test_release_scanner_refuses_private_key_file_name(tmp_path: Path) -> None:
     make_archive(path, {".env": "EXAMPLE=placeholder"})
     with pytest.raises(ArchiveError, match="Potential private file"):
         scan_contents(path)
+
+
+@pytest.mark.parametrize("conclusion", ["failure", "cancelled", "timed_out", "skipped", None])
+def test_publication_refuses_unsuccessful_benchmark_before_accessing_artifacts(
+    monkeypatch: pytest.MonkeyPatch, conclusion: str | None
+) -> None:
+    namespace = TOOLS["publish"].__globals__
+    monkeypatch.setitem(namespace, "release_exists", lambda _repo: False)
+    monkeypatch.setitem(
+        namespace,
+        "gh",
+        lambda _repo, _endpoint: {
+            "name": "bench",
+            "event": "workflow_dispatch",
+            "status": "completed",
+            "conclusion": conclusion,
+        },
+    )
+
+    def no_artifacts(_repo: str) -> None:
+        raise AssertionError("a failed benchmark must never lead to artifact acquisition")
+
+    monkeypatch.setitem(namespace, "find_continuation", no_artifacts)
+    with pytest.raises(ArchiveError, match="did not succeed"):
+        TOOLS["publish"]("example/crashcourt", 456)
+
+
+def test_successful_benchmark_reaches_normal_study_provenance_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    namespace = TOOLS["publish"].__globals__
+    monkeypatch.setitem(namespace, "release_exists", lambda _repo: False)
+    monkeypatch.setitem(
+        namespace,
+        "gh",
+        lambda _repo, _endpoint: {
+            "name": "bench",
+            "event": "workflow_dispatch",
+            "status": "completed",
+            "conclusion": "success",
+        },
+    )
+
+    def check_study(_repo: str) -> None:
+        raise RuntimeError("study provenance reached")
+
+    monkeypatch.setitem(namespace, "find_continuation", check_study)
+    with pytest.raises(RuntimeError, match="study provenance reached"):
+        TOOLS["publish"]("example/crashcourt", 456)
