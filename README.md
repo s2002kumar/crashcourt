@@ -1,51 +1,47 @@
 # CrashCourt — The Reliability Lab
 
-**Deterministic fault injection and conformance testing for durable AI-agent workflows.**
+**A reproducible fault-injection and conformance lab for durable AI-agent workflows.**
 
-A workflow can save its checkpoints correctly and still charge a customer twice. A replacement
-worker can complete successfully, yet a stale worker may later write a checkpoint that hides the
-completed run. CrashCourt forces these recovery schedules in real processes, independently records
-what happened, and checks each outcome against explicitly cited runtime guarantees.
+An agent can recover its checkpoint but execute an external action twice. Or a replacement
+worker can acknowledge success while an older worker leaves the wrong checkpoint selected.
+CrashCourt uses **real worker processes, a real PostgreSQL checkpointer and controlled
+failures** to test those two histories separately—not by trusting the agent's success response.
 
-**Start here:** [Five-minute engineering case study](docs/ENGINEERING_CASE_STUDY.md) ·
-[Experiments and results](#results-two-replications-and-one-original-experiment) ·
-[N8 technical report](research/n8-report.md) · [Architecture](docs/ARCHITECTURE.md) ·
-[Reproduce the evidence](docs/REPRODUCING.md) ·
-[Checksummed V1 evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10) ·
-[Limitations](#limitations)
+**V1 finding:** fencing prevents stale checkpoint forks but does not prevent duplicate
+external charges; effect idempotency prevents second applied charges but not forks. Even
+combining both can save a reference to the wrong *attempt*. Across a controlled four-arm
+study (**20 valid trials per arm**):
 
-| The engineering question | What CrashCourt tests |
-| --- | --- |
-| Did recovery change the outside world more than once? | An independent, hash-chained effect ledger records every attempted and applied charge. |
-| Did an old worker overwrite the new owner's durable state? | Process barriers, direct Postgres snapshots, and checkpoint ancestry expose stale branches. |
-| Does a mitigation actually fix the failure? | Pre-registered baseline, ownership-fence, idempotency, and combined-treatment comparisons distinguish state correctness from external effects. |
-| Can someone else verify the claim? | Frozen invariants, fault-placement controls, git-backed authorization, raw trial histories, and repeatable checker output. |
+| Treatment | Forked lineage | Applied charges per trial | Remaining problem |
+| --- | ---: | ---: | --- |
+| Baseline | 20/20 | 2 | Wrong checkpoint head and duplicate effect |
+| Epoch ownership fence | 0/20 | 2 | Duplicate effect |
+| Idempotent effect sink | 20/20 | 1 | Wrong checkpoint head |
+| Both protections | 0/20 | 1 | Saved effect-attempt reference wrong in 20/20 |
 
-**Measured example:** Under N8's controlled concurrent-worker schedule, the baseline produced
-a checkpoint fork and two applied charges in **20/20** trials. With an ownership fence, the
-fork disappeared (**0/20**) and the acknowledged run remained the saved head (**20/20**),
-but **both charges were still applied**. Fencing protects durable ownership; it does not
-undo an external side effect that already occurred. These are observations under a specific
-experimental schedule—not production failure rates, and not violations of LangGraph's documented
-concurrency guarantees. [Study run and archived evidence](https://github.com/s2002kumar/crashcourt/actions/runs/40155579729).
+The four arms ran in **two separately disclosed jobs with identical recorded environment
+fingerprints**; the continuation followed a registered stop. The frozen checker's I6a
+prediction was wrong for the fence and combined arms, and both mismatches remain in the
+public record. These are controlled, synthetic results **outside LangGraph's documented
+concurrent same-thread guarantees**, not production failure rates or upstream bug claims.
 
-**The deeper result:** The follow-up [N8-I/N8-FI continuation](https://github.com/s2002kumar/crashcourt/actions/runs/40276230146)
-ran both remaining variants in **20/20 valid trials** each. Idempotency alone prevented a
-second *applied* charge but left the checkpoint fork. Combined fencing and idempotency
-eliminated the fork and second applied charge, but the saved state identified the
-*duplicate* effect attempt rather than the earlier attempt that actually applied it
-(**20/20 inconsistent attempt references**). The independent mitigation contract was
-as predicted. The frozen checker disagreed with a previously registered I6a prediction
-in N8-F and N8-FI, so the formal runs **stopped and retained that mismatch**.
-[Full comparison and methodological limits](research/n8-report.md).
+**Inspect the implementation:** [Orchestrator](src/crashcourt/orchestrator/) ·
+[Fault injection](src/crashcourt/failpoints/) · [Independent effect ledger](src/crashcourt/sink/ledger.py) ·
+[PostgreSQL snapshots](src/crashcourt/snapshot/dump.py) ·
+[Frozen checker](src/crashcourt/checker/) · [Mitigation fence](src/crashcourt/mitigation/fence.py).
 
-**Measured cost:** On the canonical GitHub runner, the epoch fence added **20.7–21.5%**
-to W1's median duration across three 300-unit-per-arm rounds. Tail latency and
-throughput were variable, so we do not claim a stable effect on either.
-[Benchmark source and raw distributions](https://github.com/s2002kumar/crashcourt/actions/runs/40278406294).
+**Start here:** [Five-minute case study](docs/ENGINEERING_CASE_STUDY.md) ·
+[Reproduce a verified run](docs/REPRODUCING.md) ·
+[N8 technical results and limitations](research/n8-report.md) ·
+[Checksummed V1 evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10).
 
-**Scope today:** LangGraph 1.2.12, Postgres checkpointer 3.1.2, Postgres 18.6,
-`durability="sync"`. Cross-runtime support is a future direction, **not an implemented claim**.
+**Measured trade-off:** fencing increased the W1 median duration by **20.7–21.5%**
+in three canonical 300-unit-per-arm benchmark rounds. Tail latency and throughput
+were too variable to support a stable estimate.
+[Raw benchmark and runner record](https://github.com/s2002kumar/crashcourt/actions/runs/40278406294).
+
+**Scope:** LangGraph 1.2.12, Postgres saver 3.1.2, PostgreSQL 18.6,
+`durability="sync"`. Cross-runtime testing is proposed, not built.
 
 ---
 
@@ -452,6 +448,7 @@ No batch is in `results/` yet, so the formal batches above are not in the explor
 | `scenarios/` | scenarios; `first-matrix/` is pre-registered, `landmarks/` is the audited landmark table |
 | `research/` | the pre-registration, the N8 report and operations log, the source audit, recorded evidence, gate notes |
 | `docs/` | the engineering case study, the architecture, and the reproduction guide |
+| `docs/archive/v1-task-records/` | historical build and PR records (dated snapshots, **not** current status) |
 | `site/` | the evidence explorer |
 | `tests/` | unit, integration, audit, saver-mutant, and control tests |
 
@@ -484,6 +481,14 @@ No batch is in `results/` yet, so the formal batches above are not in the explor
 - mstevens843/crashpoint: crash-to-effect exactly-once measurements across five durable-execution engines.
 - xbstack repros: independent fork and admission-ledger reproductions.
 - AgentCI: evidence and authority fixtures for agent systems.
+
+## Development provenance
+
+CrashCourt was developed with AI-assisted coding and review, alongside committed engineering
+decisions, source audits, automated checks, and pre-registered experiments. The public repository
+and checksummed evidence—not an AI-generated assessment—are the basis for its technical claims.
+No independent outside adoption or reproduction is claimed. Historical implementation records
+are preserved in [the build archive](docs/archive/v1-task-records/).
 
 ## License
 

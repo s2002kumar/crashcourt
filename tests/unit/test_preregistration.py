@@ -182,8 +182,9 @@ def test_a_redelivery_cell_declares_its_replacement() -> None:
 
 
 def test_the_draft_pins_the_environment_it_runs_in() -> None:
-    """The canonical runner (decision 17 in tasks/T-13.md), and the lockfile and specification
-    hashes doctor records: a uv.lock change moves its pin in the same commit."""
+    """The canonical runner (decision 17 in the archived T-13 build record), and
+    the lockfile and specification hashes doctor records: a uv.lock change moves
+    its pin in the same commit."""
     env = parse(committed()).environment
     assert env["runner"] == "github-hosted"
     assert env["lockfile_sha256"] == hashlib.sha256((ROOT / "uv.lock").read_bytes()).hexdigest()
