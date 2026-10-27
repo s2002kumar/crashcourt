@@ -124,9 +124,7 @@ def test_trial_switch_waits_for_inflight_ledger_write(
                 raise TimeoutError("blocked append was not released")
         return original_append(self, request)
 
-    def noticed_open_status(
-        self: SinkState, trial: Any, *, apply_once: bool
-    ) -> dict[str, Any]:
+    def noticed_open_status(self: SinkState, trial: Any, *, apply_once: bool) -> dict[str, Any]:
         if trial.trial == 2:
             switch_started.set()
         return original_open_status(self, trial, apply_once=apply_once)
