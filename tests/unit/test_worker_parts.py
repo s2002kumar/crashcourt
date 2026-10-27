@@ -13,7 +13,11 @@ import pytest
 from crashcourt.history.writer import HistoryWriter, RunIdentity
 from crashcourt.orchestrator import workers
 from crashcourt.orchestrator.topology import Route
-from crashcourt.orchestrator.workers import LIBPQ_ADDRESS_VARIABLES, ProcessWorker, worker_environment
+from crashcourt.orchestrator.workers import (
+    LIBPQ_ADDRESS_VARIABLES,
+    ProcessWorker,
+    worker_environment,
+)
 from crashcourt.spec.events import Event
 from crashcourt.spec.protocol import Hit, ProtocolError
 from crashcourt.worker.main import DSN_ENV, ControlBarrier
@@ -127,20 +131,22 @@ def test_failed_worker_spawn_closes_log_and_unlinks_socket(
 
     monkeypatch.setattr(workers.subprocess, "Popen", fail_spawn)
     route = Route("w1", "postgres-w1", "127.0.0.1:15433", "postgres:5432", 15433, "dsn")
-    with HistoryWriter(tmp_path / "orchestrator.jsonl", run=RUN, proc="orchestrator") as history:
-        with pytest.raises(OSError, match="injected spawn failure"):
-            ProcessWorker(
-                name="w1",
-                route=route,
-                run=RUN,
-                workload="w1",
-                sink_url="http://127.0.0.1:8480",
-                trial_dir=tmp_path,
-                socket_dir=sockets,
-                history=history,
-                notes=asyncio.Queue(),
-                cwd=tmp_path,
-            )
+    with (
+        HistoryWriter(tmp_path / "orchestrator.jsonl", run=RUN, proc="orchestrator") as history,
+        pytest.raises(OSError, match="injected spawn failure"),
+    ):
+        ProcessWorker(
+            name="w1",
+            route=route,
+            run=RUN,
+            workload="w1",
+            sink_url="http://127.0.0.1:8480",
+            trial_dir=tmp_path,
+            socket_dir=sockets,
+            history=history,
+            notes=asyncio.Queue(),
+            cwd=tmp_path,
+        )
     assert observed["log"].closed
     assert not (sockets / "w1.sock").exists()
 
@@ -150,18 +156,20 @@ def test_failed_worker_log_open_closes_the_control_socket(tmp_path: Path) -> Non
     sockets = tmp_path / "sockets"
     sockets.mkdir()
     route = Route("w1", "postgres-w1", "127.0.0.1:15433", "postgres:5432", 15433, "dsn")
-    with HistoryWriter(tmp_path / "orchestrator.jsonl", run=RUN, proc="orchestrator") as history:
-        with pytest.raises(FileNotFoundError):
-            ProcessWorker(
-                name="w1",
-                route=route,
-                run=RUN,
-                workload="w1",
-                sink_url="http://127.0.0.1:8480",
-                trial_dir=tmp_path / "missing-directory",
-                socket_dir=sockets,
-                history=history,
-                notes=asyncio.Queue(),
-                cwd=tmp_path,
-            )
+    with (
+        HistoryWriter(tmp_path / "orchestrator.jsonl", run=RUN, proc="orchestrator") as history,
+        pytest.raises(FileNotFoundError),
+    ):
+        ProcessWorker(
+            name="w1",
+            route=route,
+            run=RUN,
+            workload="w1",
+            sink_url="http://127.0.0.1:8480",
+            trial_dir=tmp_path / "missing-directory",
+            socket_dir=sockets,
+            history=history,
+            notes=asyncio.Queue(),
+            cwd=tmp_path,
+        )
     assert not (sockets / "w1.sock").exists()
