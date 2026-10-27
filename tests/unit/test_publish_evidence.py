@@ -86,7 +86,7 @@ def test_publication_refuses_unsuccessful_benchmark_before_accessing_artifacts(
 
 
 def test_successful_benchmark_reaches_normal_study_provenance_checks(
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     namespace = TOOLS["publish"].__globals__
     monkeypatch.setitem(namespace, "release_exists", lambda _repo: False)
