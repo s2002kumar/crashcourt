@@ -109,9 +109,7 @@ def test_a_restarted_sink_resumes_the_open_trial(tmp_path: Path) -> None:
         '{"batch":"DEMO-b","cell":"DEMO-c","trial":1,"seed":"s","unexpected":true}',
     ],
 )
-def test_malformed_resume_pointer_is_refused_without_erasure(
-    tmp_path: Path, contents: str
-) -> None:
+def test_malformed_resume_pointer_is_refused_without_erasure(tmp_path: Path, contents: str) -> None:
     pointer = tmp_path / "current.json"
     pointer.write_text(contents, encoding="utf-8")
     client = TestClient(create_app(tmp_path))
