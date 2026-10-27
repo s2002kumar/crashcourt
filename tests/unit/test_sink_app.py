@@ -105,7 +105,6 @@ def test_switching_trials_keeps_each_ledger(client: TestClient) -> None:
     assert client.post("/trials", json=TRIAL).json()["rows"] == 1
 
 
-
 def test_trial_switch_waits_for_inflight_ledger_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
