@@ -182,7 +182,7 @@ def test_a_redelivery_cell_declares_its_replacement() -> None:
 
 
 def test_the_draft_pins_the_environment_it_runs_in() -> None:
-    """The canonical runner (decision 17 in tasks/T-13.md), and the lockfile and specification
+    """The canonical runner (decision 17 in docs/archive/v1-task-records/T-13.md), and the lockfile and specification
     hashes doctor records: a uv.lock change moves its pin in the same commit."""
     env = parse(committed()).environment
     assert env["runner"] == "github-hosted"
