@@ -35,6 +35,8 @@ import os
 import sys
 import tempfile
 import threading
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -114,7 +116,7 @@ class SinkState:
         self.ledger: Ledger | None = None
         #: Why the trial in current.json could not be resumed at start, if it could not.
         self.resume_error: str | None = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         root.mkdir(parents=True, exist_ok=True)
         current = root / "current.json"
         if current.exists():
@@ -155,19 +157,30 @@ class SinkState:
             self.resume_error = None
             return ledger
 
-    def require(self, trial: TrialRequest) -> Ledger:
-        """The open ledger, if it belongs to `trial`."""
+    def open_status(self, trial: TrialId, *, apply_once: bool) -> dict[str, Any]:
+        """Open and report a trial without exposing a ledger that another opener can close."""
+        with self._lock:
+            ledger = self.open(trial, apply_once=apply_once)
+            return {
+                "trial": ledger.trial.__dict__,
+                "rows": len(ledger.rows()),
+                "apply_once": ledger.apply_once,
+            }
+
+    @contextmanager
+    def access(self, trial: TrialRequest) -> Generator[Ledger]:
+        """Keep a validated ledger open through its operation, including while switching trials."""
         with self._lock:
             ledger = self.ledger
-        if ledger is None:
-            raise HTTPException(status_code=409, detail="no trial is open; POST /trials first")
-        if TrialId(**trial.model_dump()) != ledger.trial:
-            raise HTTPException(
-                status_code=409,
-                detail=f"request for trial {trial.model_dump()}, "
-                f"but the open trial is {ledger.trial.__dict__}",
-            )
-        return ledger
+            if ledger is None:
+                raise HTTPException(status_code=409, detail="no trial is open; POST /trials first")
+            if TrialId(**trial.model_dump()) != ledger.trial:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"request for trial {trial.model_dump()}, "
+                    f"but the open trial is {ledger.trial.__dict__}",
+                )
+            yield ledger
 
 
 def create_app(
@@ -195,21 +208,17 @@ def create_app(
 
     @app.post("/trials")
     def open_trial(request: OpenRequest) -> dict[str, Any]:
-        ledger = state.open(
+        return state.open_status(
             TrialId(**request.model_dump(exclude={"apply_once"})), apply_once=request.apply_once
         )
-        return {
-            "trial": ledger.trial.__dict__,
-            "rows": len(ledger.rows()),
-            "apply_once": ledger.apply_once,
-        }
 
     @app.post("/effects")
     def append_effect(request: EffectPost) -> dict[str, Any]:
-        row = state.require(request.trial).append(request.effect)
-        state.commits += 1
-        if state.exit_after_commit is not None and state.commits >= state.exit_after_commit:
-            os._exit(70)  # test hook: committed, never answered
+        with state.access(request.trial) as ledger:
+            row = ledger.append(request.effect)
+            state.commits += 1
+            if state.exit_after_commit is not None and state.commits >= state.exit_after_commit:
+                os._exit(70)  # test hook: committed, never answered
         return {
             "sink_seq": row["sink_seq"],
             "received_mono_ns": row["received_mono_ns"],
@@ -221,23 +230,24 @@ def create_app(
 
     @app.post("/attempts/next")
     def next_attempt(request: AttemptRequest) -> dict[str, int]:
-        return {"attempt": state.require(request.trial).next_attempt(request.key)}
+        with state.access(request.trial) as ledger:
+            return {"attempt": ledger.next_attempt(request.key)}
 
     @app.get("/ledger")
     def ledger_rows(trial: Annotated[TrialRequest, Query()]) -> dict[str, Any]:
-        ledger = state.require(trial)
-        return {"trial": ledger.trial.__dict__, "rows": ledger.rows()}
+        with state.access(trial) as ledger:
+            return {"trial": ledger.trial.__dict__, "rows": ledger.rows()}
 
     @app.get("/ledger/verify")
     def verify(trial: Annotated[TrialRequest, Query()]) -> dict[str, Any]:
-        ledger = state.require(trial)
-        result = ledger.verify()
-        return {
-            "trial": ledger.trial.__dict__,
-            "ok": result.ok,
-            "rows": result.rows,
-            "first_bad": result.first_bad,
-        }
+        with state.access(trial) as ledger:
+            result = ledger.verify()
+            return {
+                "trial": ledger.trial.__dict__,
+                "ok": result.ok,
+                "rows": result.rows,
+                "first_bad": result.first_bad,
+            }
 
     return app
 
