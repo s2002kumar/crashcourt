@@ -121,9 +121,17 @@ class SinkState:
         current = root / "current.json"
         if current.exists():
             try:
-                recorded = json.loads(current.read_text(encoding="utf-8"))
-                apply_once = bool(recorded.pop("apply_once", False))
-                self.open(TrialId(**recorded), apply_once=apply_once)
+                recorded = OpenRequest.model_validate_json(
+                    current.read_text(encoding="utf-8"), strict=True
+                )
+                self.open(
+                    TrialId(**recorded.model_dump(exclude={"apply_once"})),
+                    apply_once=recorded.apply_once,
+                )
+            except (ValueError, UnicodeError, OSError):
+                # A damaged pointer must not make the sink unavailable or expose its contents.
+                # Keep the file for investigation; doctor will refuse an unhealthy resume.
+                self.resume_error = "current.json is unreadable or invalid; no trial resumed"
             except HTTPException as exc:  # a file from another ledger version or trial
                 self.resume_error = str(exc.detail)
 
