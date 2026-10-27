@@ -115,7 +115,7 @@ def test_trial_switch_waits_for_inflight_ledger_write(
     release_append = threading.Event()
     switch_started = threading.Event()
     original_append = Ledger.append
-    original_open = SinkState.open
+    original_open_status = SinkState.open_status
 
     def held_append(self: Ledger, request: Any) -> dict[str, Any]:
         if self.trial.trial == TRIAL["trial"]:
@@ -124,20 +124,22 @@ def test_trial_switch_waits_for_inflight_ledger_write(
                 raise TimeoutError("blocked append was not released")
         return original_append(self, request)
 
-    def noticed_open(self: SinkState, trial: Any, *, apply_once: bool = False) -> Ledger:
+    def noticed_open_status(
+        self: SinkState, trial: Any, *, apply_once: bool
+    ) -> dict[str, Any]:
         if trial.trial == 2:
             switch_started.set()
-        return original_open(self, trial, apply_once=apply_once)
+        return original_open_status(self, trial, apply_once=apply_once)
 
     monkeypatch.setattr(Ledger, "append", held_append)
-    monkeypatch.setattr(SinkState, "open", noticed_open)
+    monkeypatch.setattr(SinkState, "open_status", noticed_open_status)
     with ThreadPoolExecutor(max_workers=2) as pool:
         old_write = pool.submit(client.post, "/effects", json=post(effect()))
         assert append_started.wait(3)
         new_trial = pool.submit(client.post, "/trials", json={**TRIAL, "trial": 2})
-        assert switch_started.wait(3)
         try:
-            time.sleep(0.1)  # Give the competing request a chance to close the old ledger.
+            assert switch_started.wait(3)
+            time.sleep(0.1)  # Give the competing opener a chance to race the append.
             assert not new_trial.done(), "trial switch closed an in-use SQLite ledger"
         finally:
             release_append.set()
