@@ -97,6 +97,35 @@ def test_a_restarted_sink_resumes_the_open_trial(tmp_path: Path) -> None:
     assert second.get("/ledger/verify", params=TRIAL).json()["ok"] is True
 
 
+@pytest.mark.parametrize(
+    "contents",
+    [
+        "{",
+        "null",
+        "[]",
+        '{"batch":"DEMO-b","cell":"DEMO-c","trial":"one","seed":"s"}',
+        '{"batch":"../unsafe","cell":"DEMO-c","trial":1,"seed":"s"}',
+        '{"batch":"DEMO-b","cell":"DEMO-c","trial":1,"seed":"s","apply_once":"false"}',
+        '{"batch":"DEMO-b","cell":"DEMO-c","trial":1,"seed":"s","unexpected":true}',
+    ],
+)
+def test_malformed_resume_pointer_is_refused_without_erasure(
+    tmp_path: Path, contents: str
+) -> None:
+    pointer = tmp_path / "current.json"
+    pointer.write_text(contents, encoding="utf-8")
+    client = TestClient(create_app(tmp_path))
+    health = client.get("/health").json()
+    assert health["status"] == "ok"
+    assert health["trial"] is None
+    assert health["resume_error"] == "current.json is unreadable or invalid; no trial resumed"
+    assert pointer.read_text(encoding="utf-8") == contents
+    assert client.post("/effects", json=post(effect())).status_code == 409
+    # A deliberate new trial opens normally and replaces only the invalid pointer.
+    assert client.post("/trials", json=TRIAL).status_code == 200
+    assert client.get("/health").json()["resume_error"] is None
+
+
 def test_switching_trials_keeps_each_ledger(client: TestClient) -> None:
     client.post("/trials", json=TRIAL)
     client.post("/effects", json=post(effect()))
