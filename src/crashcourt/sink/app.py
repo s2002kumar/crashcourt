@@ -35,7 +35,7 @@ import os
 import sys
 import tempfile
 import threading
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any
@@ -168,7 +168,7 @@ class SinkState:
             }
 
     @contextmanager
-    def access(self, trial: TrialRequest) -> Iterator[Ledger]:
+    def access(self, trial: TrialRequest) -> Generator[Ledger]:
         """Keep a validated ledger open through its operation, including while switching trials."""
         with self._lock:
             ledger = self.ledger
