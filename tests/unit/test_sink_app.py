@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from crashcourt.sink.app import create_app
+from crashcourt.sink.app import SinkState, create_app
+from crashcourt.sink.ledger import Ledger
 from crashcourt.sink.source import source_sha256
 
 TRIAL = {"batch": "DEMO-b", "cell": "DEMO-c", "trial": 1, "seed": "s"}
@@ -99,6 +103,50 @@ def test_switching_trials_keeps_each_ledger(client: TestClient) -> None:
     client.post("/trials", json={**TRIAL, "trial": 2})
     assert client.get("/ledger", params={**TRIAL, "trial": 2}).json()["rows"] == []
     assert client.post("/trials", json=TRIAL).json()["rows"] == 1
+
+
+
+def test_trial_switch_waits_for_inflight_ledger_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Switching trials must not close an accepted in-flight write's SQLite handle."""
+    client = TestClient(create_app(tmp_path))
+    assert client.post("/trials", json=TRIAL).status_code == 200
+    append_started = threading.Event()
+    release_append = threading.Event()
+    switch_started = threading.Event()
+    original_append = Ledger.append
+    original_open = SinkState.open
+
+    def held_append(self: Ledger, request: Any) -> dict[str, Any]:
+        if self.trial.trial == TRIAL["trial"]:
+            append_started.set()
+            if not release_append.wait(timeout=5):
+                raise TimeoutError("blocked append was not released")
+        return original_append(self, request)
+
+    def noticed_open(self: SinkState, trial: Any, *, apply_once: bool = False) -> Ledger:
+        if trial.trial == 2:
+            switch_started.set()
+        return original_open(self, trial, apply_once=apply_once)
+
+    monkeypatch.setattr(Ledger, "append", held_append)
+    monkeypatch.setattr(SinkState, "open", noticed_open)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        old_write = pool.submit(client.post, "/effects", json=post(effect()))
+        assert append_started.wait(3)
+        new_trial = pool.submit(client.post, "/trials", json={**TRIAL, "trial": 2})
+        assert switch_started.wait(3)
+        try:
+            time.sleep(0.1)  # Give the competing request a chance to close the old ledger.
+            assert not new_trial.done(), "trial switch closed an in-use SQLite ledger"
+        finally:
+            release_append.set()
+        assert old_write.result(timeout=5).status_code == 200
+        assert new_trial.result(timeout=5).status_code == 200
+
+    assert client.post("/trials", json=TRIAL).json()["rows"] == 1
+    assert client.get("/ledger/verify", params=TRIAL).json()["ok"] is True
 
 
 def test_a_request_for_another_trial_is_refused(client: TestClient) -> None:
