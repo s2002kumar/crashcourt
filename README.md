@@ -7,6 +7,8 @@ worker can acknowledge success while an older worker leaves the wrong checkpoint
 CrashCourt uses **real worker processes, a real PostgreSQL checkpointer and controlled
 failures** to test those two histories separately—not by trusting the agent's success response.
 
+**Start here:** [Five-minute engineering case study](docs/ENGINEERING_CASE_STUDY.md) · [Reproduce a verified run](docs/REPRODUCING.md) · [Checksummed evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10).
+
 **V1 finding:** fencing prevents stale checkpoint forks but does not prevent duplicate
 external charges; effect idempotency prevents second applied charges but not forks. Even
 combining both can save a reference to the wrong *attempt*. Across a controlled four-arm
@@ -30,10 +32,7 @@ concurrent same-thread guarantees**, not production failure rates or upstream bu
 [PostgreSQL snapshots](src/crashcourt/snapshot/dump.py) ·
 [Frozen checker](src/crashcourt/checker/) · [Mitigation fence](src/crashcourt/mitigation/fence.py).
 
-**Start here:** [Five-minute case study](docs/ENGINEERING_CASE_STUDY.md) ·
-[Reproduce a verified run](docs/REPRODUCING.md) ·
-[N8 technical results and limitations](research/n8-report.md) ·
-[Checksummed V1 evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10).
+**Detailed results and limitations:** [N8 technical report](research/n8-report.md).
 
 **Measured trade-off:** fencing increased the W1 median duration by **20.7–21.5%**
 in three canonical 300-unit-per-arm benchmark rounds. Tail latency and throughput
