@@ -1,13 +1,16 @@
 # CrashCourt — The Reliability Lab
 
-**A reproducible fault-injection and conformance lab for durable AI-agent workflows.**
+**Reproducible fault-injection experiments for durable AI-agent workflows.**
 
 An agent can recover its checkpoint but execute an external action twice. Or a replacement
 worker can acknowledge success while an older worker leaves the wrong checkpoint selected.
 CrashCourt uses **real worker processes, a real PostgreSQL checkpointer and controlled
 failures** to test those two histories separately—not by trusting the agent's success response.
 
-**Start here:** [Five-minute engineering case study](docs/ENGINEERING_CASE_STUDY.md) · [Reproduce a verified run](docs/REPRODUCING.md) · [Checksummed evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10).
+**Start here:** [Five-minute engineering case study](docs/ENGINEERING_CASE_STUDY.md) ·
+[Reproduce a verified run](docs/REPRODUCING.md) ·
+[Independent reviewer guide](docs/INDEPENDENT_REVIEW.md) ·
+[Checksummed evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10).
 
 **V1 finding:** fencing prevents stale checkpoint forks but does not prevent duplicate
 external charges; effect idempotency prevents second applied charges but not forks. Even
