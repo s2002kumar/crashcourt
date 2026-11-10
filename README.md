@@ -9,6 +9,8 @@ failures** to test those two histories separately—not by trusting the agent's 
 
 **Start here:** [Five-minute engineering case study](docs/ENGINEERING_CASE_STUDY.md) · [Reproduce a verified run](docs/REPRODUCING.md) · [Checksummed evidence release](https://github.com/s2002kumar/crashcourt/releases/tag/evidence-2026-10).
 
+**Systems engineered:** a multi-process fault-injection orchestrator, precise checkpoint-saver failpoints, an independent external-effect ledger, a PostgreSQL lineage checker, and reproducible experiment runs. Together they make stale-worker ownership and idempotency failures observable rather than inferred from a successful agent response.
+
 **V1 finding:** fencing prevents stale checkpoint forks but does not prevent duplicate
 external charges; effect idempotency prevents second applied charges but not forks. Even
 combining both can save a reference to the wrong *attempt*. Across a controlled four-arm
@@ -483,11 +485,11 @@ No batch is in `results/` yet, so the formal batches above are not in the explor
 
 ## Development provenance
 
-CrashCourt was developed with AI-assisted coding and review, alongside committed engineering
-decisions, source audits, automated checks, and pre-registered experiments. The public repository
-and checksummed evidence—not an AI-generated assessment—are the basis for its technical claims.
-No independent outside adoption or reproduction is claimed. Historical implementation records
-are preserved in [the build archive](docs/archive/v1-task-records/).
+AI-assisted coding and review were used during development. Architecture decisions, source audits,
+automated tests, pre-registered experiments, and checksummed evidence are preserved in the
+repository so that the technical claims can be inspected and reproduced. No independent outside
+adoption or reproduction is claimed. Historical implementation records are available in the
+[build archive](docs/archive/v1-task-records/).
 
 ## License
 
